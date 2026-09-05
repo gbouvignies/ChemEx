@@ -25,7 +25,7 @@ from chemex.optimize.native_deterministic import (
     run_native_deterministic,
 )
 from chemex.optimize.resampling import run_native_resampling
-from chemex.run_info import RunInfo, mark_failure_stage
+from chemex.run_info import RunInfo, mark_failure_stage, mark_method_step
 from chemex.runtime import AnalysisSession
 
 
@@ -65,6 +65,7 @@ def _run_native_statistics(
     step_name: str = "DEFAULT",
 ) -> None:
     committed = session.analysis_values.snapshot()
+    primary_error: BaseException | None = None
     try:
         for kind, request in (
             ("mc", statistics.mc),
@@ -100,9 +101,16 @@ def _run_native_statistics(
                     )
                 ),
             )
+    except (Exception, KeyboardInterrupt) as error:
+        primary_error = error
+        raise
     finally:
         if session.analysis_values.snapshot() != committed:
-            raise RuntimeError("Native statistics mutated the committed central fit")
+            message = "Native statistics mutated the committed central fit"
+            if primary_error is None:
+                raise RuntimeError(message)
+            invariant_error = RuntimeError(message)
+            raise invariant_error from primary_error
 
 
 def _requests_only_mcmc(statistics: StatisticsPlan) -> bool:
@@ -143,6 +151,7 @@ def _run_requested_native_statistics(
         )
     except (Exception, KeyboardInterrupt) as error:
         mark_failure_stage(error, "statistics")
+        mark_method_step(error, step_name)
         raise
 
 
@@ -174,16 +183,20 @@ def execute_method_plan(
         )
         step_path = path / section if len(plan.steps) > 1 else path
         step_name = section or "DEFAULT"
-        fit = run_native_deterministic(
-            experiments,
-            step_path,
-            plot_level,
-            session=session,
-            parameterization=parameterization,
-            search=step.search,
-            run_info=run_info,
-            step_name=step_name,
-        )
+        try:
+            fit = run_native_deterministic(
+                experiments,
+                step_path,
+                plot_level,
+                session=session,
+                parameterization=parameterization,
+                search=step.search,
+                run_info=run_info,
+                step_name=step_name,
+            )
+        except (Exception, KeyboardInterrupt) as error:
+            mark_method_step(error, step_name)
+            raise
         _run_requested_native_statistics(
             experiments,
             step_path,

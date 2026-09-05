@@ -2420,6 +2420,7 @@ class McmcOperation:
     raw_capture: RawMcmcCapture | None = None
     validation: McmcChainValidation | None = None
     backend_transition_evidence: BackendTransitionEvidence | None = None
+    failure: Exception | None = field(default=None, repr=False, compare=False)
     _occurrence_witness: _McmcEvidenceWitness | None = field(
         default=None,
         repr=False,
@@ -2444,6 +2445,7 @@ class McmcOperation:
             raise McmcConstructionError(
                 "Non-completed MCMC operation requires typed failure evidence"
             )
+        self._validate_failure()
         if self.raw_capture is None or self.backend_transition_evidence is None:
             raise McmcConstructionError(
                 "Every MCMC operation requires raw and backend diagnostic evidence"
@@ -2477,6 +2479,19 @@ class McmcOperation:
         ):
             raise McmcConstructionError(
                 "MCMC operation must come from one canonical execution occurrence"
+            )
+
+    def _validate_failure(self) -> None:
+        if self.terminal is McmcOperationTerminal.FAILED and self.failure is None:
+            raise McmcConstructionError(
+                "Failed MCMC operation requires its original exception"
+            )
+        if (
+            self.terminal is not McmcOperationTerminal.FAILED
+            and self.failure is not None
+        ):
+            raise McmcConstructionError(
+                "Only failed MCMC operation may retain an original exception"
             )
 
     def _content_identity(self) -> str:
@@ -2549,16 +2564,19 @@ def _mint_mcmc_operation(
     raw_capture: RawMcmcCapture,
     validation: McmcChainValidation | None,
     backend_transition_evidence: BackendTransitionEvidence,
+    *,
+    failure: Exception | None = None,
 ) -> McmcOperation:
     return McmcOperation(
-        terminal,
-        evidence,
-        failure_category,
-        failure_message,
-        raw_capture,
-        validation,
-        backend_transition_evidence,
-        _mint_mcmc_evidence_witness("operation"),
+        terminal=terminal,
+        evidence=evidence,
+        failure_category=failure_category,
+        failure_message=failure_message,
+        raw_capture=raw_capture,
+        validation=validation,
+        backend_transition_evidence=backend_transition_evidence,
+        failure=failure,
+        _occurrence_witness=_mint_mcmc_evidence_witness("operation"),
     )
 
 
@@ -3965,6 +3983,7 @@ def execute_mcmc_evidence(  # noqa: C901 - checkpointed lifecycle boundary
     validation: McmcChainValidation | None = None
     backend_transition_evidence: BackendTransitionEvidence | None = None
     evidence: McmcEvidence | None = None
+    failure: Exception | None = None
 
     def checkpoint(next_stage: McmcExecutionStage) -> None:
         nonlocal stage
@@ -4113,6 +4132,7 @@ def execute_mcmc_evidence(  # noqa: C901 - checkpointed lifecycle boundary
         terminal = McmcOperationTerminal.FAILED
         category = type(error).__name__
         message = str(error)
+        failure = error
         if initialization_outcome is McmcInitializationOutcome.NOT_STARTED:
             initialization_outcome = McmcInitializationOutcome.FAILED
     if raw_capture is None or terminal is not McmcOperationTerminal.INTERRUPTED:
@@ -4157,6 +4177,7 @@ def execute_mcmc_evidence(  # noqa: C901 - checkpointed lifecycle boundary
         raw_capture,
         validation,
         backend_transition_evidence,
+        failure=failure,
     )
 
 

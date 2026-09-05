@@ -46,3 +46,18 @@ The complete interpreted uncertainty associated with one accepted deterministic
 fit, including its Evidence and predetermined availability, completeness, and
 reportability.
 _Avoid_: Product Uncertainty, Uncertainty Result, publication artifacts
+
+**Known ChemEx Failure**:
+A termination that ChemEx deliberately classifies with trusted information
+intended for concise user presentation.
+_Avoid_: Any exception raised while ChemEx is running
+
+**Unexpected Internal Failure**:
+An unclassified failure for which ChemEx cannot responsibly provide a known
+user or scientific explanation.
+_Avoid_: Known ChemEx Failure, validation failure
+
+**User Interruption**:
+A user-requested stop whose scientifically valid committed state or Evidence may
+be finalized before termination.
+_Avoid_: Failed analysis, cancellation

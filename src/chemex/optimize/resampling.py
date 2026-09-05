@@ -12,6 +12,7 @@ import numpy as np
 from chemex.atomic import open_text_atomic, remove_paths_best_effort, write_text_atomic
 from chemex.configuration.method_plan import ResamplingKind, ResamplingRequest
 from chemex.containers.experiments import Experiments
+from chemex.exceptions import ArtifactPublicationError, ChemExError
 from chemex.messages import print_running_statistics
 from chemex.optimize.direct_trf import AcceptedFitResult
 from chemex.optimize.native_deterministic import NativeDeterministicFit
@@ -46,12 +47,50 @@ class _ResamplingMethod:
     iterations: int
 
 
-class NativeResamplingIncompleteError(RuntimeError):
+class NativeResamplingIncompleteError(ChemExError, RuntimeError):
     """Raised after truthful incomplete native statistics have been published."""
 
-    def __init__(self, message: str, *, terminal: str = "failed") -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        terminal: str = "failed",
+        diagnostics_path: Path | None = None,
+        samples_path: Path | None = None,
+        failures_path: Path | None = None,
+    ) -> None:
         super().__init__(message)
         self.terminal = terminal
+        self.diagnostics_path = diagnostics_path
+        self.samples_path = samples_path
+        self.failures_path = failures_path
+
+
+def _resampling_publication_error(
+    operation: str,
+    path: Path,
+    error: OSError,
+    *,
+    samples_published: bool = False,
+    failures_published: bool = False,
+    diagnostics_published: bool = False,
+    interrupted: bool = False,
+) -> ArtifactPublicationError:
+    failure = ArtifactPublicationError(operation, path, error)
+    if interrupted:
+        object.__setattr__(failure, "terminal", "interrupted")
+    statistic_path = path.parent
+    if samples_published:
+        object.__setattr__(failure, "samples_path", statistic_path / "samples.tsv")
+    if failures_published:
+        object.__setattr__(failure, "failures_path", statistic_path / "failures.tsv")
+    if diagnostics_published:
+        object.__setattr__(
+            failure,
+            "diagnostics_path",
+            statistic_path / "diagnostics.toml",
+        )
+    return failure
 
 
 def _resampling_result_and_samples(
@@ -229,7 +268,7 @@ def _native_dataset(
 ) -> ResamplingDatasetManifest:
     profiles = tuple(profile for experiment in experiments for profile in experiment)
     if len(profiles) != len(fit.engine.plan.profiles):
-        raise NativeResamplingIncompleteError(
+        raise RuntimeError(
             "Native resampling profile population differs from the accepted fit"
         )
     references: list[bool] = []
@@ -237,7 +276,7 @@ def _native_dataset(
     descriptors: list[str] = []
     for profile, profile_plan in zip(profiles, fit.engine.plan.profiles, strict=True):
         if profile.data.size != profile_plan.observation_count:
-            raise NativeResamplingIncompleteError(
+            raise RuntimeError(
                 "Native resampling profile shape differs from the accepted fit"
             )
         references.extend(bool(value) for value in profile.data.refs)
@@ -259,10 +298,10 @@ def _native_dataset(
     )
 
 
-def _write_native_failures(path: Path, outcomes: Sequence[ReplicateOutcome]) -> None:
+def _write_native_failures(path: Path, outcomes: Sequence[ReplicateOutcome]) -> bool:
     failed = tuple(outcome for outcome in outcomes if outcome.failure is not None)
     if not failed:
-        return
+        return False
     with open_text_atomic(path / "failures.tsv") as output:
         output.write("ordinal\tdisposition\tcategory\tmessage\n")
         for outcome in failed:
@@ -274,6 +313,7 @@ def _write_native_failures(path: Path, outcomes: Sequence[ReplicateOutcome]) -> 
                 f"{outcome.ordinal}\t{outcome.disposition.value}\t"
                 f"{failure.category}\t{message}\n"
             )
+    return True
 
 
 def _write_native_samples(
@@ -382,19 +422,28 @@ def _run_native_resampling_method(  # noqa: C901 - closed execution/publication 
     root_seed: int,
 ) -> None:
     statistic_path = path / "Statistics" / method.directory
-    statistic_path.mkdir(parents=True, exist_ok=True)
-    _clear_native_statistics_artifacts(statistic_path)
     parameter_ids = fit.accepted.controlled_ids
     parameter_names = _format_parameter_names(list(parameter_ids), fit.parameter_model)
     worker_count = min(execution.workers, method.iterations)
-    _write_native_state_diagnostics(
-        statistic_path,
-        method=method,
-        workers=worker_count,
-        parameter_ids=parameter_ids,
-        root_seed=root_seed,
-        status="running",
-    )
+    try:
+        statistic_path.mkdir(parents=True, exist_ok=True)
+        _clear_native_statistics_artifacts(statistic_path)
+        _write_native_state_diagnostics(
+            statistic_path,
+            method=method,
+            workers=worker_count,
+            parameter_ids=parameter_ids,
+            root_seed=root_seed,
+            status="running",
+        )
+    except OSError as error:
+        filename = error.filename
+        destination = Path(filename) if isinstance(filename, str) else statistic_path
+        raise ArtifactPublicationError(
+            "prepare resampling diagnostics",
+            destination,
+            error,
+        ) from error
     try:
         dataset = _native_dataset(experiments, fit)
         width = max(6, len(str(method.iterations)))
@@ -444,11 +493,26 @@ def _run_native_resampling_method(  # noqa: C901 - closed execution/publication 
                 terminal=terminal,
                 failure=error,
             )
-        except (Exception, KeyboardInterrupt):
-            if terminal != "interrupted":
-                raise
+        except OSError as publication_error:
+            if isinstance(error, KeyboardInterrupt):
+                raise _resampling_publication_error(
+                    "publish interrupted resampling diagnostics",
+                    statistic_path / "diagnostics.toml",
+                    publication_error,
+                    interrupted=True,
+                ) from publication_error
             error.add_note(
-                "ChemEx could not publish interrupted resampling diagnostics."
+                "ChemEx could not publish incomplete resampling diagnostics: "
+                f"{type(publication_error).__name__}: {publication_error}"
+            )
+            remove_paths_best_effort(
+                (statistic_path / "diagnostics.toml",),
+                error,
+            )
+        except (Exception, KeyboardInterrupt) as publication_error:  # noqa: BLE001
+            error.add_note(
+                "ChemEx could not publish incomplete resampling diagnostics: "
+                f"{type(publication_error).__name__}: {publication_error}"
             )
             remove_paths_best_effort(
                 (statistic_path / "diagnostics.toml",),
@@ -461,20 +525,31 @@ def _run_native_resampling_method(  # noqa: C901 - closed execution/publication 
             f"Native {method.message} produced no replicate evidence",
             terminal=operation.terminal.value,
         )
-        _write_native_state_diagnostics(
-            statistic_path,
-            method=method,
-            workers=worker_count,
-            parameter_ids=parameter_ids,
-            root_seed=root_seed,
-            status="incomplete",
-            sample_counts=_disposition_counts(unstarted=method.iterations),
-            terminal=operation.terminal.value,
-            failure=error,
-        )
+        try:
+            _write_native_state_diagnostics(
+                statistic_path,
+                method=method,
+                workers=worker_count,
+                parameter_ids=parameter_ids,
+                root_seed=root_seed,
+                status="incomplete",
+                sample_counts=_disposition_counts(unstarted=method.iterations),
+                terminal=operation.terminal.value,
+                failure=error,
+            )
+        except OSError as publication_error:
+            raise ArtifactPublicationError(
+                "publish incomplete resampling diagnostics",
+                statistic_path / "diagnostics.toml",
+                publication_error,
+            ) from publication_error
+        error.diagnostics_path = statistic_path / "diagnostics.toml"
         raise error
     samples_published = False
     failures_published = False
+    diagnostics_published = False
+    publication_operation: str | None = None
+    publication_path: Path | None = None
     result: ResamplingAnalysisResult | None = None
     operational_interruption = operation.terminal is OperationTerminal.INTERRUPTED
     try:
@@ -491,12 +566,20 @@ def _run_native_resampling_method(  # noqa: C901 - closed execution/publication 
         samples = np.asarray(sample_rows, dtype=float).reshape(
             (len(sample_rows), len(parameter_ids))
         )
+        publication_operation = "publish resampling samples"
+        publication_path = statistic_path / "samples.tsv"
         _write_native_samples(statistic_path, parameter_names, analysis_samples)
         samples_published = True
         if not complete:
-            _write_native_failures(statistic_path, evidence.outcomes)
-            failures_published = True
+            publication_operation = "publish resampling failures"
+            publication_path = statistic_path / "failures.tsv"
+            failures_published = _write_native_failures(
+                statistic_path,
+                evidence.outcomes,
+            )
             disposition_source = evidence if result is None else result
+            publication_operation = "publish incomplete resampling diagnostics"
+            publication_path = statistic_path / "diagnostics.toml"
             _write_native_state_diagnostics(
                 statistic_path,
                 method=method,
@@ -507,18 +590,25 @@ def _run_native_resampling_method(  # noqa: C901 - closed execution/publication 
                 sample_counts=_disposition_counts(disposition_source),
                 terminal=operation.terminal.value,
             )
+            diagnostics_published = True
         else:
             summary = cast("ResamplingAnalysisSummary", result.summary)
+            publication_operation = "publish the resampling summary"
+            publication_path = statistic_path / "summary.toml"
             _write_resampling_summary(
                 statistic_path,
                 parameter_names=parameter_names,
                 summary=summary,
             )
+            publication_operation = "publish resampling correlations"
+            publication_path = statistic_path / "correlations.tsv"
             correlations = _write_resampling_correlations(
                 statistic_path,
                 parameter_names=parameter_names,
                 summary=summary,
             )
+            publication_operation = "publish resampling plots"
+            publication_path = statistic_path / "plots.pdf"
             write_resampling_plots(
                 statistic_path,
                 method=method.message,
@@ -533,6 +623,8 @@ def _run_native_resampling_method(  # noqa: C901 - closed execution/publication 
                     ReplicateDisposition.SUCCEEDED
                 ),
             )
+            publication_operation = "publish resampling diagnostics"
+            publication_path = statistic_path / "diagnostics.toml"
             _write_resampling_diagnostics(
                 statistic_path,
                 method=method.message,
@@ -575,6 +667,15 @@ def _run_native_resampling_method(  # noqa: C901 - closed execution/publication 
                     diagnostic_samples,
                 )
                 samples_published = True
+            except OSError as publication_error:
+                raise _resampling_publication_error(
+                    "publish interrupted resampling samples",
+                    statistic_path / "samples.tsv",
+                    publication_error,
+                    failures_published=failures_published,
+                    diagnostics_published=diagnostics_published,
+                    interrupted=True,
+                ) from publication_error
             except (Exception, KeyboardInterrupt):  # noqa: BLE001
                 error.add_note(
                     "ChemEx could not publish interrupted resampling samples."
@@ -585,8 +686,19 @@ def _run_native_resampling_method(  # noqa: C901 - closed execution/publication 
                 )
         if terminal == "interrupted" and not failures_published:
             try:
-                _write_native_failures(statistic_path, evidence.outcomes)
-                failures_published = True
+                failures_published = _write_native_failures(
+                    statistic_path,
+                    evidence.outcomes,
+                )
+            except OSError as publication_error:
+                raise _resampling_publication_error(
+                    "publish interrupted resampling failures",
+                    statistic_path / "failures.tsv",
+                    publication_error,
+                    samples_published=samples_published,
+                    diagnostics_published=diagnostics_published,
+                    interrupted=True,
+                ) from publication_error
             except (Exception, KeyboardInterrupt):  # noqa: BLE001
                 error.add_note(
                     "ChemEx could not publish interrupted resampling failures."
@@ -607,6 +719,58 @@ def _run_native_resampling_method(  # noqa: C901 - closed execution/publication 
                 terminal=terminal,
                 failure=error,
             )
+            diagnostics_published = True
+        except OSError as publication_error:
+            if terminal == "interrupted":
+                raise _resampling_publication_error(
+                    "publish incomplete resampling diagnostics",
+                    statistic_path / "diagnostics.toml",
+                    publication_error,
+                    samples_published=samples_published,
+                    failures_published=failures_published,
+                    interrupted=True,
+                ) from publication_error
+            if isinstance(error, NativeResamplingIncompleteError):
+                remove_paths_best_effort(
+                    (statistic_path / "diagnostics.toml",),
+                    error,
+                )
+                raise _resampling_publication_error(
+                    "publish incomplete resampling diagnostics",
+                    statistic_path / "diagnostics.toml",
+                    publication_error,
+                    samples_published=samples_published,
+                    failures_published=failures_published,
+                ) from publication_error
+            if (
+                isinstance(error, OSError)
+                and publication_operation is not None
+                and publication_path is not None
+            ):
+                failure = _resampling_publication_error(
+                    publication_operation,
+                    publication_path,
+                    error,
+                    samples_published=samples_published,
+                    failures_published=failures_published,
+                )
+                failure.add_note(
+                    "ChemEx also could not publish incomplete resampling diagnostics: "
+                    f"{type(publication_error).__name__}: {publication_error}"
+                )
+                remove_paths_best_effort(
+                    (statistic_path / "diagnostics.toml",),
+                    failure,
+                )
+                raise failure from error
+            error.add_note(
+                "ChemEx could not publish incomplete resampling diagnostics: "
+                f"{type(publication_error).__name__}: {publication_error}"
+            )
+            remove_paths_best_effort(
+                (statistic_path / "diagnostics.toml",),
+                error,
+            )
         except (Exception, KeyboardInterrupt):  # noqa: BLE001
             error.add_note(
                 "ChemEx could not publish incomplete resampling diagnostics."
@@ -615,16 +779,59 @@ def _run_native_resampling_method(  # noqa: C901 - closed execution/publication 
                 (statistic_path / "diagnostics.toml",),
                 error,
             )
+        if (
+            isinstance(error, OSError)
+            and publication_operation is not None
+            and publication_path is not None
+        ):
+            publication_error = _resampling_publication_error(
+                publication_operation,
+                publication_path,
+                error,
+                samples_published=samples_published,
+                failures_published=failures_published,
+                diagnostics_published=diagnostics_published,
+            )
+            raise publication_error from error
         if operational_interruption and not isinstance(error, KeyboardInterrupt):
             interrupted_error = NativeResamplingIncompleteError(
                 f"Native {method.message} completed {evidence.successful_count} of "
                 f"{method.iterations} requested replicates",
                 terminal="interrupted",
+                diagnostics_path=(
+                    statistic_path / "diagnostics.toml"
+                    if diagnostics_published
+                    else None
+                ),
+                samples_path=(
+                    statistic_path / "samples.tsv" if samples_published else None
+                ),
+                failures_path=(
+                    statistic_path / "failures.tsv" if failures_published else None
+                ),
             )
             interrupted_error.add_note(
                 "ChemEx could not publish interrupted resampling output."
             )
             raise interrupted_error from error
+        if diagnostics_published:
+            object.__setattr__(
+                error,
+                "diagnostics_path",
+                statistic_path / "diagnostics.toml",
+            )
+        if samples_published:
+            object.__setattr__(
+                error,
+                "samples_path",
+                statistic_path / "samples.tsv",
+            )
+        if failures_published:
+            object.__setattr__(
+                error,
+                "failures_path",
+                statistic_path / "failures.tsv",
+            )
         raise
     if operational_interruption or (
         result is not None and result.status is ResamplingAnalysisStatus.INCOMPLETE
@@ -633,6 +840,15 @@ def _run_native_resampling_method(  # noqa: C901 - closed execution/publication 
             f"Native {method.message} completed {evidence.successful_count} of "
             f"{method.iterations} requested replicates",
             terminal="interrupted" if operational_interruption else "failed",
+            diagnostics_path=(
+                statistic_path / "diagnostics.toml" if diagnostics_published else None
+            ),
+            samples_path=(
+                statistic_path / "samples.tsv" if samples_published else None
+            ),
+            failures_path=(
+                statistic_path / "failures.tsv" if failures_published else None
+            ),
         )
 
 

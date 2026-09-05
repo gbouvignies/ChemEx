@@ -6,9 +6,10 @@ from pathlib import Path
 from typing import Annotated
 
 from annotated_types import Len
-from pydantic import AfterValidator, BeforeValidator, RootModel
+from pydantic import AfterValidator, BeforeValidator, RootModel, ValidationError
 
 from chemex.configuration.utils import ensure_list
+from chemex.exceptions import ChemExError
 from chemex.parameters.name import ParamName
 from chemex.toml import read_toml_multi
 
@@ -19,12 +20,25 @@ def rename_section(section_name: str) -> str:
     return f"{section_name},nuc->"
 
 
-ValuesType = Annotated[list[float], Len(max_length=4), BeforeValidator(ensure_list)]
+ValuesType = Annotated[
+    list[float],
+    Len(min_length=1, max_length=4),
+    BeforeValidator(ensure_list),
+]
 LowerCaseString = Annotated[str, BeforeValidator(str.lower)]
 ValuesDictType = dict[LowerCaseString, ValuesType]
 SectionType = Annotated[LowerCaseString, AfterValidator(rename_section)]
 ParamsConfigType = dict[SectionType, ValuesDictType]
 ParamsConfigModel = RootModel[ParamsConfigType]
+
+
+class ParameterConfigurationError(ChemExError, ValueError):
+    """User parameter defaults do not satisfy the parameter-file schema."""
+
+    def __init__(self, filenames: tuple[Path, ...], explanation: str) -> None:
+        super().__init__(explanation)
+        self.filenames = filenames
+        self.explanation = explanation
 
 
 @dataclass(frozen=True)
@@ -50,6 +64,15 @@ def build_default_list(params_config: ParamsConfigModel) -> DefaultListType:
 
 
 def read_defaults(filenames: Iterable[Path]) -> DefaultListType:
-    config = read_toml_multi(filenames)
-    param_config = ParamsConfigModel.model_validate(config)
+    sources = tuple(filenames)
+    config = read_toml_multi(sources)
+    try:
+        param_config = ParamsConfigModel.model_validate(config)
+    except ValidationError as error:
+        first = error.errors()[0]
+        location = " -> ".join(str(item) for item in first["loc"])
+        explanation = str(first["msg"])
+        if location:
+            explanation = f"{location}: {explanation}"
+        raise ParameterConfigurationError(sources, explanation) from error
     return build_default_list(param_config)

@@ -9,6 +9,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Literal
 
+from chemex.exceptions import ChemExError
 from chemex.parameters.spin_system import SpinSystem
 
 if TYPE_CHECKING:
@@ -30,7 +31,7 @@ class SourceRef:
     end: int | None = None
 
 
-class MethodFormatError(ValueError):
+class MethodFormatError(ChemExError, ValueError):
     def __init__(self, message: str, source: SourceRef) -> None:
         super().__init__(message)
         self.message = message
@@ -43,6 +44,16 @@ class MethodFormatError(ValueError):
         if self.source.start is not None and self.source.end is not None:
             location += f" characters {self.source.start}:{self.source.end}"
         return f"{location}: {self.message}"
+
+
+def validate_step_name(filename: Path, name: str) -> None:
+    """Reject Method Step names that could escape an analysis output root."""
+    path = Path(name)
+    if path.is_absolute() or ".." in path.parts:
+        raise MethodFormatError(
+            "Method Step names must remain inside the output directory",
+            SourceRef(filename, name, "<step>"),
+        )
 
 
 @dataclass(frozen=True, slots=True)

@@ -508,6 +508,7 @@ def test_parallel_worker_failure_enters_typed_failed_lifecycle() -> None:
         worker_pids = {pid for pid, _evaluator, _environment in evaluation_observations}
 
     assert operation.terminal is McmcOperationTerminal.FAILED
+    assert isinstance(operation.failure, native_mcmc.McmcExecutionError)
     assert operation.failure_category == "McmcExecutionError"
     assert "MCMC worker failed: McmcExecutionError" in (operation.failure_message)
     assert "kernel_exception: worker kernel failure" in operation.failure_message
@@ -552,6 +553,7 @@ def test_parallel_worker_initialization_failure_is_typed_and_does_not_hang(
     )
 
     assert operation.terminal is McmcOperationTerminal.FAILED
+    assert isinstance(operation.failure, native_mcmc.McmcExecutionError)
     assert operation.failure_category == "McmcExecutionError"
     assert "MCMC worker failed: McmcExecutionError" in operation.failure_message
     assert "foreign parameterization" in operation.failure_message
@@ -1796,6 +1798,8 @@ def test_initialization_failure_and_later_failure_preserve_only_complete_prefix(
         checkpoint_observer=fail_initialization,
     )
     assert initial_failure.terminal is McmcOperationTerminal.FAILED
+    assert isinstance(initial_failure.failure, RuntimeError)
+    assert str(initial_failure.failure) == "initialization failure"
     assert initial_failure.complete_state_count == 0
     assert initial_failure.evidence is None
     assert initial_failure.raw_capture is not None
@@ -1814,6 +1818,8 @@ def test_initialization_failure_and_later_failure_preserve_only_complete_prefix(
         checkpoint_observer=fail_after_two_transitions,
     )
     assert later_failure.terminal is McmcOperationTerminal.FAILED
+    assert isinstance(later_failure.failure, RuntimeError)
+    assert str(later_failure.failure) == "later failure"
     assert later_failure.complete_state_count == 3
     assert later_failure.evidence is not None
     assert tuple(state.ordinal for state in later_failure.evidence.states) == (0, 1, 2)

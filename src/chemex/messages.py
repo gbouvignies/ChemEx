@@ -20,7 +20,6 @@ from dataclasses import replace
 from pathlib import Path
 from time import monotonic
 
-from pydantic import ValidationError
 from rich import box
 from rich.console import Console
 from rich.live import Live
@@ -37,7 +36,6 @@ from rich.progress import (
 )
 from rich.progress import Progress as RichProgress
 from rich.rule import Rule
-from rich.syntax import Syntax
 from rich.table import Table
 from rich.text import Text
 
@@ -59,7 +57,7 @@ error_console = Console(stderr=True)
 
 def print_cli_diagnostic(message: str) -> None:
     """Render one literal terminal diagnostic to stderr."""
-    error_console.print(Text(message, style="red"))
+    error_console.print(Text(message, style="red"), soft_wrap=True)
 
 
 class MinimizationProgressReporter:
@@ -681,13 +679,6 @@ LOGO = r"""
 """
 """ASCII art logo of the ChemEx software."""
 
-EXPERIMENT_NAME = """
-[experiment]
-name = "experiment_name"
-...
-"""
-"""Template for the experiment name in configuration files."""
-
 
 def print_logo() -> None:
     """Print the ChemEx software logo with version information."""
@@ -910,120 +901,6 @@ def print_plot_filename(filename: Path, *, extra: bool = True) -> None:
     console.print(Text.from_markup(text))
 
 
-def print_file_not_found(filename: Path) -> None:
-    """Inform the user that a specified file was not found.
-
-    Args:
-        filename (Path): The path of the file that was not found.
-
-    """
-    error_console.print()
-    error_console.print(f"[red]The file '{filename}' is empty or does not exist!")
-
-
-def print_file_not_found_error(error: FileNotFoundError) -> None:
-    """Display the file not found error message.
-
-    Args:
-        error (FileNotFoundError): The FileNotFoundError exception instance.
-
-    """
-    error_console.print()
-    error_console.print(f"[red]Error: {error}")
-
-
-def print_dataset_error(filename: Path, explanation: str) -> None:
-    """Display a concise error for invalid user-supplied dataset content."""
-    error_console.print()
-    error_console.print(f"[red]Error: Invalid data in '{filename}': {explanation}")
-
-
-def print_toml_error(filename: Path, error_message: Exception) -> None:
-    """Display an error related to TOML file parsing.
-
-    Args:
-        filename (Path): Path of the TOML file.
-        error_message (Exception): The exception instance with the error message.
-
-    """
-    error_console.print()
-    error_console.print(Text.from_markup(f"[red]Error in the TOML file '{filename}'"))
-    error_console.print(
-        Text.from_markup(f"[red]-> {error_message}\n"),
-    )
-    error_console.print(
-        "Please check the website [link]https://toml.io[/]"
-        " for a complete description of the TOML format.",
-    )
-
-
-def print_experiment_name_error(filename: Path) -> None:
-    """Display an error message when the experiment name is missing from a file.
-
-    Args:
-        filename (Path): Path of the file with the missing experiment name.
-
-    """
-    error_console.print()
-    error_console.print(
-        f"[red]The experiment name is missing from the file '{filename}'\n"
-    )
-    error_console.print(
-        f"Please make sure that the 'name' field is provided in '{filename}':\n",
-    )
-    error_console.print(
-        Syntax(EXPERIMENT_NAME, "toml"),
-        "\nRun 'chemex info' to obtain the full list of the available experiments.",
-    )
-
-
-def print_experiment_type_error(filename: Path, name: str) -> None:
-    """Display an error when an input names an unknown Experiment Type."""
-    error_console.print()
-    error_console.print(
-        f"[red]Unknown Experiment Type '{name}' in the file '{filename}'.[/]",
-    )
-    error_console.print(
-        "Run 'chemex info' to obtain the full list of available experiments.",
-    )
-
-
-def print_experiment_source_error(filename: Path | None, explanation: str) -> None:
-    """Display an error for an invalid or stale opened Experiment source."""
-    error_console.print()
-    location = f" for '{filename}'" if filename is not None else ""
-    error_console.print(f"[red]Invalid Experiment source{location}: {explanation}")
-
-
-def print_pydantic_parsing_error(filename: Path, error: ValidationError) -> None:
-    """Display errors encountered while parsing a file using Pydantic.
-
-    Args:
-        filename (Path): Path of the file being parsed.
-        error (ValidationError): Instance detailing parsing errors.
-
-    """
-    error_console.print()
-    error_console.print(Text.from_markup(f"[red]Error(s) while parsing '{filename}'"))
-    for err in error.errors():
-        location = " -> ".join(str(loc) for loc in err["loc"])
-        error_console.print("  • ", location, ":", err["msg"], style="red")
-
-
-def print_calculation_stopped_error() -> None:
-    """Inform the user that the calculation was manually stopped."""
-    error_console.print()
-    error_console.print("[red] -- Keyboard Interrupt: Calculation stopped --")
-    error_console.print()
-
-
-def print_value_error() -> None:
-    """Inform the user that a ValueError occurred, stopping the calculation."""
-    error_console.print()
-    error_console.print("[red] -- Got a ValueError: Calculation stopped --")
-    error_console.print()
-
-
 def print_warning_positive_jnh() -> None:
     """Warn about positive 1J(NH) coupling values."""
     console.print()
@@ -1048,46 +925,6 @@ def print_warning_negative_jch() -> None:
         " experiments.",
     )
     console.print()
-
-
-def print_error_grid_settings(entry: str, detail: str | None = None) -> None:
-    """Display an error related to grid settings.
-
-    Args:
-        entry (str): The problematic entry in the grid settings.
-        detail (str | None): Optional explanation of the validation failure.
-
-    """
-    error_console.print()
-    error_console.print("[red] -- ERROR: Error reading grid settings:")
-    error_console.print(Text(f'    "{entry}"', style="red"))
-    if detail is not None:
-        error_console.print(Text(f"    {detail}", style="red"))
-    error_console.print()
-    error_console.print(
-        "Please make sure that the grid settings are provided in the correct format",
-    )
-    error_console.print(Text("    [PB] = lin(<min>, <max>, <nb of points>)"))
-    error_console.print(Text("    [PB] = log(<min>, <max>, <nb of points>)"))
-    error_console.print(Text("    [PB] = (<value1>, <value2>, ..., <valuen>)"))
-    error_console.print()
-
-
-def print_error_constraints(expression: str, detail: str | None = None) -> None:
-    """Display an error message for issues with constraint expressions.
-
-    Args:
-        expression (str): The problematic constraint expression.
-        detail (str | None): Optional explanation of the validation failure.
-
-    """
-    error_console.print()
-    error_console.print(
-        f'[red] -- ERROR: Error reading constraints -> "{expression}" --'
-    )
-    if detail is not None:
-        error_console.print(Text(f"    {detail}", style="red"))
-    error_console.print()
 
 
 def print_mcmc_no_vary_warning() -> None:
@@ -1135,58 +972,6 @@ def print_mcmc_tentative_burn_warning(
             soft_wrap=True,
         )
     console.print()
-
-
-def print_mcmc_incomplete_error(diagnostics_path: Path) -> None:
-    """Report a specific fail-closed MCMC outcome before the CLI boundary."""
-    error_console.print()
-    error_console.print(
-        "[red] -- ERROR: MCMC analysis is incomplete; posterior products were "
-        "withheld.",
-        soft_wrap=True,
-    )
-    error_console.print(
-        f"    See '{diagnostics_path}' for details.",
-        soft_wrap=True,
-    )
-    error_console.print()
-
-
-def print_model_error(name: str) -> None:
-    """Display an error message for unavailable models.
-
-    Args:
-        name (str): The name of the model that is not available.
-
-    """
-    from chemex.models.factory import model_factory
-
-    error_console.print()
-    error_console.print(f"[red] -- ERROR: The model '{name}' is not available.")
-    error_console.print()
-    error_console.print("The available models are:")
-    for model_name in sorted(model_factory.set):
-        error_console.print(f"    - '{model_name}'")
-    error_console.print()
-
-
-def print_model_suffix_error(
-    name: str,
-    unknown_suffixes: set[str],
-    supported_suffixes: tuple[str, ...],
-) -> None:
-    """Display an error message for unsupported model suffixes."""
-    suffixes = ", ".join(f"'.{suffix}'" for suffix in sorted(unknown_suffixes))
-
-    error_console.print()
-    error_console.print(
-        f"[red] -- ERROR: The model '{name}' uses unsupported suffixes: {suffixes}.",
-    )
-    error_console.print()
-    error_console.print("The supported model suffixes are:")
-    for suffix in supported_suffixes:
-        error_console.print(f"    - '.{suffix}'")
-    error_console.print()
 
 
 def print_not_implemented_noise_method_warning(
@@ -1307,23 +1092,3 @@ def print_wrong_option(option: str) -> str:
         "[/] "
         "for a complete list of valid options."
     )
-
-
-def print_method_error(filename: Path, section: str, options: set[int | str]) -> None:
-    """Display errors for invalid methods or options in a specific section of a file.
-
-    Args:
-        filename (Path): The file containing the error.
-        section (str): The section of the file with the erroneous method or option.
-        options (set[int | str]): Set of options or methods that are incorrect.
-
-    """
-    error_console.print()
-    error_console.print(
-        f"[red] -- ERROR: Error reading section '[{section}]' of '{filename}' --",
-    )
-    for option in options:
-        error_console.print(
-            METHOD_ERROR_MESSAGES.get(str(option), print_wrong_option(str(option))),
-        )
-    error_console.print()

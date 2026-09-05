@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,7 +21,6 @@ from chemex.configuration.method_plan import MethodFormatError, MethodPlan, Sour
 from chemex.configuration.method_v1 import adapt_v1
 from chemex.configuration.method_v2 import adapt_v2
 from chemex.configuration.utils import key_to_lower
-from chemex.messages import print_method_error
 from chemex.parameters.spin_system import SpinSystem
 from chemex.toml import read_toml
 
@@ -251,8 +249,11 @@ def read_methods(filenames: Iterable[Path]) -> Methods:
             try:
                 method = Method(**settings)
             except ValidationError as error:
-                options = {option for err in error.errors() for option in err["loc"]}
-                print_method_error(filename, section, options)
-                sys.exit(1)
+                first = error.errors()[0]
+                field = " -> ".join(str(item) for item in first["loc"])
+                raise MethodFormatError(
+                    str(first["msg"]),
+                    SourceRef(filename, str(section), field or "<section>"),
+                ) from error
             methods[section] = method
     return methods

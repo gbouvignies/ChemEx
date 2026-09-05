@@ -8,6 +8,7 @@ import pytest
 from chemex.chemex import _read_fit_methods
 from chemex.cli import build_parser
 from chemex.configuration.method_plan import FormatOrigin
+from chemex.toml import TomlReadError
 
 
 def _fit_args(method: Path) -> Namespace:
@@ -53,20 +54,17 @@ def test_fit_cli_does_not_emit_v1_deprecation_warning_for_v2(
     assert "Method format v1 is deprecated" not in capsys.readouterr().out
 
 
-def test_fit_cli_reports_method_errors_on_stderr(
+def test_fit_method_reader_preserves_typed_toml_error(
     tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
 ) -> None:
     method = tmp_path / "invalid.toml"
     method.write_text("[STEP\n", encoding="utf-8")
 
-    with pytest.raises(SystemExit) as error_info:
+    with pytest.raises(TomlReadError) as error_info:
         _read_fit_methods(_fit_args(method))
 
-    output = capsys.readouterr()
-    assert error_info.value.code == 1
-    assert "Error in the TOML file" in output.err
-    assert "Traceback (most recent call last)" not in output.out + output.err
+    assert error_info.value.filename == method
+    assert error_info.value.__cause__ is not None
 
 
 def test_fit_parser_defaults_execution_arguments_to_auto() -> None:

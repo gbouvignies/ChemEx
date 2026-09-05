@@ -11,6 +11,7 @@ import pytest
 from chemex import __version__
 from chemex import run_info as run_info_module
 from chemex.configuration.parameters import read_defaults
+from chemex.exceptions import InputFileReadError
 from chemex.parameters.name import ParamName
 from chemex.parameters.parameterization import (
     ParameterDeclaration,
@@ -114,6 +115,17 @@ def _write_input(path: Path, content: str = "[input]\nvalue = 1\n") -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
     return path
+
+
+def test_capture_input_files_preserves_path_and_os_cause(tmp_path: Path) -> None:
+    missing = tmp_path / "missing.toml"
+    args = Namespace(experiments=[missing], parameters=[], method=None)
+
+    with pytest.raises(InputFileReadError) as error_info:
+        run_info_module.capture_input_files(args, tmp_path)
+
+    assert error_info.value.path == missing
+    assert isinstance(error_info.value.__cause__, FileNotFoundError)
 
 
 def test_write_run_info_captures_inputs_parameters_and_runtime(
@@ -606,7 +618,7 @@ def test_failed_staging_preserves_existing_run_info(
     missing_input = tmp_path / "missing.toml"
     monkeypatch.setattr(run_info_module, "_git_metadata", lambda: None)
 
-    with pytest.raises(FileNotFoundError):
+    with pytest.raises(InputFileReadError) as error_info:
         _write_run_info(
             Namespace(
                 experiments=[missing_input],
@@ -618,6 +630,8 @@ def test_failed_staging_preserves_existing_run_info(
             working_directory=tmp_path,
         )
 
+    assert error_info.value.path == missing_input
+    assert isinstance(error_info.value.__cause__, FileNotFoundError)
     assert existing_run.read_text(encoding="utf-8") == "schema_version = 1\n"
     assert not list(output.glob(".run_info-*"))
 

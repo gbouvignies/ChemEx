@@ -14,10 +14,10 @@ from chemex.atomic import open_text_atomic, remove_paths_best_effort, write_text
 from chemex.configuration.method_plan import McmcRequest
 from chemex.configuration.methods import McmcSettings
 from chemex.containers.experiments import Experiments
+from chemex.exceptions import ArtifactPublicationError, ChemExError
 from chemex.messages import (
     McmcProgressReporter,
     console,
-    print_mcmc_incomplete_error,
     print_mcmc_tentative_burn_warning,
 )
 from chemex.optimize.native_deterministic import NativeDeterministicFit
@@ -82,7 +82,7 @@ _MCMC_ARTIFACT_NAMES = (
 )
 
 
-class NativeMcmcIncompleteError(RuntimeError):
+class NativeMcmcIncompleteError(ChemExError, RuntimeError):
     """Raised when native product MCMC cannot publish a complete chain."""
 
     def __init__(
@@ -95,6 +95,8 @@ class NativeMcmcIncompleteError(RuntimeError):
         autocorrelation_time: Array | None = None,
         autocorrelation_time_reliable: bool = False,
         autocorrelation_warning: str | None = None,
+        diagnostics_path: Path | None = None,
+        evidence_path: Path | None = None,
     ) -> None:
         super().__init__(message)
         self.terminal = terminal
@@ -103,6 +105,42 @@ class NativeMcmcIncompleteError(RuntimeError):
         self.autocorrelation_time = autocorrelation_time
         self.autocorrelation_time_reliable = autocorrelation_time_reliable
         self.autocorrelation_warning = autocorrelation_warning
+        self.diagnostics_path = diagnostics_path
+        self.evidence_path = evidence_path
+
+
+class McmcConfigurationError(ChemExError, ValueError):
+    """A trusted MCMC request cannot be executed as configured."""
+
+    def __init__(
+        self,
+        explanation: str,
+        *,
+        diagnostics_path: Path | None = None,
+    ) -> None:
+        super().__init__(explanation)
+        self.explanation = explanation
+        self.diagnostics_path = diagnostics_path
+
+
+def _mcmc_publication_error(
+    operation: str,
+    path: Path,
+    error: OSError,
+    *,
+    preserved_from: BaseException | None = None,
+) -> ArtifactPublicationError:
+    failure = ArtifactPublicationError(operation, path, error)
+    if preserved_from is not None:
+        if isinstance(preserved_from, KeyboardInterrupt) or (
+            getattr(preserved_from, "terminal", None) == "interrupted"
+        ):
+            object.__setattr__(failure, "terminal", "interrupted")
+        for name in ("evidence_path", "diagnostics_path"):
+            value = getattr(preserved_from, name, None)
+            if isinstance(value, Path):
+                object.__setattr__(failure, name, value)
+    return failure
 
 
 def _compatibility_error_from_result(
@@ -148,7 +186,7 @@ def resolve_mcmc_request(
             f"MCMC requires at least {min_walkers} walkers for {nvarys} fitted "
             f"parameters"
         )
-        raise ValueError(msg)
+        raise McmcConfigurationError(msg)
 
     workers = request.workers or (execution.workers if execution is not None else 1)
     native_threads = execution.native_threads if execution is not None else None
@@ -479,27 +517,62 @@ def write_mcmc_outputs(
     timings = {} if timings is None else timings
     output_start = perf_counter()
     path_mcmc = path / "Statistics" / "MCMC"
-    path_mcmc.mkdir(parents=True, exist_ok=True)
+    try:
+        path_mcmc.mkdir(parents=True, exist_ok=True)
+    except OSError as error:
+        raise ArtifactPublicationError(
+            "prepare MCMC output",
+            path_mcmc,
+            error,
+        ) from error
 
     phase_start = perf_counter()
-    _write_summary(result, path_mcmc, parameter_model)
+    try:
+        _write_summary(result, path_mcmc, parameter_model)
+    except OSError as error:
+        raise ArtifactPublicationError(
+            "publish MCMC summary",
+            path_mcmc / "summary.toml",
+            error,
+        ) from error
     timings["output_summary_seconds"] = perf_counter() - phase_start
 
     phase_start = perf_counter()
-    _write_samples(result, path_mcmc, parameter_model)
+    try:
+        _write_samples(result, path_mcmc, parameter_model)
+    except OSError as error:
+        raise ArtifactPublicationError(
+            "publish MCMC samples",
+            path_mcmc / "samples.tsv",
+            error,
+        ) from error
     timings["output_samples_seconds"] = perf_counter() - phase_start
 
     phase_start = perf_counter()
-    _write_correlations(result, path_mcmc, parameter_model)
+    try:
+        _write_correlations(result, path_mcmc, parameter_model)
+    except OSError as error:
+        raise ArtifactPublicationError(
+            "publish MCMC correlations",
+            path_mcmc / "correlations.tsv",
+            error,
+        ) from error
     timings["output_correlations_seconds"] = perf_counter() - phase_start
 
     phase_start = perf_counter()
-    write_mcmc_plots(
-        result,
-        settings,
-        path_mcmc,
-        parameter_names=_format_parameter_ids(result.var_names, parameter_model),
-    )
+    try:
+        write_mcmc_plots(
+            result,
+            settings,
+            path_mcmc,
+            parameter_names=_format_parameter_ids(result.var_names, parameter_model),
+        )
+    except OSError as error:
+        raise ArtifactPublicationError(
+            "publish MCMC plots",
+            path_mcmc / "plots.pdf",
+            error,
+        ) from error
     timings["output_plots_seconds"] = perf_counter() - phase_start
     timings["output_total_seconds"] = perf_counter() - output_start
     if "sampling_seconds" in timings and "result_processing_seconds" in timings:
@@ -508,14 +581,21 @@ def write_mcmc_outputs(
             + timings["result_processing_seconds"]
             + timings["output_total_seconds"]
         )
-    _write_diagnostics(
-        result,
-        settings,
-        path_mcmc,
-        timings,
-        engine=engine,
-        root_seed=root_seed,
-    )
+    try:
+        _write_diagnostics(
+            result,
+            settings,
+            path_mcmc,
+            timings,
+            engine=engine,
+            root_seed=root_seed,
+        )
+    except OSError as error:
+        raise ArtifactPublicationError(
+            "publish MCMC diagnostics",
+            path_mcmc / "diagnostics.toml",
+            error,
+        ) from error
 
 
 def _clear_mcmc_artifacts(path: Path) -> None:
@@ -671,35 +751,52 @@ def run_native_mcmc(  # noqa: C901 - closed execution/publication lifecycle
     if seed_recorder is not None:
         seed_recorder(root_seed)
     statistic_path = path / "Statistics" / "MCMC"
-    statistic_path.mkdir(parents=True, exist_ok=True)
-    _clear_mcmc_artifacts(statistic_path)
-    _write_native_mcmc_state_diagnostics(
-        statistic_path,
-        settings=effective,
-        root_seed=root_seed,
-        parameter_ids=fit.problem.controlled_ids,
-        status="running",
-    )
+    try:
+        statistic_path.mkdir(parents=True, exist_ok=True)
+        _clear_mcmc_artifacts(statistic_path)
+        _write_native_mcmc_state_diagnostics(
+            statistic_path,
+            settings=effective,
+            root_seed=root_seed,
+            parameter_ids=fit.problem.controlled_ids,
+            status="running",
+        )
+    except OSError as error:
+        filename = error.filename
+        destination = Path(filename) if isinstance(filename, str) else statistic_path
+        raise ArtifactPublicationError(
+            "prepare MCMC diagnostics",
+            destination,
+            error,
+        ) from error
     invalid_bound_ids = product_mcmc_invalid_bound_ids(fit.problem)
     if invalid_bound_ids:
         parameter_names = _format_parameter_ids(
             invalid_bound_ids,
             fit.parameter_model,
         )
-        error = ValueError(
+        error = McmcConfigurationError(
             "Native MCMC requires finite lower and upper bounds with lower < upper "
-            f"for every fitted parameter; affected: {', '.join(parameter_names)}"
+            f"for every fitted parameter; affected: {', '.join(parameter_names)}",
+            diagnostics_path=statistic_path / "diagnostics.toml",
         )
-        _write_native_mcmc_state_diagnostics(
-            statistic_path,
-            settings=effective,
-            root_seed=root_seed,
-            parameter_ids=fit.problem.controlled_ids,
-            status="incomplete",
-            terminal="failed",
-            completed_steps=0,
-            failure=error,
-        )
+        try:
+            _write_native_mcmc_state_diagnostics(
+                statistic_path,
+                settings=effective,
+                root_seed=root_seed,
+                parameter_ids=fit.problem.controlled_ids,
+                status="incomplete",
+                terminal="failed",
+                completed_steps=0,
+                failure=error,
+            )
+        except OSError as publication_error:
+            raise ArtifactPublicationError(
+                "publish incomplete MCMC diagnostics",
+                statistic_path / "diagnostics.toml",
+                publication_error,
+            ) from publication_error
         raise error
 
     timings: dict[str, float] = {}
@@ -752,6 +849,11 @@ def run_native_mcmc(  # noqa: C901 - closed execution/publication lifecycle
         mcmc_evidence = mcmc_operation.evidence
         timings["sampling_seconds"] = perf_counter() - phase_start
         completed_steps = max(0, mcmc_operation.complete_state_count - 1)
+        if mcmc_operation.terminal is McmcOperationTerminal.FAILED:
+            failure = mcmc_operation.failure
+            if failure is None:
+                raise RuntimeError("Failed MCMC operation lost its original exception")
+            raise failure
         if (
             mcmc_operation.terminal is not McmcOperationTerminal.COMPLETED
             or mcmc_operation.evidence is None
@@ -850,6 +952,18 @@ def run_native_mcmc(  # noqa: C901 - closed execution/publication lifecycle
                         fit.parameter_model,
                     )
                     published_evidence = raw_evidence
+                    object.__setattr__(
+                        error,
+                        "evidence_path",
+                        statistic_path / "raw_chain.tsv",
+                    )
+                except OSError as publication_error:
+                    raise _mcmc_publication_error(
+                        "publish interrupted MCMC evidence",
+                        statistic_path / "raw_chain.tsv",
+                        publication_error,
+                        preserved_from=error,
+                    ) from publication_error
                 except (Exception, KeyboardInterrupt):  # noqa: BLE001
                     error.add_note(
                         "ChemEx could not publish an interrupted qualified MCMC chain."
@@ -863,6 +977,18 @@ def run_native_mcmc(  # noqa: C901 - closed execution/publication lifecycle
                         fit.problem.controlled_ids,
                     )
                     published_capture = raw_capture
+                    object.__setattr__(
+                        error,
+                        "evidence_path",
+                        statistic_path / "raw_capture.tsv",
+                    )
+                except OSError as publication_error:
+                    raise _mcmc_publication_error(
+                        "publish interrupted MCMC execution capture",
+                        statistic_path / "raw_capture.tsv",
+                        publication_error,
+                        preserved_from=error,
+                    ) from publication_error
                 except (Exception, KeyboardInterrupt):  # noqa: BLE001
                     error.add_note(
                         "ChemEx could not publish interrupted MCMC execution capture."
@@ -882,32 +1008,87 @@ def run_native_mcmc(  # noqa: C901 - closed execution/publication lifecycle
                     analysis_result=analysis_result,
                     timings=timings,
                 )
+                object.__setattr__(
+                    error,
+                    "diagnostics_path",
+                    statistic_path / "diagnostics.toml",
+                )
+            except OSError as publication_error:
+                raise _mcmc_publication_error(
+                    "publish interrupted MCMC diagnostics",
+                    statistic_path / "diagnostics.toml",
+                    publication_error,
+                    preserved_from=error,
+                ) from publication_error
             except (Exception, KeyboardInterrupt):  # noqa: BLE001
                 error.add_note("ChemEx could not publish interrupted MCMC diagnostics.")
             raise
-        _clear_mcmc_artifacts(statistic_path)
-        if raw_evidence is not None:
-            _write_raw_chain_evidence(
-                raw_evidence,
+        publication_operation = "publish incomplete MCMC diagnostics"
+        publication_path = statistic_path / "diagnostics.toml"
+        try:
+            _clear_mcmc_artifacts(statistic_path)
+            if raw_evidence is not None:
+                publication_operation = "publish incomplete MCMC evidence"
+                publication_path = statistic_path / "raw_chain.tsv"
+                _write_raw_chain_evidence(
+                    raw_evidence,
+                    statistic_path,
+                    fit.parameter_model,
+                )
+                if isinstance(error, NativeMcmcIncompleteError):
+                    error.evidence_path = publication_path
+            publication_operation = "publish incomplete MCMC diagnostics"
+            publication_path = statistic_path / "diagnostics.toml"
+            _write_native_mcmc_state_diagnostics(
                 statistic_path,
-                fit.parameter_model,
+                settings=effective,
+                root_seed=root_seed,
+                parameter_ids=fit.problem.controlled_ids,
+                status="incomplete",
+                terminal=terminal,
+                completed_steps=failure_completed_steps,
+                failure=error,
+                raw_evidence=raw_evidence,
+                raw_capture=None,
+                analysis_result=analysis_result,
+                timings=timings,
             )
-        _write_native_mcmc_state_diagnostics(
-            statistic_path,
-            settings=effective,
-            root_seed=root_seed,
-            parameter_ids=fit.problem.controlled_ids,
-            status="incomplete",
-            terminal=terminal,
-            completed_steps=failure_completed_steps,
-            failure=error,
-            raw_evidence=raw_evidence,
-            raw_capture=None,
-            analysis_result=analysis_result,
-            timings=timings,
-        )
-        if isinstance(error, NativeMcmcIncompleteError):
-            print_mcmc_incomplete_error(statistic_path / "diagnostics.toml")
+            if isinstance(
+                error,
+                (ArtifactPublicationError, NativeMcmcIncompleteError),
+            ):
+                object.__setattr__(
+                    error,
+                    "diagnostics_path",
+                    statistic_path / "diagnostics.toml",
+                )
+        except OSError as publication_error:
+            if isinstance(error, NativeMcmcIncompleteError):
+                remove_paths_best_effort(
+                    (statistic_path / "diagnostics.toml",),
+                    error,
+                )
+                raise _mcmc_publication_error(
+                    publication_operation,
+                    publication_path,
+                    publication_error,
+                    preserved_from=error,
+                ) from publication_error
+            error.add_note(
+                "ChemEx could not publish incomplete MCMC diagnostics: "
+                f"{type(publication_error).__name__}: {publication_error}"
+            )
+            remove_paths_best_effort(
+                (statistic_path / "diagnostics.toml",),
+                error,
+            )
+        except KeyboardInterrupt:
+            raise
+        except Exception as publication_error:  # noqa: BLE001 - preserve primary failure
+            error.add_note(
+                "ChemEx could not publish incomplete MCMC diagnostics: "
+                f"{type(publication_error).__name__}: {publication_error}"
+            )
         raise
     else:
         return analysis_result

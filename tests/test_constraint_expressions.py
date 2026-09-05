@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-import chemex.parameters.database as database_module
-from chemex.parameters.database import ParameterCatalog
+from chemex.parameters.database import ConstraintExpressionError, ParameterCatalog
 from chemex.parameters.name import ParamName
 from chemex.parameters.setting import ParamSetting
 from chemex.parameters.spin_system import SpinSystem
@@ -36,76 +35,39 @@ def test_constraint_reference_uses_non_self_match_when_available() -> None:
     assert get_expression(catalog, local_pb.id_) == global_pb.id_
 
 
-def test_constraint_reference_exits_on_missing_match(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_constraint_reference_raises_typed_error_on_missing_match() -> None:
     global_pb = make_param("PB")
     catalog = make_catalog(global_pb)
-    recorded: dict[str, str] = {}
 
-    monkeypatch.setattr(
-        database_module,
-        "print_error_constraints",
-        lambda expression, detail=None: recorded.update(
-            {"expression": expression, "detail": detail or ""}
-        ),
-    )
-
-    with pytest.raises(SystemExit):
+    with pytest.raises(ConstraintExpressionError) as error_info:
         catalog.set_expressions(["PB = [BOGUS]"])
 
-    assert recorded == {
-        "expression": "PB = [BOGUS]",
-        "detail": 'No parameter matches reference "[BOGUS]"',
-    }
+    assert error_info.value.expression == "PB = [BOGUS]"
+    assert error_info.value.detail == 'No parameter matches reference "[BOGUS]"'
     assert get_expression(catalog, global_pb.id_) == ""
 
 
-def test_constraint_reference_exits_on_missing_separator(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_constraint_reference_raises_typed_error_on_missing_separator() -> None:
     global_pb = make_param("PB")
     catalog = make_catalog(global_pb)
-    recorded: dict[str, str] = {}
-
-    monkeypatch.setattr(
-        database_module,
-        "print_error_constraints",
-        lambda expression, detail=None: recorded.update(
-            {"expression": expression, "detail": detail or ""}
-        ),
-    )
-
-    with pytest.raises(SystemExit):
+    with pytest.raises(ConstraintExpressionError) as error_info:
         catalog.set_expressions(["PB [BOGUS]"])
 
-    assert recorded == {
-        "expression": "PB [BOGUS]",
-        "detail": "Expected exactly one '=' in the constraint expression",
-    }
+    assert error_info.value.expression == "PB [BOGUS]"
+    assert error_info.value.detail == (
+        "Expected exactly one '=' in the constraint expression"
+    )
     assert get_expression(catalog, global_pb.id_) == ""
 
 
-def test_constraint_reference_exits_on_self_only_match(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_constraint_reference_raises_typed_error_on_self_only_match() -> None:
     local_pb = make_param("PB", "L55HD2")
     catalog = make_catalog(local_pb)
-    recorded: dict[str, str] = {}
-
-    monkeypatch.setattr(
-        database_module,
-        "print_error_constraints",
-        lambda expression, detail=None: recorded.update(
-            {"expression": expression, "detail": detail or ""}
-        ),
-    )
-
-    with pytest.raises(SystemExit):
+    with pytest.raises(ConstraintExpressionError) as error_info:
         catalog.set_expressions(["PB, NUC->L55HD2 = [PB]"])
 
-    assert recorded == {
-        "expression": "PB, NUC->L55HD2 = [PB]",
-        "detail": 'Reference "[PB]" resolves only to the constrained parameter',
-    }
+    assert error_info.value.expression == "PB, NUC->L55HD2 = [PB]"
+    assert error_info.value.detail == (
+        'Reference "[PB]" resolves only to the constrained parameter'
+    )
     assert get_expression(catalog, local_pb.id_) == ""

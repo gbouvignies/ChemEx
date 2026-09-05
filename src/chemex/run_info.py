@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Literal
 
 from chemex.atomic import write_text_atomic
+from chemex.exceptions import ArtifactPublicationError, InputFileReadError
 from chemex.parameters.parameterization import (
     ParameterRole,
     SealedParameterModel,
@@ -32,6 +33,7 @@ RunOutcomeStatus = Literal["running", "complete", "incomplete"]
 FailureStage = Literal[
     "deterministic_fit",
     "restart_publication",
+    "simulation",
     "uncertainty",
     "statistics",
     "output",
@@ -45,6 +47,13 @@ def mark_failure_stage(error: BaseException, stage: FailureStage) -> BaseExcepti
     """Assign a product failure stage without changing the exception type."""
     if getattr(error, "failure_stage", None) is None:
         error.failure_stage = stage  # ty: ignore[unresolved-attribute]
+    return error
+
+
+def mark_method_step(error: BaseException, step: str) -> BaseException:
+    """Assign a Method Step without changing the propagated failure type."""
+    if getattr(error, "method_step", None) is None:
+        error.method_step = step  # ty: ignore[unresolved-attribute]
     return error
 
 
@@ -94,6 +103,14 @@ class RunInfo:
             )
             write_text_atomic(self.path / "restart.toml", text)
             self.restart_revision = snapshot.revision
+        except OSError as error:
+            failure = ArtifactPublicationError(
+                "publish the restart state",
+                self.path / "restart.toml",
+                error,
+            )
+            mark_failure_stage(failure, "restart_publication")
+            raise failure from error
         except (Exception, KeyboardInterrupt) as error:
             mark_failure_stage(error, "restart_publication")
             raise
@@ -133,6 +150,14 @@ class RunInfo:
             text = run_path.read_text(encoding="utf-8") + "\n".join(lines)
             write_text_atomic(run_path, text)
             self.stochastic_operations += (record,)
+        except OSError as error:
+            failure = ArtifactPublicationError(
+                "record the stochastic operation",
+                self.path / "run.toml",
+                error,
+            )
+            mark_failure_stage(failure, "run_info")
+            raise failure from error
         except (Exception, KeyboardInterrupt) as error:
             mark_failure_stage(error, "run_info")
             raise
@@ -158,6 +183,14 @@ class RunInfo:
                 restart_revision=self.restart_revision,
                 failure_stage=stage,
             )
+        except OSError as error:
+            failure = ArtifactPublicationError(
+                f"publish the {status} run outcome",
+                self.path / "outcome.toml",
+                error,
+            )
+            mark_failure_stage(failure, "run_info")
+            raise failure from error
         except (Exception, KeyboardInterrupt) as error:
             mark_failure_stage(error, "run_info")
             raise
@@ -259,9 +292,11 @@ def capture_input_files(
             continue
         for path in paths:
             resolved_path = _resolve_path(path, cwd)
-            files.append(
-                InputFile(category, path, resolved_path, resolved_path.read_bytes())
-            )
+            try:
+                content = resolved_path.read_bytes()
+            except OSError as error:
+                raise InputFileReadError(resolved_path, error) from error
+            files.append(InputFile(category, path, resolved_path, content))
     return tuple(files)
 
 
@@ -521,6 +556,47 @@ def write_run_outcome(
 
 
 def write_run_info(
+    args: Namespace,
+    *,
+    parameter_model: SealedParameterModel,
+    starting_values: AnalysisValuesSnapshot,
+    execution: ExecutionSettings | None = None,
+    input_files: Sequence[InputFile] | None = None,
+    argv: Sequence[str] | None = None,
+    working_directory: Path | None = None,
+    timestamp: datetime | None = None,
+) -> RunInfo:
+    """Publish the invocation record, contextualizing only concrete I/O failures."""
+    output_directory = _resolve_path(
+        args.output,
+        Path.cwd().resolve()
+        if working_directory is None
+        else working_directory.resolve(),
+    )
+    try:
+        return _write_run_info(
+            args,
+            parameter_model=parameter_model,
+            starting_values=starting_values,
+            execution=execution,
+            input_files=input_files,
+            argv=argv,
+            working_directory=working_directory,
+            timestamp=timestamp,
+        )
+    except InputFileReadError:
+        raise
+    except OSError as error:
+        failure = ArtifactPublicationError(
+            "publish run information",
+            output_directory / "run_info",
+            error,
+        )
+        mark_failure_stage(failure, "run_info")
+        raise failure from error
+
+
+def _write_run_info(
     args: Namespace,
     *,
     parameter_model: SealedParameterModel,

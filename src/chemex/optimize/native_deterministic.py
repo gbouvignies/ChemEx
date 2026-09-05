@@ -22,6 +22,7 @@ from chemex.evaluation.native import (
     EvaluationResult,
     ResolvedEvaluationValues,
 )
+from chemex.exceptions import ArtifactPublicationError, ChemExError
 from chemex.messages import (
     MinimizationProgressReporter,
     UncertaintyProgressReporter,
@@ -31,6 +32,7 @@ from chemex.messages import (
 )
 from chemex.optimize.de_direct_trf import (
     DeCoordinateSemantics,
+    DeSearchExecution,
     DeSearchInvocation,
     DeSearchTerminal,
     execute_de_search,
@@ -50,6 +52,7 @@ from chemex.optimize.direct_trf import (
     FitCommitOperation,
     FitCommitTerminal,
     OptimizationProblem,
+    TerminalFailure,
     build_bounded_independent_frame,
     execute_fit_commit,
 )
@@ -85,6 +88,89 @@ from chemex.runtime.environment import RuntimeEnvironment
 _TRF_OBJECTIVE_REQUESTS_PER_DIMENSION = 2000
 
 
+type DeterministicTerminalRecord = (
+    DeSearchExecution
+    | EvaluationFailure
+    | FitCommitOperation
+    | GroupedDirectTrfOutcome
+    | ProfiledGridOutcome
+)
+
+
+class NativeDeterministicAnalysisError(ChemExError, RuntimeError):
+    """Recognized deterministic terminal state with no committed fit."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        reason: str,
+        outcome: DeterministicTerminalRecord,
+        failures: tuple[TerminalFailure, ...],
+    ) -> None:
+        super().__init__(message)
+        self.terminal = "failed"
+        self.reason = reason
+        self.outcome = outcome
+        self.failures = failures
+
+
+class NativeDeterministicInternalError(RuntimeError):
+    """Unexpected deterministic failure retaining its terminal evidence."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        outcome: DeterministicTerminalRecord,
+        failures: tuple[TerminalFailure, ...] = (),
+    ) -> None:
+        super().__init__(message)
+        self.outcome = outcome
+        self.failures = failures
+
+
+def _is_known_analysis_failure(failure: TerminalFailure) -> bool:
+    evaluation_failure = failure.evaluation_failure
+    return failure.category in {
+        "non_converged",
+        "objective_budget_exhausted",
+        "objective_scalarization_failure",
+    } or (
+        evaluation_failure is not None
+        and evaluation_failure.validity == "INVALID_TRIAL"
+    )
+
+
+def _known_grouped_analysis_error(
+    outcome: GroupedDirectTrfOutcome,
+) -> NativeDeterministicAnalysisError | None:
+    failures = tuple(
+        component.failure
+        for component in outcome.components
+        if component.failure is not None
+    )
+    if (
+        outcome.terminal.value != "component_failure"
+        or not failures
+        or not all(_is_known_analysis_failure(failure) for failure in failures)
+    ):
+        return None
+    categories = {failure.category for failure in failures}
+    if "objective_budget_exhausted" in categories:
+        reason = "The objective-evaluation budget was exhausted."
+    elif categories == {"non_converged"}:
+        reason = "The optimizer did not converge."
+    else:
+        reason = "The optimizer encountered an invalid numerical trial."
+    return NativeDeterministicAnalysisError(
+        "Native deterministic fitting did not produce an accepted fit.",
+        reason=reason,
+        outcome=outcome,
+        failures=failures,
+    )
+
+
 def _propagate_uncertainty_interruption(
     finalization_error: BaseException | None = None,
 ) -> Never:
@@ -93,6 +179,33 @@ def _propagate_uncertainty_interruption(
     if finalization_error is not None:
         error.add_note("ChemEx could not publish interrupted uncertainty output.")
         raise error from finalization_error
+    raise error
+
+
+def _propagate_output_failure(
+    error: BaseException,
+    path: Path,
+    *,
+    interrupted: bool = False,
+) -> Never:
+    """Add deterministic output context without reclassifying non-I/O failures."""
+    if isinstance(error, ArtifactPublicationError):
+        if interrupted:
+            object.__setattr__(error, "terminal", "interrupted")
+        raise error
+    if isinstance(error, OSError):
+        filename = error.filename
+        destination = Path(filename) if isinstance(filename, str) else path
+        failure = ArtifactPublicationError(
+            "publish deterministic analysis output",
+            destination,
+            error,
+        )
+        mark_failure_stage(failure, "output")
+        if interrupted:
+            object.__setattr__(failure, "terminal", "interrupted")
+        raise failure from error
+    mark_failure_stage(error, "output")
     raise error
 
 
@@ -284,9 +397,20 @@ def _run_product_de_search(
     candidate = outcome.best_candidate
     if not outcome.restart_eligible or candidate is None:
         failure = outcome.failure
-        detail = "" if failure is None else f": {failure.category}: {failure.message}"
-        raise RuntimeError(
-            f"Selected-coordinate DE search produced no eligible candidate{detail}"
+        if (
+            outcome.terminal is DeSearchTerminal.BUDGET_EXHAUSTED
+            and failure is not None
+        ):
+            raise NativeDeterministicAnalysisError(
+                "Selected-coordinate DE search produced no eligible candidate.",
+                reason="The objective-evaluation budget was exhausted.",
+                outcome=outcome,
+                failures=(failure,),
+            )
+        raise NativeDeterministicInternalError(
+            "Selected-coordinate DE search produced no eligible candidate",
+            outcome=outcome,
+            failures=() if failure is None else (failure,),
         )
     return problem.restart_from(candidate.full_vector)
 
@@ -366,9 +490,27 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
         )
         evaluated = engine.new_evaluator().evaluate(frame)
         if isinstance(evaluated, EvaluationFailure):
-            raise RuntimeError(
-                "Native deterministic evaluation failed: "
-                f"{evaluated.category}: {evaluated.message}"
+            if evaluated.validity == "INVALID_TRIAL":
+                failure = TerminalFailure(
+                    evaluated.category,
+                    evaluated.message,
+                    evaluated,
+                )
+                raise NativeDeterministicAnalysisError(
+                    "Native deterministic evaluation did not produce a valid result.",
+                    reason="The requested parameter state produced an invalid numerical trial.",
+                    outcome=evaluated,
+                    failures=(failure,),
+                )
+            failure = TerminalFailure(
+                evaluated.category,
+                evaluated.message,
+                evaluated,
+            )
+            raise NativeDeterministicInternalError(
+                "Native deterministic evaluation failed",
+                outcome=evaluated,
+                failures=(failure,),
             )
         result = evaluated
         continuity_snapshot = _commit_resolved_continuity_if_changed(
@@ -378,8 +520,8 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
         )
         if continuity_snapshot is not None and run_info is not None:
             run_info.publish_restart(continuity_snapshot)
+        _materialize_evaluation(experiments, result)
         try:
-            _materialize_evaluation(experiments, result)
             execute_post_fit(
                 experiments,
                 path,
@@ -390,9 +532,8 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
                 parameter_values=result.resolved_values,
                 parameterization=parameterization,
             )
-        except (Exception, KeyboardInterrupt) as error:
-            mark_failure_stage(error, "output")
-            raise
+        except (Exception, KeyboardInterrupt) as error:  # noqa: BLE001
+            _propagate_output_failure(error, path)
         return None
 
     problem = OptimizationProblem.from_native(
@@ -451,36 +592,32 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
     if outcome.terminal.value in {"cancelled", "interrupted"}:
         raise KeyboardInterrupt("Native deterministic fit interrupted")
     if commit is None:
-        component_failures = (
+        if isinstance(outcome, GroupedDirectTrfOutcome):
+            known_error = _known_grouped_analysis_error(outcome)
+            if known_error is not None:
+                raise known_error
+        failures = (
             tuple(
-                (component.controlled_ids, component.failure)
+                component.failure
                 for component in outcome.components
                 if component.failure is not None
             )
             if isinstance(outcome, GroupedDirectTrfOutcome)
             else ()
         )
-        if component_failures:
-            detail = ": " + "; ".join(
-                f"{controlled_ids!r}: {failure.category}: {failure.message}"
-                for controlled_ids, failure in component_failures
-            )
-        elif isinstance(outcome, ProfiledGridOutcome) and outcome.failure is not None:
-            detail = f": {outcome.failure.category}: {outcome.failure.message}"
-        else:
-            detail = ""
-        msg = (
-            f"Native deterministic fit did not commit: {outcome.terminal.value}{detail}"
+        if isinstance(outcome, ProfiledGridOutcome) and outcome.failure is not None:
+            failures = (outcome.failure,)
+        raise NativeDeterministicInternalError(
+            f"Native deterministic fit did not commit: {outcome.terminal.value}",
+            outcome=outcome,
+            failures=failures,
         )
-        raise RuntimeError(msg)
     if commit.terminal is not FitCommitTerminal.COMMITTED:
         failure = commit.failure
-        detail = (
-            commit.terminal.value
-            if failure is None
-            else f"{failure.category.value}: {failure.message}"
+        raise NativeDeterministicInternalError(
+            "Native deterministic fit commit failed",
+            outcome=commit,
         )
-        raise RuntimeError(f"Native deterministic fit did not commit: {detail}")
     committed_snapshot = commit.committed_snapshot
     if committed_snapshot is None:
         raise RuntimeError("Committed native fit lacks its central-value snapshot")
@@ -528,7 +665,6 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
     except (Exception, KeyboardInterrupt) as error:
         if uncertainty_interrupted:
             _propagate_uncertainty_interruption(error)
-        mark_failure_stage(error, "output")
         raise
     variable_count = len(problem.controlled_ids)
     if isinstance(search, GridSearch):
@@ -553,11 +689,12 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
                 parameterization=parameterization,
                 fitted_ids=problem.controlled_ids,
             )
-        except (Exception, KeyboardInterrupt) as error:
+        except (Exception, KeyboardInterrupt) as error:  # noqa: BLE001
             if uncertainty_interrupted:
+                if isinstance(error, OSError):
+                    _propagate_output_failure(error, path, interrupted=True)
                 _propagate_uncertainty_interruption(error)
-            mark_failure_stage(error, "output")
-            raise
+            _propagate_output_failure(error, path)
         if uncertainty_interrupted:
             _propagate_uncertainty_interruption()
         return fit
@@ -575,11 +712,12 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
             parameterization=parameterization,
             fitted_ids=problem.controlled_ids,
         )
-    except (Exception, KeyboardInterrupt) as error:
+    except (Exception, KeyboardInterrupt) as error:  # noqa: BLE001
         if uncertainty_interrupted:
+            if isinstance(error, OSError):
+                _propagate_output_failure(error, path, interrupted=True)
             _propagate_uncertainty_interruption(error)
-        mark_failure_stage(error, "output")
-        raise
+        _propagate_output_failure(error, path)
     if uncertainty_interrupted:
         _propagate_uncertainty_interruption()
     return fit

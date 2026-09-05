@@ -1,6 +1,6 @@
 """The parsing module contains the code for the parsing of command-line arguments."""
 
-from argparse import ArgumentParser, ArgumentTypeError
+from argparse import SUPPRESS, ArgumentParser, ArgumentTypeError
 from pathlib import Path
 
 from chemex import __version__
@@ -22,6 +22,19 @@ def _execution_count(value: str) -> ExecutionCount:
         msg = "must be 'auto' or a non-negative integer"
         raise ArgumentTypeError(msg)
     return parsed
+
+
+def _add_debug_argument(
+    parser: ArgumentParser,
+    *,
+    inherit_default: bool = False,
+) -> None:
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        default=SUPPRESS if inherit_default else False,
+        help="Show tracebacks and chained causes for unexpected internal errors",
+    )
 
 
 def _add_fit_execution_arguments(parser: ArgumentParser) -> None:
@@ -61,6 +74,8 @@ def build_parser() -> ArgumentParser:
 
     parser = ArgumentParser(description=description, prog="chemex")
 
+    _add_debug_argument(parser)
+
     parser.set_defaults(func=lambda _: parser.print_usage())
     parser.set_defaults(analysis_command=False)
 
@@ -74,6 +89,8 @@ def build_parser() -> ArgumentParser:
 
     # parser for the positional argument "fit"
     fit_parser = subparsers.add_parser("fit", help="Start a fit")
+
+    _add_debug_argument(fit_parser, inherit_default=True)
 
     fit_parser.set_defaults(analysis_command=True)
 
@@ -154,6 +171,8 @@ def build_parser() -> ArgumentParser:
     # parser for the positional argument "simulate"
     simulate_parser = subparsers.add_parser("simulate", help="Start a simulation")
 
+    _add_debug_argument(simulate_parser, inherit_default=True)
+
     simulate_parser.set_defaults(analysis_command=True)
 
     simulate_parser.add_argument(
@@ -225,6 +244,8 @@ def build_parser() -> ArgumentParser:
         help="Plot CEST profiles for dip picking",
     )
 
+    _add_debug_argument(pick_cest_parser, inherit_default=True)
+
     pick_cest_parser.set_defaults(func=pick_cest)
 
     pick_cest_parser.add_argument(
@@ -251,6 +272,8 @@ def build_parser() -> ArgumentParser:
         "plot_param",
         help="Plot one selected parameter from a 'parameters.fit' file",
     )
+
+    _add_debug_argument(plot_param_parser, inherit_default=True)
 
     plot_param_parser.set_defaults(func=plot_param)
 

@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import configparser
-import sys
 from argparse import Namespace
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 
 import chemex.parameters.name as cpn
 import chemex.parameters.spin_system as cns
+from chemex.configuration.parameters import ParameterConfigurationError
+from chemex.exceptions import ChemExError, InputFileReadError
 from chemex.messages import print_making_plots, print_section
 
 
@@ -16,34 +18,50 @@ def plot_param(args: Namespace) -> None:
     params = configparser.ConfigParser()
 
     if len(args.parameters) > 1:
-        sys.exit(
-            "\nError: Multiple parameter files were given. 'chemex plot_param' "
-            "should only be run with a single parameter file.\n",
+        raise ChemExError(
+            "Multiple parameter files were given. 'chemex plot_param' "
+            "requires exactly one parameter file."
         )
 
-    params.read(str(args.parameters.pop()))
+    filename = args.parameters.pop()
+    try:
+        with Path(filename).open(encoding="utf-8") as input_file:
+            params.read_file(input_file)
+    except OSError as error:
+        raise InputFileReadError(Path(filename), error) from error
+    except (UnicodeDecodeError, configparser.Error) as error:
+        raise ParameterConfigurationError(
+            (filename,),
+            "The fitted parameter file could not be parsed.",
+        ) from error
     param_name = cpn.ParamName.from_section(args.parname)
     curves = {}
 
     print_making_plots()
 
-    for section in params.sections():
-        section_name = cpn.ParamName.from_section(section.strip('"'))
-        if param_name.match(section_name):
-            print_section(section)
-            residues: list[int] = []
-            values: list[float] = []
-            errors: list[float] = []
-            for key, entry in params.items(section):
-                residues.append(int(cns.SpinSystem(name=key).numbers["i"]))
-                split = entry.split()
-                values.append(float(split[0]))
-                try:
-                    error = float(split[2].strip("±"))
-                except ValueError:
-                    error = 0.0
-                errors.append(error)
-            curves[section] = (residues, values, errors)
+    try:
+        for section in params.sections():
+            section_name = cpn.ParamName.from_section(section.strip('"'))
+            if param_name.match(section_name):
+                print_section(section)
+                residues: list[int] = []
+                values: list[float] = []
+                errors: list[float] = []
+                for key, entry in params.items(section):
+                    residues.append(int(cns.SpinSystem(name=key).numbers["i"]))
+                    split = entry.split()
+                    values.append(float(split[0]))
+                    try:
+                        uncertainty = float(split[2].strip("±"))
+                    except ValueError:
+                        uncertainty = 0.0
+                    errors.append(uncertainty)
+                curves[section] = (residues, values, errors)
+    except (IndexError, KeyError, ValueError, configparser.Error) as error:
+        raise ParameterConfigurationError(
+            (filename,),
+            "The fitted parameter values could not be parsed.",
+        ) from error
 
     _, axis = plt.subplots(figsize=(12, 5))
     axis.yaxis.grid(visible=True)

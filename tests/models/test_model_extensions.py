@@ -1,7 +1,7 @@
 import pytest
 
 from chemex.models.loader import register_kinetic_settings
-from chemex.models.model import ModelSpec
+from chemex.models.model import ModelSelectionError, ModelSpec
 
 
 def setup_module() -> None:
@@ -19,5 +19,8 @@ def test_model_spec_parses_suffix_combinations() -> None:
 
 
 def test_model_spec_rejects_unknown_suffix() -> None:
-    with pytest.raises(SystemExit):
+    with pytest.raises(ModelSelectionError) as error_info:
         ModelSpec.from_name("2st.xyz")
+
+    assert error_info.value.name == "2st.xyz"
+    assert error_info.value.__cause__ is None

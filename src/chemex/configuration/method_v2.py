@@ -28,6 +28,7 @@ from chemex.configuration.method_plan import (
     StatisticsPlan,
     StepPlan,
     profile_selection,
+    validate_step_name,
 )
 
 
@@ -290,6 +291,7 @@ def _step(
     settings: dict[str, Any],
     earlier: set[str],
 ) -> StepPlan:
+    validate_step_name(filename, name)
     if any(str(key).lower() == "fitmethod" for key in settings):
         raise MethodFormatError(
             "V2 has no FITMETHOD; omit it because TRF is implicit",
