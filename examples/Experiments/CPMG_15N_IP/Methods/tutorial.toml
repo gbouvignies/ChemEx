@@ -1,0 +1,4 @@
+FORMAT_VERSION = 2
+
+[FIT]
+INCLUDE = ["15", "31", "33", "34", "37"]
