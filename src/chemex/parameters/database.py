@@ -1,7 +1,6 @@
 """Index, configure, and expose ChemEx analysis parameters."""
 
 import re
-import sys
 from collections import Counter, defaultdict
 from collections.abc import Hashable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -10,9 +9,8 @@ from typing import Protocol
 import numpy as np
 
 from chemex.configuration.parameters import DefaultListType
+from chemex.exceptions import ChemExError
 from chemex.messages import (
-    print_error_constraints,
-    print_error_grid_settings,
     print_warning_negative_jch,
     print_warning_positive_jnh,
 )
@@ -28,14 +26,14 @@ _LIST = rf"([(](({_FLOAT})(,|[)]$))+)"
 _GRID_DEFINTION = (_LINEAR, _GEOMETRIC, _LIST)
 
 
-class ConstraintExpressionError(ValueError):
+class ConstraintExpressionError(ChemExError, ValueError):
     def __init__(self, expression: str, detail: str) -> None:
         super().__init__(detail)
         self.expression = expression
         self.detail = detail
 
 
-class GridExpressionError(ValueError):
+class GridExpressionError(ChemExError, ValueError):
     def __init__(self, entry: str, detail: str) -> None:
         super().__init__(detail)
         self.entry = entry
@@ -376,14 +374,10 @@ class ParameterCatalog:
         ids_modified: set[str] = set()
         ids_pool = set(self._parameters)
 
-        try:
-            for expression in reversed(expression_list):
-                ids_changed = self._set_expression(expression, ids_pool)
-                ids_pool -= ids_changed
-                ids_modified.update(ids_changed)
-        except ConstraintExpressionError as error:
-            print_error_constraints(error.expression, error.detail)
-            sys.exit(1)
+        for expression in reversed(expression_list):
+            ids_changed = self._set_expression(expression, ids_pool)
+            ids_pool -= ids_changed
+            ids_modified.update(ids_changed)
 
         return self._count_per_section(ids_modified)
 
@@ -416,19 +410,14 @@ class ParameterCatalog:
 
         grid_values: dict[str, Array] = {}
 
-        try:
-            for entry in reversed(grid_entries):
-                name, expression = self._split_grid_entry(entry)
-                ids_selected = self.get_matching_ids(ParamName.from_section(name))
-                ids_changed = ids_selected & ids_pool
-                values = _convert_grid_expression_to_values(expression)
+        for entry in reversed(grid_entries):
+            name, expression = self._split_grid_entry(entry)
+            ids_selected = self.get_matching_ids(ParamName.from_section(name))
+            ids_changed = ids_selected & ids_pool
+            values = _convert_grid_expression_to_values(expression)
 
-                grid_values.update(dict.fromkeys(ids_changed, values))
-                ids_pool -= ids_changed
-
-        except GridExpressionError as error:
-            print_error_grid_settings(error.entry, error.detail)
-            sys.exit(1)
+            grid_values.update(dict.fromkeys(ids_changed, values))
+            ids_pool -= ids_changed
 
         return grid_values
 

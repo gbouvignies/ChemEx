@@ -33,6 +33,7 @@ from chemex.containers.dataset import (
 )
 from chemex.containers.experiment import Experiment, NoiseEstimateNotice
 from chemex.containers.profile import Filterer, Profile, PulseSequence
+from chemex.exceptions import ChemExError
 from chemex.filterers import (
     CestExperimentSettings,
     CestFilterer,
@@ -222,12 +223,14 @@ class ExperimentBuildResult:
 type ExperimentNotice = NoiseEstimateNotice
 
 
-class ExperimentBuildError(Exception):
+class ExperimentBuildError(ChemExError):
     """Base class for expected Experiment construction failures."""
 
 
 @dataclass(eq=False)
-class InvalidExperimentSourceError(ExperimentBuildError):
+class InvalidExperimentSourceError(RuntimeError):
+    """An impossible, forged, or stale programmatic source handle."""
+
     filename: Path | None
     explanation: str
 
@@ -238,7 +241,7 @@ class InvalidExperimentSourceError(ExperimentBuildError):
 @dataclass(eq=False)
 class ExperimentFileError(ExperimentBuildError):
     filename: Path
-    error: FileNotFoundError
+    error: OSError
 
     def __post_init__(self) -> None:
         super().__init__(str(self.error))
@@ -247,7 +250,7 @@ class ExperimentFileError(ExperimentBuildError):
 @dataclass(eq=False)
 class ExperimentTomlError(ExperimentBuildError):
     filename: Path
-    error: tomllib.TOMLDecodeError | TypeError
+    error: UnicodeDecodeError | tomllib.TOMLDecodeError
 
     def __post_init__(self) -> None:
         super().__init__(str(self.error))
@@ -284,7 +287,7 @@ class ExperimentConfigurationError(ExperimentBuildError):
 @dataclass(eq=False)
 class ExperimentDataError(ExperimentBuildError):
     filename: Path
-    error: FileNotFoundError | DatasetLoadError
+    error: OSError | DatasetLoadError
 
     def __post_init__(self) -> None:
         super().__init__(str(self.error))
@@ -517,9 +520,9 @@ def open(filename: Path) -> ExperimentSource:
     """Read an Experiment input once and identify its Experiment Type."""
     try:
         raw_config = load_toml(filename)
-    except FileNotFoundError as error:
+    except OSError as error:
         raise ExperimentFileError(filename, error) from error
-    except (tomllib.TOMLDecodeError, TypeError) as error:
+    except (UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
         raise ExperimentTomlError(filename, error) from error
 
     try:
@@ -586,7 +589,7 @@ def _build[ConfigT: GenericConfig](
 
     try:
         dataset = experiment_type_.support.load_dataset(source.filename.parent, config)
-    except (FileNotFoundError, DatasetLoadError) as error:
+    except (OSError, DatasetLoadError) as error:
         raise ExperimentDataError(source.filename, error) from error
     selected_dataset = _apply_selection(dataset, selection)
 

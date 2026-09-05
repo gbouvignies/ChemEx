@@ -7,6 +7,7 @@ from chemex.configuration.method_input import prepare_method_plan
 from chemex.configuration.method_plan import MethodPlan
 from chemex.configuration.methods import Methods
 from chemex.containers.experiments import Experiments
+from chemex.exceptions import ArtifactPublicationError
 from chemex.optimize.method_plan_execution import execute_method_plan
 from chemex.run_info import RunInfo
 from chemex.runtime import AnalysisSession
@@ -41,10 +42,17 @@ def invalidate_planned_outputs(plan: MethodPlan, path: Path) -> None:
     for step_root in step_roots:
         for name in _CHEMEX_RESULT_PATHS:
             result_path = step_root / name
-            if result_path.is_symlink() or result_path.is_file():
-                result_path.unlink()
-            elif result_path.is_dir():
-                shutil.rmtree(result_path)
+            try:
+                if result_path.is_symlink() or result_path.is_file():
+                    result_path.unlink()
+                elif result_path.is_dir():
+                    shutil.rmtree(result_path)
+            except OSError as error:
+                raise ArtifactPublicationError(
+                    "invalidate planned analysis output",
+                    result_path,
+                    error,
+                ) from error
 
 
 def run_methods(

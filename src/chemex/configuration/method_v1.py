@@ -24,6 +24,7 @@ from chemex.configuration.method_plan import (
     StatisticsPlan,
     StepPlan,
     profile_selection,
+    validate_step_name,
 )
 
 
@@ -80,6 +81,7 @@ def adapt_v1(raw_steps: list[tuple[Path, str, dict[str, Any]]]) -> MethodPlan:
     previous: str | None = None
     previous_selection = ProfileSelection()
     for filename, name, settings in raw_steps:
+        validate_step_name(filename, name)
         normalized = {str(key).lower(): value for key, value in settings.items()}
         selection = (
             profile_selection(

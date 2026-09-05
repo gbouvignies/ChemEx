@@ -6,8 +6,17 @@ import sys
 from collections.abc import Callable
 from contextlib import suppress
 from importlib import import_module
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    from chemex.exceptions import ChemExError
 
 type DiagnosticRenderer = Callable[[str], None]
+
+_UNEXPECTED_MESSAGE = (
+    "ChemEx encountered an unexpected internal error.\n"
+    "Rerun with --debug to show the traceback and chained causes."
+)
 
 _BASE_EXCEPTION_DICT = BaseException.__dict__["__dict__"]
 
@@ -28,6 +37,15 @@ def _instance_data(error: BaseException) -> dict[str, object]:
 def _is_interrupted(error: Exception) -> bool:
     terminal = _instance_data(error).get("terminal")
     return isinstance(terminal, str) and str.__eq__(terminal, "interrupted") is True
+
+
+def _known_failure_message(error: Exception) -> str:
+    try:
+        terminal = import_module("chemex.terminal")
+        message = terminal.format_known_failure(cast("ChemExError", error))
+    except BaseException:  # noqa: BLE001 - diagnostics must remain fail-safe
+        return "ChemEx could not complete the requested operation."
+    return message or "ChemEx could not complete the requested operation."
 
 
 def _load_renderer() -> DiagnosticRenderer:
@@ -53,23 +71,38 @@ def _render(
 
 
 def main() -> None:
-    """Run ChemEx and translate terminal failures without exposing tracebacks."""
+    """Run ChemEx and apply the three terminal failure policies."""
     renderer = _plain_diagnostic
+    chemex_error_type: type[Exception] | None = None
+    debug = "--debug" in sys.argv[1:]
     try:
         renderer = _load_renderer()
+        exceptions = import_module("chemex.exceptions")
+        chemex_error_type = exceptions.ChemExError
         application = import_module("chemex.chemex")
         application.main()
-    except KeyboardInterrupt:
-        _render(renderer, "ChemEx interrupted.")
+    except KeyboardInterrupt as error:
+        try:
+            terminal = import_module("chemex.terminal")
+            message = terminal.format_interruption(error)
+        except BaseException:  # noqa: BLE001 - diagnostics must remain fail-safe
+            message = "ChemEx interrupted."
+        _render(renderer, message)
         raise SystemExit(130) from None
-    except Exception as error:  # noqa: BLE001 - terminal CLI translation seam
-        interrupted = _is_interrupted(error)
-        _render(
-            renderer,
-            (
-                "ChemEx interrupted."
-                if interrupted
-                else "ChemEx encountered an unexpected error."
-            ),
-        )
-        raise SystemExit(130 if interrupted else 1) from None
+    except Exception as error:
+        known = chemex_error_type is not None and isinstance(error, chemex_error_type)
+        if known and _is_interrupted(error):
+            try:
+                terminal = import_module("chemex.terminal")
+                message = terminal.format_interruption(error)
+            except BaseException:  # noqa: BLE001 - diagnostics must remain fail-safe
+                message = "ChemEx interrupted."
+            _render(renderer, message)
+            raise SystemExit(130) from None
+        if known:
+            _render(renderer, _known_failure_message(error))
+            raise SystemExit(1) from None
+        if debug:
+            raise
+        _render(renderer, _UNEXPECTED_MESSAGE)
+        raise SystemExit(1) from None

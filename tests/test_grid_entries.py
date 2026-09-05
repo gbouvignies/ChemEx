@@ -1,7 +1,6 @@
 import pytest
 
-import chemex.parameters.database as database_module
-from chemex.parameters.database import ParameterCatalog
+from chemex.parameters.database import GridExpressionError, ParameterCatalog
 from chemex.parameters.name import ParamName
 from chemex.parameters.setting import ParamSetting
 from chemex.parameters.spin_system import SpinSystem
@@ -52,47 +51,21 @@ def test_parse_grid_last_matching_entry_wins() -> None:
     assert grid[local_pb.id_].tolist() == [1.0, 2.0]
 
 
-def test_parse_grid_exits_on_missing_separator(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_parse_grid_raises_typed_error_on_missing_separator() -> None:
     catalog = make_catalog(make_param("PB"))
-    recorded: dict[str, str] = {}
 
-    monkeypatch.setattr(
-        database_module,
-        "print_error_grid_settings",
-        lambda entry, detail=None: recorded.update(
-            {"entry": entry, "detail": detail or ""}
-        ),
-    )
-
-    with pytest.raises(SystemExit):
+    with pytest.raises(GridExpressionError) as error_info:
         catalog.parse_grid(["PB lin(1, 2, 2)"])
 
-    assert recorded == {
-        "entry": "PB lin(1, 2, 2)",
-        "detail": "Expected exactly one '=' in the grid entry",
-    }
+    assert error_info.value.entry == "PB lin(1, 2, 2)"
+    assert error_info.value.detail == "Expected exactly one '=' in the grid entry"
 
 
-def test_parse_grid_exits_on_invalid_definition(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_parse_grid_raises_typed_error_on_invalid_definition() -> None:
     catalog = make_catalog(make_param("PB"))
-    recorded: dict[str, str] = {}
 
-    monkeypatch.setattr(
-        database_module,
-        "print_error_grid_settings",
-        lambda entry, detail=None: recorded.update(
-            {"entry": entry, "detail": detail or ""}
-        ),
-    )
-
-    with pytest.raises(SystemExit):
+    with pytest.raises(GridExpressionError) as error_info:
         catalog.parse_grid(["PB = bad(1, 2, 2)"])
 
-    assert recorded == {
-        "entry": "PB = bad(1, 2, 2)",
-        "detail": "Unsupported grid definition",
-    }
+    assert error_info.value.entry == "PB = bad(1, 2, 2)"
+    assert error_info.value.detail == "Unsupported grid definition"

@@ -1,12 +1,27 @@
 from __future__ import annotations
 
-import sys
 from dataclasses import dataclass, field
 from string import ascii_lowercase
 
-from chemex.messages import print_model_error, print_model_suffix_error
+from chemex.exceptions import ChemExError
 
 SUPPORTED_MODEL_EXTENSIONS = ("mf", "rs", "tc")
+
+
+class ModelSelectionError(ChemExError, ValueError):
+    """The requested kinetics model or extension is not supported."""
+
+    def __init__(
+        self,
+        name: str,
+        explanation: str,
+        *,
+        available: tuple[str, ...],
+    ) -> None:
+        super().__init__(explanation)
+        self.name = name
+        self.explanation = explanation
+        self.available = available
 
 
 @dataclass(frozen=True, order=True)
@@ -30,20 +45,23 @@ class ModelSpec:
         from chemex.models.factory import model_factory
 
         if name not in model_factory.set:
-            print_model_error(name)
-            sys.exit(1)
+            raise ModelSelectionError(
+                name,
+                f"The model {name!r} is not available.",
+                available=tuple(sorted(model_factory.set)),
+            )
         return name
 
     @staticmethod
     def validate_extensions(name: str, extensions: list[str]) -> set[str]:
         unknown_suffixes = set(extensions) - set(SUPPORTED_MODEL_EXTENSIONS)
         if unknown_suffixes:
-            print_model_suffix_error(
+            suffixes = ", ".join(f".{suffix}" for suffix in sorted(unknown_suffixes))
+            raise ModelSelectionError(
                 name,
-                unknown_suffixes,
-                SUPPORTED_MODEL_EXTENSIONS,
+                f"The model {name!r} uses unsupported suffixes: {suffixes}.",
+                available=tuple(f".{suffix}" for suffix in SUPPORTED_MODEL_EXTENSIONS),
             )
-            sys.exit(1)
         return set(extensions)
 
     @classmethod

@@ -1,10 +1,21 @@
-import sys
 import tomllib
 from collections.abc import Iterable, MutableMapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from chemex.messages import print_file_not_found, print_toml_error
+from chemex.exceptions import ChemExError
+
+
+@dataclass(eq=False)
+class TomlReadError(ChemExError):
+    """A user-supplied TOML file could not be read or parsed."""
+
+    filename: Path
+    error: OSError | UnicodeDecodeError | tomllib.TOMLDecodeError
+
+    def __post_init__(self) -> None:
+        super().__init__(str(self.error))
 
 
 def _deep_update(target: dict, src: dict) -> dict:
@@ -27,12 +38,10 @@ def read_toml(filename: Path) -> dict[str, Any]:
     """Read and parse the experiment configuration file with 'toml."""
     try:
         config = load_toml(filename)
-    except FileNotFoundError:
-        print_file_not_found(filename)
-        sys.exit(1)
-    except (tomllib.TOMLDecodeError, TypeError) as error:
-        print_toml_error(filename, error)
-        sys.exit(1)
+    except OSError as error:
+        raise TomlReadError(filename, error) from error
+    except (UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
+        raise TomlReadError(filename, error) from error
 
     return config
 

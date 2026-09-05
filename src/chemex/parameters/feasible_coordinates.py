@@ -11,6 +11,7 @@ from enum import StrEnum
 
 import numpy as np
 
+from chemex.exceptions import ChemExError
 from chemex.parameters.parameterization import (
     ActiveParameterization,
     BinaryExpression,
@@ -36,7 +37,7 @@ _SCHUR_RANGE_ATOL = 1.0e-12
 _DIFFERENTIAL_STEP_RELATIVE = math.sqrt(np.finfo(np.float64).eps)
 
 
-class ScientificFeasibilityError(ValueError):
+class ScientificFeasibilityError(ChemExError, ValueError):
     """A public ChemEx state violates a model-owned scientific domain."""
 
 

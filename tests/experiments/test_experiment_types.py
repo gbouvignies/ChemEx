@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import sys
 from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
-import chemex.chemex as chemex_module
+import chemex.experiments.builder as builder_module
 from chemex.configuration.methods import Selection
 from chemex.containers.dataset import DatasetLoadError
 from chemex.containers.experiment import NoDuplicateNoiseNotice
@@ -214,6 +213,18 @@ def test_open_reports_expected_input_failures(tmp_path: Path) -> None:
     with pytest.raises(ExperimentFileError):
         experiment_types.open(tmp_path / "missing.toml")
 
+
+def test_open_reports_invalid_utf8_as_typed_experiment_toml_error(
+    tmp_path: Path,
+) -> None:
+    filename = tmp_path / "experiment.toml"
+    filename.write_bytes(b"[experiment]\nname = \xff\n")
+
+    with pytest.raises(ExperimentTomlError) as error_info:
+        experiment_types.open(filename)
+
+    assert isinstance(error_info.value.__cause__, UnicodeDecodeError)
+
     invalid = tmp_path / "invalid.toml"
     invalid.write_text("[experiment\n", encoding="utf-8")
     with pytest.raises(ExperimentTomlError):
@@ -284,38 +295,24 @@ def test_build_reports_malformed_dataset_content(tmp_path: Path) -> None:
     assert isinstance(error_info.value.error.__cause__, ValueError)
 
 
-def test_malformed_dataset_cli_failure_has_no_traceback(
+def test_experiment_builder_preserves_typed_dataset_failure(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capfd: pytest.CaptureFixture[str],
 ) -> None:
     data_file = tmp_path / "malformed.dat"
     data_file.write_text("not-a-number 1.0 0.1\n", encoding="utf-8")
     filename = _write_relaxation_input(tmp_path, data_file.name)
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "chemex",
-            "simulate",
-            "-e",
-            str(filename),
-            "-p",
-            str(tmp_path / "unused-parameters.toml"),
-            "--plot",
-            "nothing",
-        ],
-    )
+    session = AnalysisSession.create()
+    session.set_model("2st")
 
-    with pytest.raises(SystemExit) as error_info:
-        chemex_module.main()
+    with pytest.raises(ExperimentDataError) as error_info:
+        builder_module.build_experiments(
+            [filename],
+            ALL_PROFILES,
+            session=session,
+        )
 
-    output = capfd.readouterr()
-    assert error_info.value.code == 1
-    assert "Invalid data" in output.err
-    # Rich may wrap long temporary paths; line breaks are presentation only.
-    assert "malformed.dat" in output.err.replace("\n", "")
-    assert "Traceback" not in output.out + output.err
+    assert isinstance(error_info.value.error, DatasetLoadError)
+    assert error_info.value.error.filename == data_file
 
 
 @pytest.mark.parametrize(

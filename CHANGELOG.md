@@ -13,6 +13,11 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   `3st_eyring` name remains a compatibility name for the linear topology.
 
 ### Changed
+- ChemEx now presents known failures and user interruptions once at the CLI
+  boundary, reports verified diagnostic paths when available, and exits with
+  status 130 for Ctrl-C. Unexpected internal exceptions remain concise and
+  private by default; the new global `--debug` option restores their natural
+  Python tracebacks and chained causes for diagnosis.
 - Standard independent spin, relaxation, chemical-shift, coupling, kinetic,
   binding, oligomerization, and equilibrium parameters now have finite broad
   default safety domains. Scalar parameter-file values inherit these bounds,

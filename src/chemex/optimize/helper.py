@@ -7,6 +7,7 @@ import numpy as np
 from scipy import stats
 
 from chemex.containers.experiments import Experiments
+from chemex.exceptions import ArtifactPublicationError
 from chemex.messages import (
     print_making_plots,
     print_writing_results,
@@ -245,15 +246,30 @@ def execute_simulation(
 ) -> None:
     validate_relaxation_state(parameterization, parameter_values)
     experiments.prepare_for_simulation(parameter_values)
-    _write_simulation_files(
-        experiments,
-        path,
-        parameter_model=parameter_model,
-        parameter_values=parameter_values,
-        parameterization=parameterization,
-    )
-    if plot:
-        _write_simulation_plots(experiments, path)
+    try:
+        _write_simulation_files(
+            experiments,
+            path,
+            parameter_model=parameter_model,
+            parameter_values=parameter_values,
+            parameterization=parameterization,
+        )
+        if plot:
+            _write_simulation_plots(experiments, path)
+    except OSError as error:
+        filename = error.filename
+        destination = Path(filename) if isinstance(filename, str) else path
+        failure = ArtifactPublicationError(
+            "publish simulation output",
+            destination,
+            error,
+        )
+        object.__setattr__(failure, "failure_stage", "output")
+        raise failure from error
+    except (Exception, KeyboardInterrupt) as error:
+        if getattr(error, "failure_stage", None) is None:
+            object.__setattr__(error, "failure_stage", "output")
+        raise
 
 
 def print_header(

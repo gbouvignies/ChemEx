@@ -27,13 +27,19 @@ import chemex.printers.grid as grid_printer_module
 import chemex.run_info as run_info_module
 from chemex.chemex import run, run_fit
 from chemex.cli import build_parser
+from chemex.configuration.method_plan import MethodFormatError
 from chemex.configuration.methods import Method, Selection
 from chemex.configuration.parameters import read_defaults
 from chemex.containers.experiments import Experiments
 from chemex.evaluation.native import BoundEvaluator, EvaluationFailure
+from chemex.exceptions import ArtifactPublicationError, ChemExError
 from chemex.experiments.builder import build_experiments
 from chemex.optimize.fitting import run_methods
-from chemex.optimize.mcmc import NativeMcmcIncompleteError
+from chemex.optimize.mcmc import McmcConfigurationError, NativeMcmcIncompleteError
+from chemex.optimize.native_deterministic import (
+    NativeDeterministicAnalysisError,
+    NativeDeterministicInternalError,
+)
 from chemex.optimize.progress import ProgressPhase
 from chemex.optimize.resampling import NativeResamplingIncompleteError
 from chemex.optimize.uncertainty import ParameterUnit
@@ -408,7 +414,7 @@ def test_simulation_plot_interruption_preserves_written_results_and_propagates(
 
     with (
         patch.object(Experiments, "plot_simulation", side_effect=KeyboardInterrupt),
-        pytest.raises(KeyboardInterrupt),
+        pytest.raises(KeyboardInterrupt) as error_info,
     ):
         run(
             _simulation_arguments(output, plot_level="normal"),
@@ -417,8 +423,45 @@ def test_simulation_plot_interruption_preserves_written_results_and_propagates(
 
     assert (output / "Data" / "800mhz.dat").is_file()
     assert (output / "Parameters" / "fixed.toml").is_file()
+    assert error_info.value.failure_stage == "output"
     rendered = capsys.readouterr()
     assert "Plotting cancelled" not in rendered.out + rendered.err
+
+
+def test_simulation_os_failure_retains_output_path_and_cause(tmp_path: Path) -> None:
+    output = tmp_path / "Output"
+    failed_path = output / "Data" / "800mhz.dat"
+    cause = OSError(28, "No space left on device", str(failed_path))
+
+    with (
+        patch("chemex.optimize.helper._write_simulation_files", side_effect=cause),
+        pytest.raises(ArtifactPublicationError) as error_info,
+    ):
+        run(_simulation_arguments(output), session=AnalysisSession.create())
+
+    assert error_info.value.__cause__ is cause
+    assert error_info.value.operation == "publish simulation output"
+    assert error_info.value.path == failed_path
+    assert error_info.value.failure_stage == "output"
+    assert not (output / "run_info").exists()
+
+
+def test_simulation_scientific_failure_retains_simulation_stage(
+    tmp_path: Path,
+) -> None:
+    failure = ScientificFeasibilityError("relaxation state is infeasible")
+
+    with (
+        patch("chemex.chemex.execute_simulation", side_effect=failure),
+        pytest.raises(ScientificFeasibilityError) as error_info,
+    ):
+        run(
+            _simulation_arguments(tmp_path / "Output"),
+            session=AnalysisSession.create(),
+        )
+
+    assert error_info.value is failure
+    assert error_info.value.failure_stage == "simulation"
 
 
 def test_fit_plot_interruption_preserves_committed_results_and_propagates(
@@ -451,12 +494,14 @@ def _run_real_fit_cli(
     *,
     check: bool = True,
     env: dict[str, str] | None = None,
+    debug: bool = False,
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(  # noqa: S603 - fixed local CLI and repository-owned fixtures
         [
             sys.executable,
             "-m",
             "chemex",
+            *(("--debug",) if debug else ()),
             "fit",
             "-e",
             str(EXPERIMENT),
@@ -848,11 +893,13 @@ def test_product_fit_rejects_a_stale_aggregate_commit_atomically(
             "execute_fit_commit",
             side_effect=advance_revision_then_commit,
         ),
-        pytest.raises(RuntimeError, match="stale_revision"),
+        pytest.raises(NativeDeterministicInternalError) as error_info,
     ):
         run(_fit_arguments(output), session=session)
 
     assert session.analysis_values.snapshot().revision == 1
+    assert error_info.value.outcome.failure is not None
+    assert error_info.value.outcome.failure.category.value == "stale_revision"
     assert not (output / "run_info" / "restart.toml").exists()
     outcome = _read_outcome(output)
     assert outcome["latest_committed_revision"] == 1
@@ -1294,11 +1341,13 @@ def test_invalid_fitmethod_fails_before_defaults_and_output_invalidation(
             "chemex.parameters.database.ParameterStore.set_defaults",
             side_effect=AssertionError("parameter defaults were resolved"),
         ),
-        pytest.raises(SystemExit) as raised,
+        pytest.raises(MethodFormatError) as error_info,
     ):
         run(_fit_arguments(output, method), session=AnalysisSession.create())
 
-    assert raised.value.code == 1
+    assert error_info.value.source.filename == method
+    assert error_info.value.source.field == "FITMETHOD"
+    assert error_info.value.__cause__ is not None
     assert preserved.read_text(encoding="utf-8") == "existing result\n"
     assert not (output / "run_info").exists()
 
@@ -1370,7 +1419,7 @@ def test_failed_deterministic_rerun_invalidates_prior_results_and_is_incomplete(
     assert outcome["restart_revision"] == 0
     assert outcome["terminal"] == "failed"
     assert outcome["failure_stage"] == "deterministic_fit"
-    assert outcome["failure_type"] == "RuntimeError"
+    assert outcome["failure_type"] == "NativeDeterministicInternalError"
     assert not (output / "Parameters").exists()
     assert not (output / "Data").exists()
     assert not (output / "Plots").exists()
@@ -1382,16 +1431,26 @@ def test_planned_output_cleanup_failure_is_classified_as_output(
     tmp_path: Path,
 ) -> None:
     output = tmp_path / "Output"
+    stale = output / "statistics.toml"
+    stale.parent.mkdir(parents=True)
+    stale.write_text("stale\n", encoding="utf-8")
+    cause = OSError(13, "Permission denied", str(stale))
+    real_unlink = Path.unlink
+
+    def deny_stale_unlink(path: Path, *args, **kwargs) -> None:
+        if path == stale:
+            raise cause
+        real_unlink(path, *args, **kwargs)
 
     with (
-        patch(
-            "chemex.chemex.invalidate_planned_outputs",
-            side_effect=OSError("planned output cleanup failed"),
-        ),
-        pytest.raises(OSError, match="planned output cleanup failed"),
+        patch.object(Path, "unlink", deny_stale_unlink),
+        pytest.raises(ArtifactPublicationError) as error_info,
     ):
         run(_fit_arguments(output), session=AnalysisSession.create())
 
+    assert error_info.value.__cause__ is cause
+    assert error_info.value.operation == "invalidate planned analysis output"
+    assert error_info.value.path == stale
     assert _read_outcome(output) == {
         "schema_version": 2,
         "status": "incomplete",
@@ -1399,8 +1458,8 @@ def test_planned_output_cleanup_failure_is_classified_as_output(
         "restart_revision": 0,
         "terminal": "failed",
         "failure_stage": "output",
-        "failure_type": "OSError",
-        "failure_message": "planned output cleanup failed",
+        "failure_type": "ArtifactPublicationError",
+        "failure_message": "[Errno 13] Permission denied",
     }
 
 
@@ -1442,6 +1501,32 @@ def test_data_writer_failure_after_commit_cannot_complete_or_retain_stale_result
     assert not (output / "statistics.toml").exists()
 
 
+def test_data_writer_os_failure_retains_exact_path_and_preserved_outputs(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    failed_path = output / "Data" / "profiles"
+    cause = OSError(13, "Permission denied", str(failed_path))
+
+    with (
+        patch(
+            "chemex.containers.experiments.Experiments.write",
+            side_effect=cause,
+        ),
+        pytest.raises(ArtifactPublicationError) as error_info,
+    ):
+        run(_fit_arguments(output), session=AnalysisSession.create())
+
+    error = error_info.value
+    assert error.__cause__ is cause
+    assert error.operation == "publish deterministic analysis output"
+    assert error.path == failed_path
+    assert error.restart_path == output / "run_info" / "restart.toml"
+    assert error.outcome_path == output / "run_info" / "outcome.toml"
+    assert (output / "Parameters" / "fitted.toml").is_file()
+    assert _read_outcome(output)["failure_type"] == "ArtifactPublicationError"
+
+
 def test_first_restart_publication_failure_preserves_committed_authority(
     tmp_path: Path,
 ) -> None:
@@ -1456,10 +1541,15 @@ def test_first_restart_publication_failure_preserves_committed_authority(
 
     with (
         patch.object(run_info_module, "write_text_atomic", side_effect=fail_restart),
-        pytest.raises(OSError, match="restart publication failed"),
+        pytest.raises(
+            ArtifactPublicationError, match="restart publication failed"
+        ) as error_info,
     ):
         run(_fit_arguments(output), session=session)
 
+    assert isinstance(error_info.value.__cause__, OSError)
+    assert error_info.value.path == output / "run_info" / "restart.toml"
+    assert error_info.value.operation == "publish the restart state"
     assert session.analysis_values.snapshot().revision == 1
     assert not (output / "run_info" / "restart.toml").exists()
     assert not (output / "Parameters").exists()
@@ -1470,7 +1560,7 @@ def test_first_restart_publication_failure_preserves_committed_authority(
         "restart_revision": 0,
         "terminal": "failed",
         "failure_stage": "restart_publication",
-        "failure_type": "OSError",
+        "failure_type": "ArtifactPublicationError",
         "failure_message": "restart publication failed",
     }
 
@@ -1559,7 +1649,7 @@ FIX = ["PB", "KEX_AB"]
         "restart_revision": 1,
         "terminal": "failed",
         "failure_stage": "restart_publication",
-        "failure_type": "OSError",
+        "failure_type": "ArtifactPublicationError",
         "failure_message": "second restart publication failed",
     }
 
@@ -1645,11 +1735,14 @@ def test_final_complete_outcome_write_failure_is_terminal_and_propagates(
             "write_text_atomic",
             side_effect=fail_complete_outcome,
         ),
-        pytest.raises(OSError, match="complete outcome publication failed"),
+        pytest.raises(ArtifactPublicationError) as error_info,
     ):
         run(_fit_arguments(output), session=session)
 
     assert session.analysis_values.snapshot().revision == 1
+    assert error_info.value.operation == "publish the complete run outcome"
+    assert error_info.value.path == output / "run_info" / "outcome.toml"
+    assert isinstance(error_info.value.__cause__, OSError)
     assert (output / "Parameters" / "fitted.toml").is_file()
     assert _read_outcome(output) == {
         "schema_version": 2,
@@ -1658,9 +1751,78 @@ def test_final_complete_outcome_write_failure_is_terminal_and_propagates(
         "restart_revision": 1,
         "terminal": "failed",
         "failure_stage": "run_info",
-        "failure_type": "OSError",
+        "failure_type": "ArtifactPublicationError",
         "failure_message": "complete outcome publication failed",
     }
+
+
+def test_incomplete_outcome_failure_does_not_replace_primary_failure(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    real_atomic_write = run_info_module.write_text_atomic
+    primary = RuntimeError("primary output failure")
+
+    def fail_incomplete_outcome(destination: Path, content: str) -> None:
+        if 'status = "incomplete"' in content:
+            raise OSError("incomplete outcome publication failed")
+        real_atomic_write(destination, content)
+
+    with (
+        patch(
+            "chemex.chemex.invalidate_planned_outputs",
+            side_effect=primary,
+        ),
+        patch.object(
+            run_info_module,
+            "write_text_atomic",
+            side_effect=fail_incomplete_outcome,
+        ),
+        pytest.raises(RuntimeError, match="primary output failure") as error_info,
+    ):
+        run(_fit_arguments(output), session=AnalysisSession.create())
+
+    assert error_info.value is primary
+    assert error_info.value.__notes__ == [
+        (
+            "ChemEx could not publish the incomplete run outcome: "
+            "ArtifactPublicationError: incomplete outcome publication failed"
+        )
+    ]
+    assert _read_outcome(output)["status"] == "running"
+
+
+def test_interrupted_outcome_publication_failure_supersedes_interruption(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    real_atomic_write = run_info_module.write_text_atomic
+    cause = OSError(28, "No space left on device")
+
+    def fail_incomplete_outcome(destination: Path, content: str) -> None:
+        if 'status = "incomplete"' in content:
+            raise cause
+        real_atomic_write(destination, content)
+
+    with (
+        patch.object(Experiments, "plot", side_effect=KeyboardInterrupt),
+        patch.object(
+            run_info_module,
+            "write_text_atomic",
+            side_effect=fail_incomplete_outcome,
+        ),
+        pytest.raises(ArtifactPublicationError) as error_info,
+    ):
+        run(
+            _fit_arguments(output, plot_level="normal"),
+            session=AnalysisSession.create(),
+        )
+
+    error = error_info.value
+    assert error.__cause__ is cause
+    assert error.operation == "publish the incomplete run outcome"
+    assert error.path == output / "run_info" / "outcome.toml"
+    assert error.restart_path == output / "run_info" / "restart.toml"
 
 
 def test_real_grouped_direct_fit_uses_native_aggregate_commit(
@@ -2041,6 +2203,40 @@ def test_interrupted_uncertainty_publication_failure_preserves_interruption(
         "ChemEx could not publish interrupted uncertainty output."
     ]
     assert _read_outcome(output)["terminal"] == "interrupted"
+
+
+def test_interrupted_uncertainty_io_failure_supersedes_interruption(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    original_svd = uncertainty_module.svd
+    failed_path = output / "Statistics" / "Covariance" / "uncertainty.json"
+    cause = OSError(28, "No space left on device", str(failed_path))
+
+    def rank_deficient_svd(*args, **kwargs):
+        left, singular, right = original_svd(*args, **kwargs)
+        singular = np.array(singular, copy=True)
+        singular[-1] = 0.0
+        return left, singular, right
+
+    with (
+        patch("chemex.optimize.uncertainty.svd", side_effect=rank_deficient_svd),
+        patch.object(
+            deterministic_uncertainty_module,
+            "execute_root_anchored_block_covariance",
+            side_effect=KeyboardInterrupt,
+        ),
+        patch("chemex.optimize.helper.write_uncertainty", side_effect=cause),
+        pytest.raises(ArtifactPublicationError) as error_info,
+    ):
+        run(
+            _fit_arguments(output, include=("G2N-HN", "H3N-HN")),
+            session=AnalysisSession.create(),
+        )
+
+    assert error_info.value.__cause__ is cause
+    assert error_info.value.operation == "publish deterministic analysis output"
+    assert error_info.value.path == failed_path
 
 
 def test_shared_parameter_coupling_is_not_split_into_covariance_blocks(
@@ -2592,7 +2788,7 @@ def test_automatic_mcmc_burn_failure_preserves_only_incomplete_raw_evidence(
         pytest.raises(
             NativeMcmcIncompleteError,
             match="authoritative MCMC posterior summarization was withheld",
-        ),
+        ) as error_info,
     ):
         run(
             _fit_arguments(failed_output, method, parameters=parameters),
@@ -2604,6 +2800,8 @@ def test_automatic_mcmc_burn_failure_preserves_only_incomplete_raw_evidence(
     assert central.revision == failed.revision == 1
     assert central.items() == failed.items()
     statistics = failed_output / "Statistics" / "MCMC"
+    assert error_info.value.diagnostics_path == statistics / "diagnostics.toml"
+    assert error_info.value.evidence_path == statistics / "raw_chain.tsv"
     diagnostics = tomllib.loads(
         (statistics / "diagnostics.toml").read_text(encoding="utf-8")
     )
@@ -2803,7 +3001,7 @@ def test_tentative_automatic_mcmc_burn_publishes_complete_outputs_with_warning(
     assert "5 sampled steps; at least 7 recommended" in rendered
 
 
-def test_incomplete_mcmc_reports_specific_error_before_entrypoint_boundary(
+def test_incomplete_mcmc_reports_one_specific_cli_error(
     tmp_path: Path,
 ) -> None:
     output = tmp_path / "Output"
@@ -2832,11 +3030,15 @@ native_mcmc.emcee.autocorr.integrated_time = lambda *_args, **_kwargs: object()
 
     rendered = " ".join((completed.stdout + completed.stderr).split())
     assert completed.returncode == 1
-    assert "MCMC analysis is incomplete; posterior products were withheld" in rendered
+    assert rendered.count("MCMC analysis is incomplete") == 1
+    assert "posterior products were withheld" in rendered
+    assert "During: statistics" in rendered
+    assert "Method Step: DEFAULT" in rendered
     assert "diagnostics.toml" in rendered
-    assert rendered.index("MCMC analysis is incomplete") < rendered.index(
-        "ChemEx encountered an unexpected error"
-    )
+    assert "raw_chain.tsv" in rendered
+    assert "run_info/restart.toml" in rendered
+    assert "run_info/outcome.toml" in rendered
+    assert "ChemEx encountered an unexpected internal error" not in rendered
     assert "Traceback (most recent call last)" not in rendered
 
 
@@ -2971,7 +3173,10 @@ def test_explicitly_unbounded_native_mcmc_fails_closed_after_central_fit(
     parameters = _explicitly_unbounded_parameters(tmp_path / "parameters.toml")
     session = AnalysisSession.create()
 
-    with pytest.raises(ValueError, match="finite lower and upper bounds"):
+    with pytest.raises(
+        McmcConfigurationError,
+        match="finite lower and upper bounds",
+    ) as error_info:
         run(
             _fit_arguments(output, method, parameters=parameters),
             session=session,
@@ -2984,6 +3189,7 @@ def test_explicitly_unbounded_native_mcmc_fails_closed_after_central_fit(
     )
     assert diagnostics["status"] == "incomplete"
     assert diagnostics["terminal"] == "failed"
+    assert error_info.value.diagnostics_path == statistics / "diagnostics.toml"
     assert "finite lower and upper bounds" in diagnostics["failure_message"]
     assert not (statistics / "summary.toml").exists()
     assert not (statistics / "samples.tsv").exists()
@@ -3139,6 +3345,10 @@ def test_interrupted_native_mcmc_publishes_unqualified_raw_capture(
 
     assert error_info.value.terminal == "interrupted"
     statistics = output / "Statistics" / "MCMC"
+    assert error_info.value.diagnostics_path == statistics / "diagnostics.toml"
+    assert error_info.value.evidence_path == statistics / "raw_capture.tsv"
+    assert error_info.value.restart_path == output / "run_info" / "restart.toml"
+    assert error_info.value.outcome_path == output / "run_info" / "outcome.toml"
     diagnostics = tomllib.loads(
         (statistics / "diagnostics.toml").read_text(encoding="utf-8")
     )
@@ -3175,7 +3385,7 @@ def test_interruption_after_mcmc_qualification_publishes_only_qualified_chain(
             "derive_mcmc_analysis_result",
             side_effect=KeyboardInterrupt,
         ),
-        pytest.raises(KeyboardInterrupt),
+        pytest.raises(KeyboardInterrupt) as error_info,
     ):
         run(
             _fit_arguments(output, method, parameters=parameters),
@@ -3183,6 +3393,10 @@ def test_interruption_after_mcmc_qualification_publishes_only_qualified_chain(
         )
 
     statistics = output / "Statistics" / "MCMC"
+    assert error_info.value.diagnostics_path == statistics / "diagnostics.toml"
+    assert error_info.value.evidence_path == statistics / "raw_chain.tsv"
+    assert error_info.value.restart_path == output / "run_info" / "restart.toml"
+    assert error_info.value.outcome_path == output / "run_info" / "outcome.toml"
     diagnostics = tomllib.loads(
         (statistics / "diagnostics.toml").read_text(encoding="utf-8")
     )
@@ -3292,6 +3506,183 @@ def test_interrupted_mcmc_publication_failure_preserves_interruption(
         "ChemEx could not publish interrupted MCMC execution capture."
     ]
     assert _read_outcome(output)["terminal"] == "interrupted"
+
+
+def test_interrupted_mcmc_io_failure_reports_published_evidence(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = _nested_mcmc_method(tmp_path / "method.toml", workers=1)
+    parameters = _bounded_parameters(tmp_path / "parameters.toml")
+    cause = OSError(28, "No space left on device")
+    real_diagnostics = mcmc_module._write_native_mcmc_state_diagnostics
+
+    def fail_incomplete_diagnostics(*args, **kwargs):
+        if kwargs.get("status") == "incomplete":
+            raise cause
+        return real_diagnostics(*args, **kwargs)
+
+    with (
+        patch.object(
+            mcmc_module,
+            "derive_mcmc_analysis_result",
+            side_effect=KeyboardInterrupt,
+        ),
+        patch.object(
+            mcmc_module,
+            "_write_native_mcmc_state_diagnostics",
+            side_effect=fail_incomplete_diagnostics,
+        ),
+        pytest.raises(ArtifactPublicationError) as error_info,
+    ):
+        run(
+            _fit_arguments(output, method, parameters=parameters),
+            session=AnalysisSession.create(),
+        )
+
+    error = error_info.value
+    statistics = output / "Statistics" / "MCMC"
+    assert error.__cause__ is cause
+    assert error.operation == "publish interrupted MCMC diagnostics"
+    assert error.path == statistics / "diagnostics.toml"
+    assert error.evidence_path == statistics / "raw_chain.tsv"
+    assert error.restart_path == output / "run_info" / "restart.toml"
+    assert error.outcome_path == output / "run_info" / "outcome.toml"
+
+
+def test_internal_mcmc_operation_failure_is_not_scientific_incompleteness(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = _nested_mcmc_method(tmp_path / "method.toml", workers=1)
+    parameters = _bounded_parameters(tmp_path / "parameters.toml")
+    cause = AssertionError("MCMC_INTERNAL_CANARY")
+    real_execute = native_mcmc_module.execute_mcmc_evidence
+
+    def fail_operation(accepted, plan, **kwargs):
+        def fail_initialization(_stage, _count):
+            raise cause
+
+        return real_execute(
+            accepted,
+            plan,
+            checkpoint_observer=fail_initialization,
+            **kwargs,
+        )
+
+    with (
+        patch.object(
+            mcmc_module,
+            "execute_mcmc_evidence",
+            side_effect=fail_operation,
+        ),
+        pytest.raises(AssertionError) as error_info,
+    ):
+        run(
+            _fit_arguments(output, method, parameters=parameters),
+            session=AnalysisSession.create(),
+        )
+
+    assert error_info.value is cause
+    assert not isinstance(error_info.value, ChemExError)
+    diagnostics = output / "Statistics" / "MCMC" / "diagnostics.toml"
+    assert "MCMC_INTERNAL_CANARY" in diagnostics.read_text(encoding="utf-8")
+
+
+def test_internal_mcmc_failure_is_private_unless_debug_is_requested(
+    tmp_path: Path,
+) -> None:
+    method = _nested_mcmc_method(tmp_path / "method.toml", workers=1)
+    parameters = _bounded_parameters(tmp_path / "parameters.toml")
+    (tmp_path / "sitecustomize.py").write_text(
+        """
+import chemex.optimize.mcmc as mcmc
+import chemex.optimize.native_mcmc as native_mcmc
+
+real_execute = native_mcmc.execute_mcmc_evidence
+
+def fail_operation(accepted, plan, **kwargs):
+    def fail_initialization(_stage, _count):
+        raise AssertionError("MCMC_INTERNAL_CANARY")
+
+    return real_execute(
+        accepted,
+        plan,
+        checkpoint_observer=fail_initialization,
+        **kwargs,
+    )
+
+mcmc.execute_mcmc_evidence = fail_operation
+""".lstrip(),
+        encoding="utf-8",
+    )
+    env = os.environ.copy()
+    env["PYTHONPATH"] = os.pathsep.join(
+        filter(None, (str(tmp_path), env.get("PYTHONPATH", "")))
+    )
+
+    normal = _run_real_fit_cli(
+        tmp_path / "Normal",
+        method,
+        parameters,
+        check=False,
+        env=env,
+    )
+    debug = _run_real_fit_cli(
+        tmp_path / "Debug",
+        method,
+        parameters,
+        check=False,
+        env=env,
+        debug=True,
+    )
+
+    normal_output = normal.stdout + normal.stderr
+    debug_output = debug.stdout + debug.stderr
+    assert normal.returncode == 1
+    assert "unexpected internal error" in normal_output
+    assert "MCMC_INTERNAL_CANARY" not in normal_output
+    assert "Traceback (most recent call last)" not in normal_output
+    assert debug.returncode == 1
+    assert "AssertionError: MCMC_INTERNAL_CANARY" in debug_output
+    assert "Traceback (most recent call last)" in debug_output
+
+
+def test_statistics_invariant_remains_internal_and_chains_primary_failure(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = _nested_mcmc_method(tmp_path / "method.toml", workers=1)
+    parameters = _bounded_parameters(tmp_path / "parameters.toml")
+    session = AnalysisSession.create()
+    primary = NativeMcmcIncompleteError("primary MCMC failure")
+
+    def mutate_then_fail(*_args, **_kwargs):
+        current = session.analysis_values.snapshot()
+        session.analysis_values.commit(
+            dict(current),
+            expected=current,
+            scope=tuple(current),
+        )
+        raise primary
+
+    with (
+        patch.object(
+            method_execution_module,
+            "run_native_mcmc",
+            side_effect=mutate_then_fail,
+        ),
+        pytest.raises(
+            RuntimeError,
+            match="Native statistics mutated the committed central fit",
+        ) as error_info,
+    ):
+        run(
+            _fit_arguments(output, method, parameters=parameters),
+            session=session,
+        )
+
+    assert error_info.value.__cause__ is primary
 
 
 def test_native_mcmc_postprocessing_failure_replaces_running_diagnostics(
@@ -3604,7 +3995,7 @@ def test_failed_native_replicate_keeps_central_fit_and_suppresses_complete_produ
             "chemex.optimize.direct_trf.least_squares",
             side_effect=fail_first_replicate,
         ),
-        pytest.raises(NativeResamplingIncompleteError, match="1 of 2"),
+        pytest.raises(NativeResamplingIncompleteError, match="1 of 2") as error_info,
     ):
         run(_fit_arguments(output, method), session=session)
 
@@ -3614,6 +4005,9 @@ def test_failed_native_replicate_keeps_central_fit_and_suppresses_complete_produ
     fitted_value = float(fitted_record.split("=", 1)[1].split()[0])
     assert fitted_value == pytest.approx(2.34742, rel=5.0e-6)
     statistics = output / "Statistics" / "MonteCarlo"
+    assert error_info.value.diagnostics_path == statistics / "diagnostics.toml"
+    assert error_info.value.samples_path == statistics / "samples.tsv"
+    assert error_info.value.failures_path == statistics / "failures.tsv"
     assert (
         len((statistics / "samples.tsv").read_text(encoding="utf-8").splitlines()) == 2
     )
@@ -3630,6 +4024,57 @@ def test_failed_native_replicate_keeps_central_fit_and_suppresses_complete_produ
     assert not (statistics / "summary.toml").exists()
     assert not (statistics / "correlations.tsv").exists()
     assert not (statistics / "plots.pdf").exists()
+
+
+def test_incomplete_resampling_reports_one_specific_cli_error(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = _statistics_method(tmp_path / "method.toml", '"MC" = 2')
+    (tmp_path / "sitecustomize.py").write_text(
+        """
+import chemex.optimize.direct_trf as direct_trf
+
+real_least_squares = direct_trf.least_squares
+call_count = 0
+
+def fail_first_replicate(*args, **kwargs):
+    global call_count
+    call_count += 1
+    if call_count == 2:
+        raise RuntimeError("replicate backend failed")
+    return real_least_squares(*args, **kwargs)
+
+direct_trf.least_squares = fail_first_replicate
+""".lstrip(),
+        encoding="utf-8",
+    )
+    env = os.environ.copy()
+    env["PYTHONPATH"] = os.pathsep.join(
+        filter(None, (str(tmp_path), env.get("PYTHONPATH", "")))
+    )
+
+    completed = _run_real_fit_cli(
+        output,
+        method,
+        PARAMETERS,
+        check=False,
+        env=env,
+    )
+
+    rendered = " ".join((completed.stdout + completed.stderr).split())
+    assert completed.returncode == 1
+    assert rendered.count("Resampling analysis is incomplete") == 1
+    assert "summary products were withheld" in rendered
+    assert "During: statistics" in rendered
+    assert "Method Step: DEFAULT" in rendered
+    assert "diagnostics.toml" in rendered
+    assert "samples.tsv" in rendered
+    assert "failures.tsv" in rendered
+    assert "run_info/restart.toml" in rendered
+    assert "run_info/outcome.toml" in rendered
+    assert "unexpected internal error" not in rendered
+    assert "Traceback (most recent call last)" not in rendered
 
 
 def test_interrupted_native_statistics_report_truthful_disposition_counts(
@@ -3663,6 +4108,11 @@ def test_interrupted_native_statistics_report_truthful_disposition_counts(
 
     assert error_info.value.terminal == "interrupted"
     statistics = output / "Statistics" / "MonteCarlo"
+    assert error_info.value.diagnostics_path == statistics / "diagnostics.toml"
+    assert error_info.value.samples_path == statistics / "samples.tsv"
+    assert error_info.value.failures_path == statistics / "failures.tsv"
+    assert error_info.value.restart_path == output / "run_info" / "restart.toml"
+    assert error_info.value.outcome_path == output / "run_info" / "outcome.toml"
     diagnostics = tomllib.loads(
         (statistics / "diagnostics.toml").read_text(encoding="utf-8")
     )
@@ -3688,6 +4138,118 @@ def test_interrupted_native_statistics_report_truthful_disposition_counts(
     assert not (statistics / "correlations.tsv").exists()
     assert not (statistics / "plots.pdf").exists()
     assert _read_outcome(output)["terminal"] == "interrupted"
+
+
+def test_mcmc_diagnostics_failure_does_not_replace_primary_failure(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = _nested_mcmc_method(tmp_path / "method.toml", workers=1)
+    parameters = _bounded_parameters(tmp_path / "parameters.toml")
+    real_write = mcmc_module._write_native_mcmc_state_diagnostics
+
+    def fail_incomplete_diagnostics(*args, **kwargs):
+        if kwargs.get("status") == "incomplete":
+            raise RuntimeError("diagnostics finalization failed")
+        return real_write(*args, **kwargs)
+
+    with (
+        patch.object(
+            mcmc_module,
+            "derive_mcmc_analysis_result",
+            side_effect=RuntimeError("primary postprocessing failure"),
+        ),
+        patch.object(
+            mcmc_module,
+            "_write_native_mcmc_state_diagnostics",
+            side_effect=fail_incomplete_diagnostics,
+        ),
+        pytest.raises(
+            RuntimeError, match="primary postprocessing failure"
+        ) as error_info,
+    ):
+        run(
+            _fit_arguments(output, method, parameters=parameters),
+            session=AnalysisSession.create(),
+        )
+
+    assert error_info.value.__notes__ == [
+        (
+            "ChemEx could not publish incomplete MCMC diagnostics: "
+            "RuntimeError: diagnostics finalization failed"
+        )
+    ]
+    assert _read_outcome(output)["failure_message"] == (
+        "primary postprocessing failure"
+    )
+
+
+def test_incomplete_mcmc_diagnostics_io_failure_reports_preserved_evidence(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = _automatic_mcmc_method(tmp_path / "method.toml")
+    parameters = _bounded_parameters(tmp_path / "parameters.toml")
+    cause = OSError(28, "No space left on device")
+    real_diagnostics = mcmc_module._write_native_mcmc_state_diagnostics
+
+    def fail_incomplete_diagnostics(*args, **kwargs):
+        if kwargs.get("status") == "incomplete":
+            raise cause
+        return real_diagnostics(*args, **kwargs)
+
+    with (
+        patch.object(
+            native_mcmc_module.emcee.autocorr,
+            "integrated_time",
+            side_effect=ValueError("autocorrelation calculation failed"),
+        ),
+        patch.object(
+            mcmc_module,
+            "_write_native_mcmc_state_diagnostics",
+            side_effect=fail_incomplete_diagnostics,
+        ),
+        pytest.raises(ArtifactPublicationError) as error_info,
+    ):
+        run(
+            _fit_arguments(output, method, parameters=parameters),
+            session=AnalysisSession.create(),
+        )
+
+    error = error_info.value
+    statistics = output / "Statistics" / "MCMC"
+    assert error.__cause__ is cause
+    assert error.operation == "publish incomplete MCMC diagnostics"
+    assert error.path == statistics / "diagnostics.toml"
+    assert error.evidence_path == statistics / "raw_chain.tsv"
+    assert not (statistics / "diagnostics.toml").exists()
+
+
+def test_complete_mcmc_output_failure_reports_republished_diagnostics(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = _nested_mcmc_method(tmp_path / "method.toml", workers=1)
+    parameters = _bounded_parameters(tmp_path / "parameters.toml")
+    cause = OSError(28, "No space left on device")
+
+    with (
+        patch.object(mcmc_module, "_write_summary", side_effect=cause),
+        pytest.raises(ArtifactPublicationError) as error_info,
+    ):
+        run(
+            _fit_arguments(output, method, parameters=parameters),
+            session=AnalysisSession.create(),
+        )
+
+    error = error_info.value
+    statistics = output / "Statistics" / "MCMC"
+    assert error.__cause__ is cause
+    assert error.operation == "publish MCMC summary"
+    assert error.path == statistics / "summary.toml"
+    assert error.diagnostics_path == statistics / "diagnostics.toml"
+    assert (statistics / "diagnostics.toml").is_file()
+    assert not (statistics / "summary.toml").exists()
 
 
 def test_interrupted_resampling_publication_failure_preserves_interruption(
@@ -3725,6 +4287,46 @@ def test_interrupted_resampling_publication_failure_preserves_interruption(
     assert _read_outcome(output)["terminal"] == "interrupted"
 
 
+def test_interrupted_resampling_io_failure_reports_published_samples(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = _statistics_method(tmp_path / "method.toml", '"MC" = 3')
+    cause = OSError(28, "No space left on device")
+    real_diagnostics = resampling_module._write_native_state_diagnostics
+
+    def fail_incomplete_diagnostics(*args, **kwargs):
+        if kwargs.get("status") == "incomplete":
+            raise cause
+        return real_diagnostics(*args, **kwargs)
+
+    with (
+        patch.object(
+            resampling_module,
+            "_resampling_result_and_samples",
+            side_effect=KeyboardInterrupt,
+        ),
+        patch.object(
+            resampling_module,
+            "_write_native_state_diagnostics",
+            side_effect=fail_incomplete_diagnostics,
+        ),
+        pytest.raises(ArtifactPublicationError) as error_info,
+    ):
+        run(_fit_arguments(output, method), session=AnalysisSession.create())
+
+    error = error_info.value
+    statistics = output / "Statistics" / "MonteCarlo"
+    assert error.__cause__ is cause
+    assert error.operation == "publish incomplete resampling diagnostics"
+    assert error.path == statistics / "diagnostics.toml"
+    assert error.samples_path == statistics / "samples.tsv"
+    assert not hasattr(error, "failures_path")
+    assert not (statistics / "failures.tsv").exists()
+    assert error.restart_path == output / "run_info" / "restart.toml"
+    assert error.outcome_path == output / "run_info" / "outcome.toml"
+
+
 def test_ctrl_c_after_resampling_operation_preserves_validated_sample_values(
     tmp_path: Path,
 ) -> None:
@@ -3737,7 +4339,7 @@ def test_ctrl_c_after_resampling_operation_preserves_validated_sample_values(
             "_resampling_result_and_samples",
             side_effect=KeyboardInterrupt,
         ),
-        pytest.raises(KeyboardInterrupt),
+        pytest.raises(KeyboardInterrupt) as error_info,
     ):
         run(_fit_arguments(output, method), session=AnalysisSession.create())
 
@@ -3749,6 +4351,9 @@ def test_ctrl_c_after_resampling_operation_preserves_validated_sample_values(
     )
     assert diagnostics["terminal"] == "interrupted"
     assert diagnostics["completed_samples"] == 3
+    assert error_info.value.samples_path == statistics / "samples.tsv"
+    assert not hasattr(error_info.value, "failures_path")
+    assert not (statistics / "failures.tsv").exists()
     assert not (statistics / "summary.toml").exists()
     assert not (statistics / "correlations.tsv").exists()
     assert not (statistics / "plots.pdf").exists()
@@ -3838,6 +4443,35 @@ def test_native_resampling_publication_failure_is_terminal_and_fail_closed(
     assert _read_outcome(output)["status"] == "incomplete"
 
 
+def test_resampling_os_publication_failure_retains_path_and_cause(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = _statistics_method(tmp_path / "method.toml", '"MC" = 1')
+    cause = OSError(28, "No space left on device")
+
+    with (
+        patch(
+            "chemex.optimize.resampling._write_resampling_correlations",
+            side_effect=cause,
+        ),
+        pytest.raises(ArtifactPublicationError) as error_info,
+    ):
+        run(_fit_arguments(output, method), session=AnalysisSession.create())
+
+    error = error_info.value
+    statistics = output / "Statistics" / "MonteCarlo"
+    assert error.__cause__ is cause
+    assert error.operation == "publish resampling correlations"
+    assert error.path == statistics / "correlations.tsv"
+    assert error.samples_path == statistics / "samples.tsv"
+    assert error.diagnostics_path == statistics / "diagnostics.toml"
+    assert error.restart_path == output / "run_info" / "restart.toml"
+    assert error.outcome_path == output / "run_info" / "outcome.toml"
+    assert not (statistics / "correlations.tsv").exists()
+    assert _read_outcome(output)["failure_type"] == "ArtifactPublicationError"
+
+
 def test_native_resampling_result_failure_replaces_running_diagnostics(
     tmp_path: Path,
 ) -> None:
@@ -3906,6 +4540,66 @@ def test_resampling_diagnostics_failure_preserves_original_publication_error(
     outcome = _read_outcome(output)
     assert outcome["status"] == "incomplete"
     assert outcome["failure_message"] == "correlation publication failed"
+
+
+def test_resampling_writer_error_stays_contextual_when_diagnostics_also_fail(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = _statistics_method(tmp_path / "method.toml", '"MC" = 1')
+    writer_error = OSError(28, "samples disk full")
+    diagnostics_error = OSError(13, "diagnostics permission denied")
+    real_atomic_write = resampling_module.write_text_atomic
+
+    def fail_incomplete_diagnostics(destination: Path, content: str) -> None:
+        if (
+            destination.name == "diagnostics.toml"
+            and 'status = "incomplete"' in content
+        ):
+            raise diagnostics_error
+        real_atomic_write(destination, content)
+
+    with (
+        patch.object(
+            resampling_module,
+            "_write_native_samples",
+            side_effect=writer_error,
+        ),
+        patch.object(
+            resampling_module,
+            "write_text_atomic",
+            side_effect=fail_incomplete_diagnostics,
+        ),
+        pytest.raises(ArtifactPublicationError) as error_info,
+    ):
+        run(_fit_arguments(output, method), session=AnalysisSession.create())
+
+    error = error_info.value
+    assert error.__cause__ is writer_error
+    assert error.operation == "publish resampling samples"
+    assert error.path == output / "Statistics" / "MonteCarlo" / "samples.tsv"
+    assert "diagnostics permission denied" in " ".join(error.__notes__ or ())
+
+
+def test_resampling_processing_oserror_remains_unclassified(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = _statistics_method(tmp_path / "method.toml", '"MC" = 1')
+    cause = OSError("in-memory result defect")
+
+    with (
+        patch.object(
+            resampling_module,
+            "_resampling_result_and_samples",
+            side_effect=cause,
+        ),
+        pytest.raises(OSError) as error_info,
+    ):
+        run(_fit_arguments(output, method), session=AnalysisSession.create())
+
+    assert error_info.value is cause
+    assert not isinstance(error_info.value, ChemExError)
 
 
 def test_real_grid_fit_writes_profiled_surfaces_and_withholds_covariance(
@@ -4526,7 +5220,7 @@ def test_seed_publication_failure_prevents_de_from_starting(tmp_path: Path) -> N
         "restart_revision": 0,
         "terminal": "failed",
         "failure_stage": "run_info",
-        "failure_type": "OSError",
+        "failure_type": "ArtifactPublicationError",
         "failure_message": "seed publication failed",
     }
 
@@ -4849,7 +5543,7 @@ FIX = ["PB", "KEX_AB"]
     assert outcome["restart_revision"] == 1
 
 
-def test_planned_invalidation_rejects_a_step_root_outside_the_output(
+def test_method_plan_rejects_a_step_root_outside_the_output(
     tmp_path: Path,
 ) -> None:
     output = tmp_path / "Output"
@@ -4866,11 +5560,16 @@ FIX = ["PB", "KEX_AB"]
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="outside the output directory"):
+    with pytest.raises(
+        MethodFormatError,
+        match="must remain inside the output directory",
+    ) as error_info:
         run(_fit_arguments(output, method), session=AnalysisSession.create())
 
+    assert error_info.value.source.filename == method
+    assert error_info.value.source.step == "../external"
     assert external_result.read_text(encoding="utf-8") == "keep me\n"
-    assert _read_outcome(output)["status"] == "incomplete"
+    assert not (output / "run_info").exists()
 
 
 def test_native_backend_failure_cannot_commit_or_publish_fitted_output(
@@ -4894,6 +5593,165 @@ def test_native_backend_failure_cannot_commit_or_publish_fitted_output(
     assert not (output / "Parameters").exists()
     assert not (output / "Data").exists()
     assert not (output / "Statistics" / "Covariance").exists()
+
+
+def test_native_nonconvergence_retains_typed_terminal_evidence(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+
+    def nonconverged_backend(fun, x0, **_settings):
+        vector = np.asarray(x0, dtype=np.float64)
+        residuals = np.asarray(fun(vector), dtype=np.float64)
+        return SimpleNamespace(
+            x=vector,
+            fun=residuals,
+            status=0,
+            success=False,
+            message="maximum evaluations reached",
+            nfev=1,
+            njev=0,
+            cost=0.5 * float(np.dot(residuals, residuals)),
+            optimality=1.0,
+            active_mask=np.zeros_like(vector, dtype=np.int64),
+            jac=np.zeros((residuals.size, vector.size), dtype=np.float64),
+        )
+
+    with (
+        patch(
+            "chemex.optimize.direct_trf.least_squares",
+            side_effect=nonconverged_backend,
+        ),
+        pytest.raises(NativeDeterministicAnalysisError) as error_info,
+    ):
+        run(_fit_arguments(output), session=AnalysisSession.create())
+
+    error = error_info.value
+    assert error.reason == "The optimizer did not converge."
+    assert [failure.category for failure in error.failures] == ["non_converged"]
+    assert error.outcome.terminal.value == "component_failure"
+    assert _read_outcome(output)["failure_type"] == ("NativeDeterministicAnalysisError")
+
+
+def test_native_nonconvergence_is_a_known_cli_failure(tmp_path: Path) -> None:
+    output = tmp_path / "Output"
+    (tmp_path / "sitecustomize.py").write_text(
+        """
+import chemex.optimize.direct_trf as direct_trf
+
+real_least_squares = direct_trf.least_squares
+
+def nonconverged(*args, **kwargs):
+    result = real_least_squares(*args, **kwargs)
+    result.status = 0
+    result.success = False
+    result.message = "maximum evaluations reached"
+    return result
+
+direct_trf.least_squares = nonconverged
+""".lstrip(),
+        encoding="utf-8",
+    )
+    env = os.environ.copy()
+    env["PYTHONPATH"] = os.pathsep.join(
+        filter(None, (str(tmp_path), env.get("PYTHONPATH", "")))
+    )
+
+    completed = _run_real_fit_cli(
+        output,
+        METHOD,
+        PARAMETERS,
+        check=False,
+        env=env,
+    )
+
+    rendered = " ".join((completed.stdout + completed.stderr).split())
+    assert completed.returncode == 1
+    assert rendered.count("Deterministic analysis did not produce") == 1
+    assert "optimizer did not converge" in rendered
+    assert "maximum evaluations reached" in rendered
+    assert "Method Step: DEFAULT" in rendered
+    assert "run_info/outcome.toml" in rendered
+    assert "unexpected internal error" not in rendered
+    assert "Traceback (most recent call last)" not in rendered
+
+
+def test_native_budget_exhaustion_is_a_known_analysis_failure(
+    tmp_path: Path,
+) -> None:
+    def exceed_budget(fun, x0, **_settings):
+        fun(np.asarray(x0, dtype=np.float64))
+        fun(np.asarray(x0, dtype=np.float64))
+        raise AssertionError("objective budget did not stop the backend")
+
+    with (
+        patch.object(
+            native_deterministic_module,
+            "_objective_request_budget",
+            return_value=1,
+        ),
+        patch(
+            "chemex.optimize.direct_trf.least_squares",
+            side_effect=exceed_budget,
+        ),
+        pytest.raises(NativeDeterministicAnalysisError) as error_info,
+    ):
+        run(
+            _fit_arguments(tmp_path / "Output"),
+            session=AnalysisSession.create(),
+        )
+
+    assert error_info.value.reason == ("The objective-evaluation budget was exhausted.")
+    assert [failure.category for failure in error_info.value.failures] == [
+        "objective_budget_exhausted"
+    ]
+
+
+@pytest.mark.parametrize(
+    ("validity", "known"),
+    (("INVALID_TRIAL", True), ("INVALID_PLAN_OR_BINDING", False)),
+)
+def test_native_evaluation_failure_classification_is_conservative(
+    tmp_path: Path,
+    validity: str,
+    known: bool,
+) -> None:
+    def fail_trial(evaluator: BoundEvaluator, frame) -> EvaluationFailure:
+        return EvaluationFailure(
+            evaluator.plan.identity,
+            frame.parameterization_identity,
+            "kernel" if known else "binding",
+            "non_finite_calculation" if known else "invalid_binding",
+            validity,  # ty: ignore[invalid-argument-type]
+            message="typed evaluation failure",
+        )
+
+    with (
+        patch.object(BoundEvaluator, "evaluate_residuals", fail_trial),
+        pytest.raises(RuntimeError) as error_info,
+    ):
+        run(
+            _fit_arguments(tmp_path / f"Output-{validity}"),
+            session=AnalysisSession.create(),
+        )
+
+    assert isinstance(error_info.value, NativeDeterministicAnalysisError) is known
+
+
+def test_native_implementation_failure_remains_unclassified(
+    tmp_path: Path,
+) -> None:
+    with (
+        patch(
+            "chemex.optimize.direct_trf.least_squares",
+            side_effect=RuntimeError("backend implementation failed"),
+        ),
+        pytest.raises(NativeDeterministicInternalError) as error_info,
+    ):
+        run(_fit_arguments(tmp_path / "Output"), session=AnalysisSession.create())
+
+    assert "did not commit" in str(error_info.value)
+    assert error_info.value.outcome.terminal.value == "execution_failure"
 
 
 def test_v1_constraint_and_profile_selection_reach_native_product_fit(

@@ -1,4 +1,3 @@
-import sys
 from argparse import Namespace
 from collections.abc import Callable
 from typing import Any
@@ -12,6 +11,7 @@ from matplotlib.widgets import Button, Slider
 from chemex.configuration.methods import Selection
 from chemex.containers.experiment import Experiment
 from chemex.containers.experiments import Experiments
+from chemex.exceptions import ChemExError
 from chemex.experiments.builder import build_experiments
 from chemex.runtime import AnalysisSession
 from chemex.tools.pick_cest.buttons import Buttons
@@ -91,9 +91,9 @@ def pick_cest(args: Namespace) -> None:
 
     for experiment in experiments:
         if not is_cest_experiment(experiment):
-            sys.exit(
-                f"\nError: '{experiment.name}' experiment not supported. "
-                "The command 'chemex pick_cest' only works with CEST experiments.\n",
+            raise ChemExError(
+                f"Experiment {experiment.name!r} is not supported by 'chemex "
+                "pick_cest'; select a CEST experiment."
             )
         if experiment.name.startswith(("dcest", "coscest")):
             sw = 4.0
