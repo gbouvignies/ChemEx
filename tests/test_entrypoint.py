@@ -13,6 +13,7 @@ import pytest
 
 from chemex import chemex as application_module
 from chemex.configuration.parameters import ParameterConfigurationError
+from chemex.exceptions import InputFileReadError
 
 TRACEBACK_HEADER = "Traceback (most recent call last)"
 SECRET_CANARY = "SECRET_CANARY"  # noqa: S105 - security regression canary
@@ -356,10 +357,29 @@ def test_plot_param_missing_input_is_a_known_cli_failure(
 
     combined = completed.stdout + completed.stderr
     assert completed.returncode == 1
-    assert "Parameter configuration is invalid" in completed.stderr
+    assert "Input file could not be read" in completed.stderr
     assert str(missing) in completed.stderr
     assert "unexpected internal error" not in combined
     assert TRACEBACK_HEADER not in combined
+
+
+def test_plot_param_missing_input_retains_original_oserror(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    missing = tmp_path / "missing-fitted.toml"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["chemex", "plot_param", "-p", str(missing), "-n", "PB"],
+    )
+
+    with pytest.raises(InputFileReadError) as error_info:
+        application_module.main()
+
+    assert error_info.value.path == missing
+    assert isinstance(error_info.value.__cause__, FileNotFoundError)
+    assert error_info.value.error is error_info.value.__cause__
 
 
 def test_programmatic_main_retains_ordinary_exception_semantics(
@@ -470,6 +490,20 @@ def test_cli_bootstrap_debug_reraises_unexpected_failure_with_cause() -> None:
     assert "The above exception was the direct cause" in combined
 
 
+def test_debug_token_after_end_of_options_does_not_expose_internal_failure() -> None:
+    completed = _run_bootstrap(
+        f"raise RuntimeError('{SECRET_CANARY}')",
+        arguments=("--", "--debug"),
+    )
+
+    _assert_bootstrap_result(
+        completed,
+        1,
+        UNEXPECTED_MESSAGE,
+        absent=(SECRET_CANARY,),
+    )
+
+
 def test_cli_bootstrap_reports_incomplete_resampling_artifacts_once() -> None:
     completed = _run_bootstrap(
         """
@@ -558,6 +592,34 @@ def test_cli_bootstrap_reports_contextualized_publication_failure() -> None:
     assert "No space left on device" in rendered
     assert "Output/run_info/outcome.toml" in rendered
     assert "unexpected internal error" not in rendered
+    assert TRACEBACK_HEADER not in rendered
+
+
+def test_interrupted_publication_failure_keeps_exit_130_and_integrity_details() -> None:
+    completed = _run_bootstrap(
+        """
+        from pathlib import Path
+        from chemex.exceptions import ArtifactPublicationError
+        cause = OSError(28, "No space left on device")
+        error = ArtifactPublicationError(
+            "publish the interrupted run outcome",
+            Path("Output/run_info/outcome.toml"),
+            cause,
+        )
+        error.terminal = "interrupted"
+        error.restart_path = Path("Output/run_info/restart.toml")
+        raise error from cause
+        """
+    )
+
+    rendered = " ".join(completed.stderr.split())
+    assert completed.returncode == 130
+    assert "Analysis interrupted by user" in rendered
+    assert "Interruption finalization failed" in rendered
+    assert "publish the interrupted run outcome" in rendered
+    assert "Output/run_info/outcome.toml" in rendered
+    assert "No space left on device" in rendered
+    assert "Output/run_info/restart.toml" in rendered
     assert TRACEBACK_HEADER not in rendered
 
 

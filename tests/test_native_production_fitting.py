@@ -1792,7 +1792,7 @@ def test_incomplete_outcome_failure_does_not_replace_primary_failure(
     assert _read_outcome(output)["status"] == "running"
 
 
-def test_interrupted_outcome_publication_failure_supersedes_interruption(
+def test_interrupted_outcome_publication_failure_retains_interruption(
     tmp_path: Path,
 ) -> None:
     output = tmp_path / "Output"
@@ -1820,6 +1820,7 @@ def test_interrupted_outcome_publication_failure_supersedes_interruption(
 
     error = error_info.value
     assert error.__cause__ is cause
+    assert error.terminal == "interrupted"
     assert error.operation == "publish the incomplete run outcome"
     assert error.path == output / "run_info" / "outcome.toml"
     assert error.restart_path == output / "run_info" / "restart.toml"
@@ -2205,7 +2206,7 @@ def test_interrupted_uncertainty_publication_failure_preserves_interruption(
     assert _read_outcome(output)["terminal"] == "interrupted"
 
 
-def test_interrupted_uncertainty_io_failure_supersedes_interruption(
+def test_interrupted_uncertainty_io_failure_retains_interruption(
     tmp_path: Path,
 ) -> None:
     output = tmp_path / "Output"
@@ -2235,6 +2236,7 @@ def test_interrupted_uncertainty_io_failure_supersedes_interruption(
         )
 
     assert error_info.value.__cause__ is cause
+    assert error_info.value.terminal == "interrupted"
     assert error_info.value.operation == "publish deterministic analysis output"
     assert error_info.value.path == failed_path
 
@@ -3543,6 +3545,7 @@ def test_interrupted_mcmc_io_failure_reports_published_evidence(
     error = error_info.value
     statistics = output / "Statistics" / "MCMC"
     assert error.__cause__ is cause
+    assert error.terminal == "interrupted"
     assert error.operation == "publish interrupted MCMC diagnostics"
     assert error.path == statistics / "diagnostics.toml"
     assert error.evidence_path == statistics / "raw_chain.tsv"
@@ -4147,6 +4150,9 @@ def test_mcmc_diagnostics_failure_does_not_replace_primary_failure(
     method = _nested_mcmc_method(tmp_path / "method.toml", workers=1)
     parameters = _bounded_parameters(tmp_path / "parameters.toml")
     real_write = mcmc_module._write_native_mcmc_state_diagnostics
+    original_cause = ValueError("original postprocessing cause")
+    primary = RuntimeError("primary postprocessing failure")
+    primary.__cause__ = original_cause
 
     def fail_incomplete_diagnostics(*args, **kwargs):
         if kwargs.get("status") == "incomplete":
@@ -4157,7 +4163,7 @@ def test_mcmc_diagnostics_failure_does_not_replace_primary_failure(
         patch.object(
             mcmc_module,
             "derive_mcmc_analysis_result",
-            side_effect=RuntimeError("primary postprocessing failure"),
+            side_effect=primary,
         ),
         patch.object(
             mcmc_module,
@@ -4179,6 +4185,8 @@ def test_mcmc_diagnostics_failure_does_not_replace_primary_failure(
             "RuntimeError: diagnostics finalization failed"
         )
     ]
+    assert error_info.value is primary
+    assert error_info.value.__cause__ is original_cause
     assert _read_outcome(output)["failure_message"] == (
         "primary postprocessing failure"
     )
@@ -4252,6 +4260,50 @@ def test_complete_mcmc_output_failure_reports_republished_diagnostics(
     assert not (statistics / "summary.toml").exists()
 
 
+def test_mcmc_diagnostics_io_failure_does_not_report_removed_diagnostics(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Output"
+    method = _nested_mcmc_method(tmp_path / "method.toml", workers=1)
+    parameters = _bounded_parameters(tmp_path / "parameters.toml")
+    output_cause = OSError(28, "No space left on device")
+    diagnostics_cause = OSError(5, "Input/output error")
+    real_diagnostics = mcmc_module._write_native_mcmc_state_diagnostics
+
+    def fail_incomplete_diagnostics(*args, **kwargs):
+        if kwargs.get("status") == "incomplete":
+            raise diagnostics_cause
+        return real_diagnostics(*args, **kwargs)
+
+    with (
+        patch.object(mcmc_module, "_write_summary", side_effect=output_cause),
+        patch.object(
+            mcmc_module,
+            "_write_native_mcmc_state_diagnostics",
+            side_effect=fail_incomplete_diagnostics,
+        ),
+        pytest.raises(ArtifactPublicationError) as error_info,
+    ):
+        run(
+            _fit_arguments(output, method, parameters=parameters),
+            session=AnalysisSession.create(),
+        )
+
+    error = error_info.value
+    statistics = output / "Statistics" / "MCMC"
+    assert error.__cause__ is output_cause
+    assert error.operation == "publish MCMC summary"
+    assert error.path == statistics / "summary.toml"
+    assert not hasattr(error, "diagnostics_path")
+    assert not (statistics / "diagnostics.toml").exists()
+    assert error.__notes__ == [
+        (
+            "ChemEx could not publish incomplete MCMC diagnostics: "
+            "OSError: [Errno 5] Input/output error"
+        )
+    ]
+
+
 def test_interrupted_resampling_publication_failure_preserves_interruption(
     tmp_path: Path,
 ) -> None:
@@ -4318,6 +4370,7 @@ def test_interrupted_resampling_io_failure_reports_published_samples(
     error = error_info.value
     statistics = output / "Statistics" / "MonteCarlo"
     assert error.__cause__ is cause
+    assert error.terminal == "interrupted"
     assert error.operation == "publish incomplete resampling diagnostics"
     assert error.path == statistics / "diagnostics.toml"
     assert error.samples_path == statistics / "samples.tsv"
@@ -4508,6 +4561,9 @@ def test_resampling_diagnostics_failure_preserves_original_publication_error(
     output = tmp_path / "Output"
     method = _statistics_method(tmp_path / "method.toml", '"MC" = 1')
     real_atomic_write = resampling_module.write_text_atomic
+    original_cause = ValueError("original correlation cause")
+    primary = RuntimeError("correlation publication failed")
+    primary.__cause__ = original_cause
 
     def fail_incomplete_diagnostics(destination: Path, content: str) -> None:
         if (
@@ -4521,14 +4577,16 @@ def test_resampling_diagnostics_failure_preserves_original_publication_error(
         patch.object(
             resampling_module,
             "_write_resampling_correlations",
-            side_effect=RuntimeError("correlation publication failed"),
+            side_effect=primary,
         ),
         patch.object(
             resampling_module,
             "write_text_atomic",
             side_effect=fail_incomplete_diagnostics,
         ),
-        pytest.raises(RuntimeError, match="correlation publication failed"),
+        pytest.raises(
+            RuntimeError, match="correlation publication failed"
+        ) as error_info,
     ):
         run(_fit_arguments(output, method), session=AnalysisSession.create())
 
@@ -4537,6 +4595,8 @@ def test_resampling_diagnostics_failure_preserves_original_publication_error(
     assert not (statistics / "summary.toml").exists()
     assert not (statistics / "correlations.tsv").exists()
     assert not (statistics / "plots.pdf").exists()
+    assert error_info.value is primary
+    assert error_info.value.__cause__ is original_cause
     outcome = _read_outcome(output)
     assert outcome["status"] == "incomplete"
     assert outcome["failure_message"] == "correlation publication failed"

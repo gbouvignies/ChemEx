@@ -39,6 +39,15 @@ def _is_interrupted(error: Exception) -> bool:
     return isinstance(terminal, str) and str.__eq__(terminal, "interrupted") is True
 
 
+def _debug_requested(arguments: list[str]) -> bool:
+    """Recognize explicit debug opt-in without scanning past end-of-options."""
+    try:
+        end_of_options = arguments.index("--")
+    except ValueError:
+        return "--debug" in arguments
+    return "--debug" in arguments[:end_of_options]
+
+
 def _known_failure_message(error: Exception) -> str:
     try:
         terminal = import_module("chemex.terminal")
@@ -74,7 +83,7 @@ def main() -> None:
     """Run ChemEx and apply the three terminal failure policies."""
     renderer = _plain_diagnostic
     chemex_error_type: type[Exception] | None = None
-    debug = "--debug" in sys.argv[1:]
+    debug = _debug_requested(sys.argv[1:])
     try:
         renderer = _load_renderer()
         exceptions = import_module("chemex.exceptions")

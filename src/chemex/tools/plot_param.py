@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import configparser
 from argparse import Namespace
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 
 import chemex.parameters.name as cpn
 import chemex.parameters.spin_system as cns
 from chemex.configuration.parameters import ParameterConfigurationError
-from chemex.exceptions import ChemExError
+from chemex.exceptions import ChemExError, InputFileReadError
 from chemex.messages import print_making_plots, print_section
 
 
@@ -24,10 +25,11 @@ def plot_param(args: Namespace) -> None:
 
     filename = args.parameters.pop()
     try:
-        loaded = params.read(str(filename))
-        if not loaded:
-            raise FileNotFoundError(filename)
-    except (OSError, configparser.Error) as error:
+        with Path(filename).open(encoding="utf-8") as input_file:
+            params.read_file(input_file)
+    except OSError as error:
+        raise InputFileReadError(Path(filename), error) from error
+    except (UnicodeDecodeError, configparser.Error) as error:
         raise ParameterConfigurationError(
             (filename,),
             "The fitted parameter file could not be parsed.",

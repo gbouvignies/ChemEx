@@ -135,6 +135,7 @@ def run_fit(
         except ArtifactPublicationError as finalization_error:
             if _is_interrupted_failure(error):
                 _copy_verified_paths(error, finalization_error)
+                object.__setattr__(finalization_error, "terminal", "interrupted")
                 if run_info.restart_revision > 0:
                     object.__setattr__(
                         finalization_error,

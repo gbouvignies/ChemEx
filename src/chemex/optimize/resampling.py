@@ -74,8 +74,11 @@ def _resampling_publication_error(
     samples_published: bool = False,
     failures_published: bool = False,
     diagnostics_published: bool = False,
+    interrupted: bool = False,
 ) -> ArtifactPublicationError:
     failure = ArtifactPublicationError(operation, path, error)
+    if interrupted:
+        object.__setattr__(failure, "terminal", "interrupted")
     statistic_path = path.parent
     if samples_published:
         object.__setattr__(failure, "samples_path", statistic_path / "samples.tsv")
@@ -496,6 +499,7 @@ def _run_native_resampling_method(  # noqa: C901 - closed execution/publication 
                     "publish interrupted resampling diagnostics",
                     statistic_path / "diagnostics.toml",
                     publication_error,
+                    interrupted=True,
                 ) from publication_error
             error.add_note(
                 "ChemEx could not publish incomplete resampling diagnostics: "
@@ -670,6 +674,7 @@ def _run_native_resampling_method(  # noqa: C901 - closed execution/publication 
                     publication_error,
                     failures_published=failures_published,
                     diagnostics_published=diagnostics_published,
+                    interrupted=True,
                 ) from publication_error
             except (Exception, KeyboardInterrupt):  # noqa: BLE001
                 error.add_note(
@@ -692,6 +697,7 @@ def _run_native_resampling_method(  # noqa: C901 - closed execution/publication 
                     publication_error,
                     samples_published=samples_published,
                     diagnostics_published=diagnostics_published,
+                    interrupted=True,
                 ) from publication_error
             except (Exception, KeyboardInterrupt):  # noqa: BLE001
                 error.add_note(
@@ -722,6 +728,7 @@ def _run_native_resampling_method(  # noqa: C901 - closed execution/publication 
                     publication_error,
                     samples_published=samples_published,
                     failures_published=failures_published,
+                    interrupted=True,
                 ) from publication_error
             if isinstance(error, NativeResamplingIncompleteError):
                 remove_paths_best_effort(
@@ -764,7 +771,6 @@ def _run_native_resampling_method(  # noqa: C901 - closed execution/publication 
                 (statistic_path / "diagnostics.toml",),
                 error,
             )
-            raise error from publication_error
         except (Exception, KeyboardInterrupt):  # noqa: BLE001
             error.add_note(
                 "ChemEx could not publish incomplete resampling diagnostics."

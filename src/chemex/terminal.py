@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
-from chemex.exceptions import ChemExError
+from chemex.exceptions import ArtifactPublicationError, ChemExError
 
 
 def _fields(headline: str, *fields: tuple[str, str | None]) -> str:
@@ -56,6 +56,15 @@ def format_interruption(error: BaseException) -> str:
     lines = ["Analysis interrupted by user."]
     if context:
         lines.append(f"During: {context}")
+    if isinstance(error, ArtifactPublicationError):
+        lines.extend(
+            (
+                "Interruption finalization failed.",
+                f"Operation: {error.operation}",
+                f"Path: {error.path}",
+                f"Reason: {error.error}",
+            )
+        )
     paths = _paths(error)
     if paths:
         lines.append("Preserved:")

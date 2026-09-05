@@ -182,9 +182,16 @@ def _propagate_uncertainty_interruption(
     raise error
 
 
-def _propagate_output_failure(error: BaseException, path: Path) -> Never:
+def _propagate_output_failure(
+    error: BaseException,
+    path: Path,
+    *,
+    interrupted: bool = False,
+) -> Never:
     """Add deterministic output context without reclassifying non-I/O failures."""
     if isinstance(error, ArtifactPublicationError):
+        if interrupted:
+            object.__setattr__(error, "terminal", "interrupted")
         raise error
     if isinstance(error, OSError):
         filename = error.filename
@@ -195,6 +202,8 @@ def _propagate_output_failure(error: BaseException, path: Path) -> Never:
             error,
         )
         mark_failure_stage(failure, "output")
+        if interrupted:
+            object.__setattr__(failure, "terminal", "interrupted")
         raise failure from error
     mark_failure_stage(error, "output")
     raise error
@@ -683,7 +692,7 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
         except (Exception, KeyboardInterrupt) as error:  # noqa: BLE001
             if uncertainty_interrupted:
                 if isinstance(error, OSError):
-                    _propagate_output_failure(error, path)
+                    _propagate_output_failure(error, path, interrupted=True)
                 _propagate_uncertainty_interruption(error)
             _propagate_output_failure(error, path)
         if uncertainty_interrupted:
@@ -706,7 +715,7 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
     except (Exception, KeyboardInterrupt) as error:  # noqa: BLE001
         if uncertainty_interrupted:
             if isinstance(error, OSError):
-                _propagate_output_failure(error, path)
+                _propagate_output_failure(error, path, interrupted=True)
             _propagate_uncertainty_interruption(error)
         _propagate_output_failure(error, path)
     if uncertainty_interrupted:

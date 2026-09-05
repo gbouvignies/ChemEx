@@ -132,6 +132,10 @@ def _mcmc_publication_error(
 ) -> ArtifactPublicationError:
     failure = ArtifactPublicationError(operation, path, error)
     if preserved_from is not None:
+        if isinstance(preserved_from, KeyboardInterrupt) or (
+            getattr(preserved_from, "terminal", None) == "interrupted"
+        ):
+            object.__setattr__(failure, "terminal", "interrupted")
         for name in ("evidence_path", "diagnostics_path"):
             value = getattr(preserved_from, name, None)
             if isinstance(value, Path):
@@ -1049,6 +1053,15 @@ def run_native_mcmc(  # noqa: C901 - closed execution/publication lifecycle
                 analysis_result=analysis_result,
                 timings=timings,
             )
+            if isinstance(
+                error,
+                (ArtifactPublicationError, NativeMcmcIncompleteError),
+            ):
+                object.__setattr__(
+                    error,
+                    "diagnostics_path",
+                    statistic_path / "diagnostics.toml",
+                )
         except OSError as publication_error:
             if isinstance(error, NativeMcmcIncompleteError):
                 remove_paths_best_effort(
@@ -1069,20 +1082,12 @@ def run_native_mcmc(  # noqa: C901 - closed execution/publication lifecycle
                 (statistic_path / "diagnostics.toml",),
                 error,
             )
-            raise error from publication_error
         except KeyboardInterrupt:
             raise
-        except Exception as publication_error:
+        except Exception as publication_error:  # noqa: BLE001 - preserve primary failure
             error.add_note(
                 "ChemEx could not publish incomplete MCMC diagnostics: "
                 f"{type(publication_error).__name__}: {publication_error}"
-            )
-            raise error from publication_error
-        if isinstance(error, (ArtifactPublicationError, NativeMcmcIncompleteError)):
-            object.__setattr__(
-                error,
-                "diagnostics_path",
-                statistic_path / "diagnostics.toml",
             )
         raise
     else:
