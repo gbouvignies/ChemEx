@@ -270,7 +270,7 @@ def build_parser() -> ArgumentParser:
     # parser for the positional argument "pick_cest"
     plot_param_parser = subparsers.add_parser(
         "plot_param",
-        help="Plot one selected parameter from a 'parameters.fit' file",
+        help="Plot one selected parameter from a 'Parameters/fitted.toml' file",
     )
 
     _add_debug_argument(plot_param_parser, inherit_default=True)

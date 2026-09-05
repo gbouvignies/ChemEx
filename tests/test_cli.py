@@ -136,3 +136,7 @@ def test_simulate_parser_does_not_accept_execution_arguments() -> None:
                 "2",
             ],
         )
+
+
+def test_plot_param_help_names_current_fitted_parameter_output() -> None:
+    assert "Parameters/fitted.toml" in build_parser().format_help()

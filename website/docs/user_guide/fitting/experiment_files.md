@@ -189,7 +189,7 @@ The `error` key specifies the method for estimating uncertainties:
 | Value         | Description                                                                                                                               |
 | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | `"file"`      | Use uncertainties directly from the data file.                                                                                            |
-| `"duplicates"`| Calculate uncertainty using pooled standard deviation, or return average error if duplicates are not available.                           |
+| `"duplicates"`| Calculate uncertainty from duplicate points. If no profile in the experiment contains duplicates, keep the uncertainties from the data files. |
 | `"scatter"`   | Estimate uncertainty by assuming additive Gaussian noise on the profile, suitable for CEST data.                                          |
 
 #### `filter_offsets`

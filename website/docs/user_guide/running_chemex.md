@@ -31,4 +31,7 @@ For detailed options specific to each sub-command, append `--help` after the sub
 chemex <subcommand> --help
 ```
 
+Use `--debug` before or after the sub-command to show tracebacks and chained
+causes for unexpected internal errors.
+
 :::

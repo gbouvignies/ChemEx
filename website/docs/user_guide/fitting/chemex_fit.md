@@ -20,7 +20,7 @@ The table below lists the available options for `chemex fit`. Each option links 
 | ---- | ----------- |
 | [`-e`](experiment_files.md) or [`--experiments`](experiment_files.md) | Specify files containing experimental setup and data. |
 | [`-p`](parameter_files.md) or [`--parameters`](parameter_files.md) | Specify files containing initial fitting parameters. |
-| [`-m`](method_files.md) or [`--methods`](method_files.md) | Indicate the fitting method file (optional). |
+| [`-m`](method_files.md) or [`--method`](method_files.md) | Indicate the fitting method file (optional). |
 | [`-d`](kinetic_models.md) or [`--model`](kinetic_models.md) | Specify the kinetic model for fitting (optional, default: `2st`). |
 | [`-o`](outputs.mdx) or [`--output`](outputs.mdx) | Set the output directory (optional, default: `./Output`). |
 | `--plot {nothing, normal, all}` | Select the plotting level (optional, default: `normal`). |
