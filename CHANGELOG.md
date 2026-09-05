@@ -27,6 +27,11 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   signature; the obsolete `DH_AC` and `DS_AC` arguments have been removed.
 
 ### Fixed
+- Native MCMC automatic burn-in once again uses a valid finite positive
+  tentative autocorrelation estimate from a short chain. Such runs publish
+  posterior products with explicit tentative-estimate and tentative-burn
+  warnings while withholding autocorrelation-derived ESS and MCSE; unavailable,
+  invalid, or chain-consuming automatic burn estimates remain fail-closed.
 - Native MCMC now uses isolated process workers for genuine CPU-parallel
   likelihood evaluation, while preserving seeded serial/parallel chain
   equivalence and native-library thread coordination.

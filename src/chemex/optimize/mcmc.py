@@ -14,7 +14,12 @@ from chemex.atomic import open_text_atomic, remove_paths_best_effort, write_text
 from chemex.configuration.method_plan import McmcRequest
 from chemex.configuration.methods import McmcSettings
 from chemex.containers.experiments import Experiments
-from chemex.messages import McmcProgressReporter, console
+from chemex.messages import (
+    McmcProgressReporter,
+    console,
+    print_mcmc_incomplete_error,
+    print_mcmc_tentative_burn_warning,
+)
 from chemex.optimize.native_deterministic import NativeDeterministicFit
 from chemex.optimize.native_mcmc import (
     EnsembleState,
@@ -454,6 +459,8 @@ def _write_diagnostics(
     lines.append("unbounded_parameters = []")
     if root_seed is not None:
         lines.append(f"root_seed = {root_seed}")
+    if result.burn_in_warning is not None:
+        lines.append(f"burn_in_warning = {_quote_toml_string(result.burn_in_warning)}")
     _extend_autocorrelation_diagnostics(lines, autocorrelation)
     _extend_timing_diagnostics(lines, timings)
     write_text_atomic(path / "diagnostics.toml", "\n".join(lines) + "\n")
@@ -781,6 +788,15 @@ def run_native_mcmc(  # noqa: C901 - closed execution/publication lifecycle
             engine="native MCMC",
             root_seed=root_seed,
         )
+        if analysis_result.burn_in_warning is not None:
+            autocorrelation = cast(
+                "McmcAutocorrelationReport",
+                analysis_result.autocorrelation_report,
+            )
+            print_mcmc_tentative_burn_warning(
+                analysis_result.raw_step_count,
+                autocorrelation.recommended_min_steps_50tau,
+            )
     except (Exception, KeyboardInterrupt) as error:
         raw_evidence = (
             analysis_result.evidence
@@ -890,6 +906,8 @@ def run_native_mcmc(  # noqa: C901 - closed execution/publication lifecycle
             analysis_result=analysis_result,
             timings=timings,
         )
+        if isinstance(error, NativeMcmcIncompleteError):
+            print_mcmc_incomplete_error(statistic_path / "diagnostics.toml")
         raise
     else:
         return analysis_result

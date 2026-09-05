@@ -4333,6 +4333,7 @@ class McmcAnalysisResult:
     retained_step_ordinals: tuple[int, ...]
     raw_chain: Array | None = field(default=None, repr=False, compare=False)
     raw_lnprob: Array | None = field(default=None, repr=False, compare=False)
+    burn_in_warning: str | None = None
     failure: McmcAnalysisFailure | None = None
     acceptance_summary: McmcAcceptanceSummary | None = None
     autocorrelation_report: McmcAutocorrelationReport | None = None
@@ -4360,6 +4361,15 @@ class McmcAnalysisResult:
         ):
             raise McmcConstructionError(
                 "Complete MCMC Analysis Result has inconsistent retained topology"
+            )
+        if self.burn_in_warning is not None and (
+            not complete
+            or self.autocorrelation_report is None
+            or self.autocorrelation_report.status
+            is not McmcAutocorrelationStatus.UNRELIABLE_SHORT_CHAIN
+        ):
+            raise McmcConstructionError(
+                "MCMC burn-in warning is inconsistent with autocorrelation evidence"
             )
 
     @property
@@ -4745,8 +4755,7 @@ def _resolve_product_mcmc_burn(
     raw_step_count: int,
     coordinate_count: int,
     autocorrelation_time: Array | None,
-    autocorrelation_time_reliable: bool,
-    autocorrelation_warning: str | None,
+    autocorrelation_warning: str | None = None,
 ) -> tuple[int | None, str | None]:
     if policy.burn != "auto":
         return int(policy.burn), None
@@ -4757,8 +4766,6 @@ def _resolve_product_mcmc_burn(
     max_tau = float(np.max(autocorrelation_time))
     if not math.isfinite(max_tau) or max_tau <= 0.0:
         return None, "autocorrelation time invalid"
-    if not autocorrelation_time_reliable:
-        return None, "the autocorrelation time estimate is unreliable"
     discarded_steps = math.ceil(2.0 * max_tau)
     if discarded_steps >= raw_step_count:
         return None, "the calculated discard does not leave a retained chain"
@@ -4812,7 +4819,6 @@ def derive_mcmc_analysis_result(
         raw_step_count=raw_chain.shape[0],
         coordinate_count=len(evidence.coordinate_ids),
         autocorrelation_time=burn_autocorrelation_time,
-        autocorrelation_time_reliable=autocorrelation_time is not None,
         autocorrelation_warning=autocorrelation_warning,
     )
     if burn_failure_reason is not None:
@@ -4839,6 +4845,14 @@ def derive_mcmc_analysis_result(
             ),
         )
     exact_discarded_steps = cast("int", discarded_steps)
+    burn_in_warning = (
+        "autocorrelation time estimate is unreliable; tentative automatic "
+        "burn-in was applied"
+        if policy.burn == "auto"
+        and autocorrelation_time is None
+        and tentative is not None
+        else None
+    )
     retained_chain = raw_chain[exact_discarded_steps :: policy.thin]
     retained_lnprob = raw_lnprob[exact_discarded_steps :: policy.thin]
     if retained_chain.shape[0] < 1:
@@ -4881,6 +4895,7 @@ def derive_mcmc_analysis_result(
         ),
         raw_chain=raw_chain,
         raw_lnprob=raw_lnprob,
+        burn_in_warning=burn_in_warning,
         failure=None,
         acceptance_summary=acceptance_summary,
         autocorrelation_report=autocorrelation_report,

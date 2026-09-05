@@ -285,12 +285,17 @@ SEED = 680
 ```
 
 `STEPS` counts raw post-initialization ensemble iterations. Omitting `BURN`
-invokes ChemEx's automatic burn/convergence policy. If that policy cannot
-establish a defensible retained window, ChemEx preserves raw or partial chain
-evidence and diagnostics but publishes no authoritative posterior summary; it
-does not silently fall back to zero burn. A numeric `BURN` fixes the discard
-window but does not suppress convergence, autocorrelation, ESS, or MCSE
-diagnostics.
+invokes ChemEx's automatic burn policy, which discards
+`ceil(2 * max(autocorrelation time))` ensemble steps. A finite positive
+autocorrelation estimate from a chain shorter than emcee's recommended 50
+autocorrelation times is usable but tentative: ChemEx applies the tentative
+automatic burn, publishes posterior products with warnings, and withholds
+autocorrelation-derived ESS and MCSE. If no finite positive estimate is
+available, or the calculated burn leaves no retained samples, ChemEx preserves
+raw chain evidence and diagnostics but publishes no authoritative posterior
+summary; it does not silently fall back to zero burn. A numeric `BURN` fixes the
+discard window but does not suppress convergence or autocorrelation diagnostics;
+ESS and MCSE are reported only when the autocorrelation estimate is reliable.
 
 Walker topology, initialization, proposal policy, and parallel execution are
 ChemEx policy. Configure parallelism globally with `chemex fit --workers`; v2

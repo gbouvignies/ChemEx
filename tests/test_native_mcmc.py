@@ -858,6 +858,108 @@ def test_product_analysis_result_classifies_automatic_burn_failure(
     assert result.raw_chain.shape == (5, 8, 2)
 
 
+def test_product_auto_burn_uses_realistic_tentative_autocorrelation_time() -> None:
+    policy = native_mcmc._ProductMcmcInterpretationPolicy(
+        requested_steps=10_000,
+        burn="auto",
+        thin=1,
+    )
+    tentative_tau = np.array(
+        [
+            212.787,
+            193.166,
+            215.584,
+            224.983,
+            195.036,
+            201.503,
+            207.812,
+            230.222,
+            210.754,
+            247.529,
+            222.710,
+            224.156,
+            201.567,
+            228.543,
+            220.933,
+            215.228,
+            239.719,
+        ]
+    )
+
+    discarded_steps, failure = native_mcmc._resolve_product_mcmc_burn(
+        policy,
+        raw_step_count=10_000,
+        coordinate_count=17,
+        autocorrelation_time=tentative_tau,
+    )
+
+    assert discarded_steps == 496
+    assert failure is None
+
+
+def test_product_auto_burn_publishes_tentative_posterior_without_tau_metrics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    accepted, problem, parameterization, engine = _native_context()
+    request = McmcRequest(steps=5, walkers=8, seed=1234)
+    plan = McmcPlan.for_accepted(
+        accepted,
+        source_problem=problem,
+        parameterization=parameterization,
+        source_engine=engine,
+        policy=resolve_product_mcmc_policy(
+            dimension=2,
+            walkers=8,
+            steps=request.steps,
+            root_seed=1234,
+        ),
+        coordinate_units=(
+            ("A", ParameterUnit.DIMENSIONLESS),
+            ("B", ParameterUnit.DIMENSIONLESS),
+        ),
+    )
+    operation = execute_mcmc_evidence(accepted, plan)
+    assert operation.evidence is not None
+    tentative_tau = np.array([0.12, 0.124])
+    monkeypatch.setattr(
+        native_mcmc.emcee.autocorr,
+        "integrated_time",
+        lambda _chain, **_kwargs: (_ for _ in ()).throw(
+            native_mcmc.emcee.autocorr.AutocorrError(tentative_tau)
+        ),
+    )
+
+    result = derive_mcmc_analysis_result(
+        operation.evidence,
+        request,
+        _product_parameter_model(),
+    )
+
+    assert result.status is McmcAnalysisStatus.COMPLETE
+    assert result.failure is None
+    assert result.discarded_steps == 1
+    assert result.retained_step_count == 4
+    assert result.retained_sample_count == 32
+    assert result.burn_in_warning == (
+        "autocorrelation time estimate is unreliable; tentative automatic "
+        "burn-in was applied"
+    )
+    assert result.autocorrelation_report is not None
+    assert (
+        result.autocorrelation_report.status
+        is McmcAutocorrelationStatus.UNRELIABLE_SHORT_CHAIN
+    )
+    assert result.autocorrelation_report.values == pytest.approx(tentative_tau)
+    assert result.autocorrelation_report.sampled_steps_over_maximum == pytest.approx(
+        5.0 / 0.124
+    )
+    assert result.autocorrelation_report.minimum_effective_sample_size is None
+    assert all(
+        summary.effective_sample_size is None and summary.mcse_mean is None
+        for summary in result.summary
+    )
+
+
 @pytest.mark.parametrize(
     ("autocorrelation_outcome", "expected_status"),
     (
