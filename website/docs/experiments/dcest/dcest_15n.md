@@ -134,7 +134,7 @@ h_larmor_frq = 800.0
 ## List of offsets relative to the main resonance position
 ## (nu) and bandwidths (delta_nu) defining regions where
 ## points are excluded from the calculation (nu +/- 0.5 * delta_nu),
-## both are in Hz [optional, default: [[0.0, 0.0]] ]
+## both are in Hz [optional, default: [] ]
 # filter_offsets = [
 #   [0.0, 0.0],
 # ]

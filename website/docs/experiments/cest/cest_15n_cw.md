@@ -49,12 +49,6 @@ carrier = 118.0
 ## B1 radio-frequency field strength, in Hz
 b1_frq = 25.0
 
-## B1 inhomogeneity distribution (replaces b1_inh_scale/b1_inh_res)
-[experiment.b1_distribution]
-type = "gaussian"
-scale = 0.1
-res = 11
-
 ## Position of the ¹H carrier during the ¹H CW decoupling, in ppm
 carrier_dec = 8.3
 
@@ -71,6 +65,12 @@ b1_frq_dec = 1000.0
 
 ## State of the observed resonance [optional, default: "a"]
 # observed_state = "a"
+
+## B1 inhomogeneity distribution (replaces b1_inh_scale/b1_inh_res)
+[experiment.b1_distribution]
+type = "gaussian"
+scale = 0.1
+res = 11
 
 [conditions]
 
@@ -106,7 +106,7 @@ h_larmor_frq = 800.0
 ## List of offsets relative to the main resonance position
 ## (nu) and bandwidths (delta_nu) defining regions where
 ## points are excluded from the calculation (nu +/- 0.5 * delta_nu),
-## both are in Hz [optional, default: [[0.0, 0.0]] ]
+## both are in Hz [optional, default: [] ]
 # filter_offsets = [
 #   [0.0, 0.0],
 # ]

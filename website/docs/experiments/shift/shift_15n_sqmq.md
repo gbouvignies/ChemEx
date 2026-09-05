@@ -63,10 +63,9 @@ h_larmor_frq = 800.0
 
 [data]
 
-## Directory containing the profiles [optional, default: "./"]
-# path = "./"
-
-## Filename of the file containing the list of the shifts in ppb.
+## Path to the file containing the list of shifts in ppb. Unlike profile-based
+## experiments, a shift experiment points directly to its data file rather than
+## to a profile directory.
 ## The file should be formatted as follow:
 ##
 ## #     name   shift  error
@@ -78,5 +77,5 @@ h_larmor_frq = 800.0
 ##
 ## The name of the spin systems should follow the Sparky-NMR
 ## conventions.
-shifts = "sqmq.txt"
+path = "sqmq.txt"
 ```

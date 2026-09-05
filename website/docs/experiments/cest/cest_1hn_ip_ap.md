@@ -35,12 +35,12 @@ and is discussed [there](../../examples/cest_ip_ap.md).
 ## Sample configuration file
 
 ```toml title="experiment.toml"
-## This is a sample configuration file for the module 'coscest_1hn_ip_ap'
+## This is a sample configuration file for the module 'cest_1hn_ip_ap'
 
 [experiment]
 
 ## Name of the chemex module corresponding to the experiment
-name = "coscest_1hn_ip_ap"
+name = "cest_1hn_ip_ap"
 
 ## Recycle delay, in seconds
 d1 = 0.1
@@ -51,23 +51,8 @@ time_t1 = 0.5
 ## Position of the carrier during the CEST period, in ppm
 carrier = 8.3
 
-## Cosine "spectral width", in Hz
-sw = 800.0
-
-## Number of excitation frequencies
-cos_n = 3
-
-## Number of points used to simulate the cosine-modulated shape
-# cos_res = 10
-
 ## B1 radio-frequency field strength, in Hz
 b1_frq = 25.0
-
-## B1 inhomogeneity distribution (replaces b1_inh_scale/b1_inh_res)
-[experiment.b1_distribution]
-type = "gaussian"
-scale = 0.1
-res = 11
 
 ## Initial condition: equilibrium preparation (all states populated according to
 ## their equilibrium populations). Set start_state for non-equilibrium
@@ -79,6 +64,12 @@ res = 11
 
 ## State of the observed resonance [optional, default: "a"]
 # observed_state = "a"
+
+## B1 inhomogeneity distribution (replaces b1_inh_scale/b1_inh_res)
+[experiment.b1_distribution]
+type = "gaussian"
+scale = 0.1
+res = 11
 
 [conditions]
 
@@ -113,7 +104,7 @@ h_larmor_frq = 800.0
 ## List of offsets relative to the main resonance position
 ## (nu) and bandwidths (delta_nu) defining regions where
 ## points are excluded from the calculation (nu +/- 0.5 * delta_nu),
-## both are in Hz [optional, default: [[0.0, 0.0]] ]
+## both are in Hz [optional, default: [] ]
 # filter_offsets = [
 #   [0.0, 0.0],
 # ]
