@@ -26,6 +26,16 @@ from rich.console import Console
 from rich.live import Live
 from rich.padding import Padding
 from rich.panel import Panel
+from rich.progress import (
+    BarColumn,
+    MofNCompleteColumn,
+    TaskID,
+    TaskProgressColumn,
+    TextColumn,
+    TimeElapsedColumn,
+    TimeRemainingColumn,
+)
+from rich.progress import Progress as RichProgress
 from rich.rule import Rule
 from rich.syntax import Syntax
 from rich.table import Table
@@ -34,6 +44,9 @@ from rich.text import Text
 from chemex import __version__
 from chemex.optimize.progress import (
     FitProgressContext,
+    McmcProgressEvent,
+    McmcProgressObserver,
+    McmcProgressPhase,
     ProgressEvent,
     ProgressPhase,
     ProgressRateLimiter,
@@ -306,6 +319,154 @@ class MinimizationProgressReporter:
     def _disable(self) -> None:
         self._enabled = False
         self._stop_live()
+
+
+class McmcProgressReporter:
+    """Report completed ensemble transitions without affecting sampling."""
+
+    def __init__(
+        self,
+        output_console: Console,
+        *,
+        requested_steps: int,
+        interactive: bool,
+        observer: McmcProgressObserver | None = None,
+        clock: Callable[[], float] = monotonic,
+    ) -> None:
+        self._console = output_console
+        self._requested_steps = requested_steps
+        self._interactive = interactive
+        self._observer = observer
+        self._clock = clock
+        self._started_at: float | None = None
+        self._completed_steps = 0
+        self._progress: RichProgress | None = None
+        self._task_id: TaskID | None = None
+        self._finished = False
+        self._enabled = True
+
+    def start(self) -> None:
+        """Start one sampling progress scope at zero completed transitions."""
+        if self._started_at is not None or self._finished:
+            return
+        self._started_at = self._clock()
+        try:
+            if self._interactive:
+                self._progress = RichProgress(
+                    TextColumn("  • MCMC sampling"),
+                    BarColumn(),
+                    TaskProgressColumn(),
+                    MofNCompleteColumn(),
+                    TimeElapsedColumn(),
+                    TimeRemainingColumn(),
+                    console=self._console,
+                    transient=True,
+                    auto_refresh=False,
+                )
+                self._progress.start()
+                self._task_id = self._progress.add_task(
+                    "MCMC sampling",
+                    total=self._requested_steps,
+                    completed=0,
+                )
+            else:
+                self._console.print(f"  • MCMC sampling 0/{self._requested_steps}...")
+            self._emit(McmcProgressPhase.STARTED)
+        except KeyboardInterrupt:
+            self._stop()
+            raise
+        except Exception:  # noqa: BLE001 - reporting is non-scientific
+            self._disable()
+
+    def observe(self, completed_steps: int) -> None:
+        """Advance to one atomically completed ensemble-transition count."""
+        if not self._enabled or self._finished:
+            return
+        if self._started_at is None:
+            self.start()
+        if (
+            completed_steps <= self._completed_steps
+            or completed_steps > self._requested_steps
+        ):
+            return
+        self._completed_steps = completed_steps
+        try:
+            if self._progress is not None and self._task_id is not None:
+                self._progress.update(
+                    self._task_id,
+                    completed=self._completed_steps,
+                    refresh=True,
+                )
+            self._emit(McmcProgressPhase.ADVANCED)
+        except KeyboardInterrupt:
+            self._stop()
+            raise
+        except Exception:  # noqa: BLE001 - reporting is non-scientific
+            self._disable()
+
+    def finish(self, terminal_status: str) -> None:
+        """Close rendering and persist one concise terminal status line."""
+        if self._finished:
+            return
+        self._finished = True
+        try:
+            self._emit(McmcProgressPhase.TERMINATED, terminal_status)
+        except KeyboardInterrupt:
+            self._stop()
+            raise
+        except Exception:  # noqa: BLE001 - reporting is non-scientific
+            self._enabled = False
+        self._stop()
+        if not self._enabled:
+            return
+        try:
+            style = "blue" if terminal_status == "completed" else "yellow"
+            self._console.print(
+                Text.from_markup(
+                    "  • MCMC sampling "
+                    f"{self._completed_steps}/{self._requested_steps} -> "
+                    f"[{style}]{terminal_status}[/] ({self._elapsed():.1f} s)"
+                )
+            )
+        except KeyboardInterrupt:
+            raise
+        except Exception:  # noqa: BLE001 - reporting is non-scientific
+            self._enabled = False
+
+    def _emit(
+        self,
+        phase: McmcProgressPhase,
+        terminal_status: str | None = None,
+    ) -> None:
+        if self._observer is not None:
+            self._observer(
+                McmcProgressEvent(
+                    phase,
+                    self._completed_steps,
+                    self._requested_steps,
+                    self._elapsed(),
+                    terminal_status,
+                )
+            )
+
+    def _elapsed(self) -> float:
+        return (
+            0.0
+            if self._started_at is None
+            else max(0.0, self._clock() - self._started_at)
+        )
+
+    def _stop(self) -> None:
+        if self._progress is None:
+            return
+        progress, self._progress = self._progress, None
+        self._task_id = None
+        with suppress(Exception):
+            progress.stop()
+
+    def _disable(self) -> None:
+        self._enabled = False
+        self._stop()
 
 
 class UncertaintyProgressReporter:

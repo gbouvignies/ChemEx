@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import copy
 import dataclasses
+import multiprocessing
+import os
 import pickle
-import threading
-import time
 from copy import deepcopy
 from pathlib import Path
 from types import SimpleNamespace
@@ -81,6 +81,7 @@ from chemex.parameters.spin_system import SpinSystem
 from chemex.parameters.values import AnalysisValuesSnapshot
 from chemex.printers.data import Printer
 from chemex.runtime import ExecutionSettings
+from chemex.runtime.execution import NATIVE_THREAD_ENV_VARS
 from chemex.typing import Array
 
 
@@ -106,7 +107,46 @@ class _LinearSpectrometer:
 class _LinearPulseSequence:
     settings = _KernelSettings()
 
+    def __init__(
+        self,
+        evaluation_observer: Any | None = None,
+        evaluation_barrier: Any | None = None,
+        fail_outside_pid: int | None = None,
+        *,
+        source_pid: int | None = None,
+    ) -> None:
+        self._evaluation_observer = evaluation_observer
+        self._evaluation_barrier = evaluation_barrier
+        self._fail_outside_pid = fail_outside_pid
+        self._source_pid = os.getpid() if source_pid is None else source_pid
+        self._barrier_used = False
+
+    def __deepcopy__(self, _memo: dict[int, object]) -> _LinearPulseSequence:
+        return type(self)(
+            self._evaluation_observer,
+            self._evaluation_barrier,
+            self._fail_outside_pid,
+            source_pid=self._source_pid,
+        )
+
     def calculate(self, spectrometer: _LinearSpectrometer, data: Data) -> Array:
+        if (
+            self._evaluation_barrier is not None
+            and os.getpid() != self._source_pid
+            and not self._barrier_used
+        ):
+            self._barrier_used = True
+            self._evaluation_barrier.wait(timeout=10.0)
+        if self._evaluation_observer is not None:
+            self._evaluation_observer.append(
+                (
+                    os.getpid(),
+                    id(self),
+                    tuple(os.environ.get(name) for name in NATIVE_THREAD_ENV_VARS),
+                )
+            )
+        if self._fail_outside_pid is not None and os.getpid() != self._fail_outside_pid:
+            raise RuntimeError("worker kernel failure")
         return spectrometer.values["a"] + spectrometer.values["b"] * np.asarray(
             data.metadata,
             dtype=np.float64,
@@ -116,8 +156,26 @@ class _LinearPulseSequence:
         return metadata < 0.0
 
 
+def test_linear_pulse_sequence_deepcopy_preserves_source_process_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_pid = os.getpid()
+    pulse_sequence = _LinearPulseSequence()
+    pulse_sequence._barrier_used = True
+    monkeypatch.setattr(os, "getpid", lambda: source_pid + 1)
+
+    worker_copy = deepcopy(pulse_sequence)
+
+    assert worker_copy._source_pid == source_pid
+    assert not worker_copy._barrier_used
+
+
 def _native_context(
-    *, fit_b: bool = True
+    *,
+    fit_b: bool = True,
+    evaluation_observer: Any | None = None,
+    evaluation_barrier: Any | None = None,
+    fail_outside_pid: int | None = None,
 ) -> tuple[
     AcceptedFitResult,
     OptimizationProblem,
@@ -163,7 +221,14 @@ def _native_context(
     profile = Profile(
         data,
         cast("Spectrometer", _LinearSpectrometer()),
-        cast("PulseSequence", _LinearPulseSequence()),
+        cast(
+            "PulseSequence",
+            _LinearPulseSequence(
+                evaluation_observer,
+                evaluation_barrier,
+                fail_outside_pid,
+            ),
+        ),
         {"a": "A", "b": "B"},
         cast("Printer", None),
         is_scaled=False,
@@ -287,46 +352,242 @@ def _same_semantics_foreign_occurrence(
     )
 
 
-def test_seeded_native_mcmc_workers_execute_in_parallel_without_changing_chain(
+def test_seeded_native_mcmc_workers_execute_in_processes_without_changing_chain() -> (
+    None
+):
+    context = multiprocessing.get_context("spawn")
+    with context.Manager() as manager:
+        two_worker_observations = manager.list()
+        accepted, plan = _plan_context(
+            evaluation_observer=two_worker_observations,
+            evaluation_barrier=manager.Barrier(2),
+        )
+        two_worker_observations[:] = []
+
+        parallel = execute_mcmc_evidence(
+            accepted,
+            plan,
+            execution=ExecutionSettings(workers=2),
+        )
+        parallel_observations = set(two_worker_observations)
+
+        four_worker_observations_proxy = manager.list()
+        four_worker_accepted, four_worker_plan = _plan_context(
+            evaluation_observer=four_worker_observations_proxy,
+            evaluation_barrier=manager.Barrier(4),
+        )
+        four_worker_observations_proxy[:] = []
+        four_worker = execute_mcmc_evidence(
+            four_worker_accepted,
+            four_worker_plan,
+            execution=ExecutionSettings(workers=4),
+        )
+        four_worker_observations = set(four_worker_observations_proxy)
+
+        serial_observations_proxy = manager.list()
+        serial_accepted, serial_plan = _plan_context(
+            evaluation_observer=serial_observations_proxy,
+        )
+        serial_observations_proxy[:] = []
+        serial = execute_mcmc_evidence(
+            serial_accepted,
+            serial_plan,
+            execution=ExecutionSettings(workers=1),
+        )
+        serial_observations = set(serial_observations_proxy)
+
+    parallel_pids = {pid for pid, _evaluator, _environment in parallel_observations}
+    serial_pids = {pid for pid, _evaluator, _environment in serial_observations}
+    four_worker_pids = {
+        pid for pid, _evaluator, _environment in four_worker_observations
+    }
+
+    assert parallel.terminal is McmcOperationTerminal.COMPLETED
+    assert four_worker.terminal is McmcOperationTerminal.COMPLETED
+    assert serial.terminal is McmcOperationTerminal.COMPLETED
+    assert parallel.evidence is not None
+    assert four_worker.evidence is not None
+    assert serial.evidence is not None
+    assert len(parallel_pids) == 2
+    assert len(four_worker_pids) == 4
+    assert os.getpid() not in parallel_pids
+    assert os.getpid() not in four_worker_pids
+    assert serial_pids == {os.getpid()}
+    assert (parallel_pids | four_worker_pids).isdisjoint(
+        child.pid for child in multiprocessing.active_children()
+    )
+    assert {environment for _pid, _evaluator, environment in parallel_observations} == {
+        tuple("1" for _name in NATIVE_THREAD_ENV_VARS)
+    }
+    assert all(
+        len(
+            {
+                evaluator
+                for observed_pid, evaluator, _environment in parallel_observations
+                if observed_pid == pid
+            }
+        )
+        == 1
+        for pid in parallel_pids
+    )
+    assert parallel.evidence.states == serial.evidence.states
+    assert four_worker.evidence.states == serial.evidence.states
+    assert parallel.evidence.identity == serial.evidence.identity
+    assert four_worker.evidence.identity == serial.evidence.identity
+    assert parallel.backend_transition_evidence is not None
+    assert four_worker.backend_transition_evidence is not None
+    assert serial.backend_transition_evidence is not None
+    serial_masks = tuple(
+        transition.accepted
+        for transition in serial.backend_transition_evidence.transitions
+    )
+    assert (
+        tuple(
+            transition.accepted
+            for transition in parallel.backend_transition_evidence.transitions
+        )
+        == serial_masks
+    )
+    assert (
+        tuple(
+            transition.accepted
+            for transition in four_worker.backend_transition_evidence.transitions
+        )
+        == serial_masks
+    )
+    assert parallel.raw_capture is not None
+    assert four_worker.raw_capture is not None
+    assert serial.raw_capture is not None
+    assert parallel.raw_capture.objective_request_count == (
+        serial.raw_capture.objective_request_count
+    )
+    assert parallel.raw_capture.evaluation_request_count == (
+        serial.raw_capture.evaluation_request_count
+    )
+    assert four_worker.raw_capture.objective_request_count == (
+        serial.raw_capture.objective_request_count
+    )
+    assert four_worker.raw_capture.evaluation_request_count == (
+        serial.raw_capture.evaluation_request_count
+    )
+    parallel_diagnostics = derive_mcmc_diagnostics(parallel.evidence)
+    four_worker_diagnostics = derive_mcmc_diagnostics(four_worker.evidence)
+    serial_diagnostics = derive_mcmc_diagnostics(serial.evidence)
+    assert parallel_diagnostics.accepted_counts == serial_diagnostics.accepted_counts
+    assert four_worker_diagnostics.accepted_counts == (
+        serial_diagnostics.accepted_counts
+    )
+    assert parallel_diagnostics.acceptance_fractions == (
+        serial_diagnostics.acceptance_fractions
+    )
+    assert four_worker_diagnostics.acceptance_fractions == (
+        serial_diagnostics.acceptance_fractions
+    )
+    assert parallel_diagnostics.mean_acceptance_fraction == (
+        serial_diagnostics.mean_acceptance_fraction
+    )
+    assert four_worker_diagnostics.mean_acceptance_fraction == (
+        serial_diagnostics.mean_acceptance_fraction
+    )
+
+
+def test_parallel_worker_failure_enters_typed_failed_lifecycle() -> None:
+    context = multiprocessing.get_context("spawn")
+    with context.Manager() as manager:
+        evaluation_observations = manager.list()
+        accepted, plan = _plan_context(
+            evaluation_observer=evaluation_observations,
+            fail_outside_pid=os.getpid(),
+        )
+
+        operation = execute_mcmc_evidence(
+            accepted,
+            plan,
+            execution=ExecutionSettings(workers=2),
+        )
+        worker_pids = {pid for pid, _evaluator, _environment in evaluation_observations}
+
+    assert operation.terminal is McmcOperationTerminal.FAILED
+    assert operation.failure_category == "McmcExecutionError"
+    assert "MCMC worker failed: McmcExecutionError" in (operation.failure_message)
+    assert "kernel_exception: worker kernel failure" in operation.failure_message
+    assert operation.raw_capture is not None
+    assert operation.raw_capture.complete_state_count == 0
+    assert operation.raw_capture.objective_request_count == plan.policy.walkers
+    assert operation.raw_capture.evaluation_request_count == plan.policy.walkers
+    assert operation.evidence is None
+    assert worker_pids
+    assert worker_pids.isdisjoint(
+        child.pid for child in multiprocessing.active_children()
+    )
+
+
+def test_parallel_worker_initialization_failure_is_typed_and_does_not_hang(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     accepted, plan = _plan_context()
-    main_thread = threading.get_ident()
-    worker_threads: set[int] = set()
-    worker_lock = threading.Lock()
-    original_calculate = _LinearPulseSequence.calculate
+    original = native_mcmc._McmcWorkerContext.from_plan
 
-    def record_worker(
-        pulse_sequence: _LinearPulseSequence,
-        spectrometer: _LinearSpectrometer,
-        data: Data,
-    ) -> Array:
-        thread_id = threading.get_ident()
-        if thread_id != main_thread:
-            with worker_lock:
-                worker_threads.add(thread_id)
-            time.sleep(0.002)
-        return original_calculate(pulse_sequence, spectrometer, data)
+    def invalid_worker_context(source_plan: McmcPlan) -> Any:
+        context = original(source_plan)
+        return dataclasses.replace(
+            context,
+            parameterization=dataclasses.replace(
+                context.parameterization,
+                identity="foreign-parameterization",
+            ),
+        )
 
-    monkeypatch.setattr(_LinearPulseSequence, "calculate", record_worker)
+    monkeypatch.setattr(
+        native_mcmc._McmcWorkerContext,
+        "from_plan",
+        staticmethod(invalid_worker_context),
+    )
+    children_before = {child.pid for child in multiprocessing.active_children()}
 
-    parallel = execute_mcmc_evidence(
+    operation = execute_mcmc_evidence(
         accepted,
         plan,
         execution=ExecutionSettings(workers=2),
     )
-    serial = execute_mcmc_evidence(
-        accepted,
-        plan,
-        execution=ExecutionSettings(workers=1),
-    )
 
-    assert parallel.terminal is McmcOperationTerminal.COMPLETED
-    assert serial.terminal is McmcOperationTerminal.COMPLETED
-    assert parallel.evidence is not None
-    assert serial.evidence is not None
-    assert len(worker_threads) == 2
-    assert parallel.evidence.states == serial.evidence.states
+    assert operation.terminal is McmcOperationTerminal.FAILED
+    assert operation.failure_category == "McmcExecutionError"
+    assert "MCMC worker failed: McmcExecutionError" in operation.failure_message
+    assert "foreign parameterization" in operation.failure_message
+    assert operation.raw_capture is not None
+    assert operation.raw_capture.complete_state_count == 0
+    assert operation.raw_capture.objective_request_count == plan.policy.walkers
+    assert operation.raw_capture.evaluation_request_count == 0
+    assert {child.pid for child in multiprocessing.active_children()} == children_before
+
+
+def test_parallel_keyboard_interrupt_terminates_and_joins_workers() -> None:
+    context = multiprocessing.get_context("spawn")
+    with context.Manager() as manager:
+        evaluation_observations = manager.list()
+        accepted, plan = _plan_context(
+            evaluation_observer=evaluation_observations,
+        )
+
+        def interrupt_after_first_transition(state: EnsembleState) -> None:
+            if state.ordinal == 1:
+                raise KeyboardInterrupt
+
+        operation = execute_mcmc_evidence(
+            accepted,
+            plan,
+            state_observer=interrupt_after_first_transition,
+            execution=ExecutionSettings(workers=2),
+        )
+        worker_pids = {pid for pid, _evaluator, _environment in evaluation_observations}
+
+    assert operation.terminal is McmcOperationTerminal.INTERRUPTED
+    assert operation.complete_state_count == 2
+    assert worker_pids
+    assert worker_pids.isdisjoint(
+        child.pid for child in multiprocessing.active_children()
+    )
 
 
 def test_expert_policy_only_overrides_predeclared_topology() -> None:
@@ -994,13 +1255,13 @@ def test_interruption_preserves_unqualified_complete_state_prefix_without_valida
         if state.ordinal == 2:
             raise KeyboardInterrupt
 
-    def forbid_fresh_validation(*_args: object, **_kwargs: object) -> None:
-        pytest.fail("interrupted execution must not freshly validate raw capture")
+    def forbid_capture_qualification(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("interrupted execution must not qualify an incomplete capture")
 
     monkeypatch.setattr(
         native_mcmc,
         "validate_raw_mcmc_capture",
-        forbid_fresh_validation,
+        forbid_capture_qualification,
     )
 
     operation = execute_mcmc_evidence(
@@ -1120,7 +1381,7 @@ def test_execution_rejects_same_semantics_from_foreign_accepted_occurrence() -> 
         execute_mcmc_evidence(foreign, plan)
 
 
-def test_fresh_validation_rejects_tampered_backend_log_density() -> None:
+def test_capture_integrity_rejects_tampered_captured_log_density() -> None:
     accepted, problem, parameterization, engine = _native_context()
     plan = McmcPlan.for_accepted(
         accepted,
@@ -1147,38 +1408,187 @@ def test_fresh_validation_rejects_tampered_backend_log_density() -> None:
         )
 
 
-def test_fresh_validator_rejects_backend_originated_log_density_mismatch(
+def _copy_raw_capture(
+    source: native_mcmc.RawMcmcCapture,
+    **changes: Any,
+) -> native_mcmc.RawMcmcCapture:
+    values = {
+        "plan_identity": source.plan_identity,
+        "policy_identity": source.policy_identity,
+        "root_seed": source.root_seed,
+        "walkers": source.walkers,
+        "dimension": source.dimension,
+        "total_steps": source.total_steps,
+        "backend_execution_occurrence_identity": (
+            source.backend_execution_occurrence_identity
+        ),
+        "terminal": source.terminal,
+        "states": source.states,
+        "objective_request_count": source.objective_request_count,
+        "evaluation_request_count": source.evaluation_request_count,
+        "stage": source.stage,
+        "initialization_outcome": source.initialization_outcome,
+        "failure_category": source.failure_category,
+    }
+    values.update(changes)
+    return native_mcmc.RawMcmcCapture(
+        **values,
+        _occurrence_witness=native_mcmc._mint_mcmc_evidence_witness("raw-capture"),
+    )
+
+
+@pytest.mark.parametrize("field", ["walkers", "dimension", "total_steps"])
+def test_capture_qualification_rejects_frozen_topology_metadata_mutation(
+    field: str,
+) -> None:
+    accepted, plan = _plan_context()
+    operation = execute_mcmc_evidence(accepted, plan)
+    assert operation.raw_capture is not None
+    source = operation.raw_capture
+    corrupted = _copy_raw_capture(
+        source,
+        **{field: cast("int", getattr(source, field)) + 1},
+    )
+
+    validation = validate_raw_mcmc_capture(plan, corrupted)
+
+    assert not validation.is_complete
+    assert validation.primary_evidence is None
+    assert validation.failures[0].category == "capture_topology_mismatch"
+
+
+@pytest.mark.parametrize("accounting", ["objective", "evaluation"])
+def test_capture_qualification_rejects_request_accounting_mutation(
+    accounting: str,
+) -> None:
+    accepted, plan = _plan_context()
+    operation = execute_mcmc_evidence(accepted, plan)
+    assert operation.raw_capture is not None
+    source = operation.raw_capture
+    changes = (
+        {"objective_request_count": source.objective_request_count - 1}
+        if accounting == "objective"
+        else {"evaluation_request_count": source.objective_request_count + 1}
+    )
+    corrupted = _copy_raw_capture(source, **changes)
+
+    validation = validate_raw_mcmc_capture(plan, corrupted)
+
+    assert not validation.is_complete
+    assert validation.primary_evidence is None
+    assert validation.failures[0].category == "request_accounting_mismatch"
+
+
+@pytest.mark.parametrize("corruption", ["bounds", "dimension"])
+def test_capture_qualification_rejects_validly_encoded_state_corruption(
+    corruption: str,
+) -> None:
+    accepted, plan = _plan_context()
+    operation = execute_mcmc_evidence(accepted, plan)
+    assert operation.raw_capture is not None
+    source = operation.raw_capture
+    state = source.states[1]
+    positions = [list(row) for row in state.positions]
+    if corruption == "bounds":
+        positions[0][0] = plan.upper_bounds[0]
+        expected_category = "state_outside_frozen_bounds"
+    else:
+        positions = [row[:-1] for row in positions]
+        expected_category = "state_topology_mismatch"
+    corrupted_state = EnsembleState(
+        state.ordinal,
+        tuple(tuple(row) for row in positions),
+        state.log_densities,
+    )
+    corrupted = _copy_raw_capture(
+        source,
+        states=(source.states[0], corrupted_state, *source.states[2:]),
+    )
+
+    validation = validate_raw_mcmc_capture(plan, corrupted)
+
+    assert not validation.is_complete
+    assert validation.primary_evidence is None
+    assert validation.failures[0].category == expected_category
+
+
+def test_capture_qualification_rejects_missing_completed_state() -> None:
+    accepted, plan = _plan_context()
+    operation = execute_mcmc_evidence(accepted, plan)
+    assert operation.raw_capture is not None
+    corrupted = _copy_raw_capture(
+        operation.raw_capture,
+        states=operation.raw_capture.states[:-1],
+    )
+
+    validation = validate_raw_mcmc_capture(plan, corrupted)
+
+    assert not validation.is_complete
+    assert validation.primary_evidence is None
+    assert validation.failures[0].category == "incomplete_completed_capture"
+
+
+@pytest.mark.parametrize("corruption", ["reordered", "invalid_ordinal"])
+def test_raw_capture_construction_rejects_noncanonical_state_order(
+    corruption: str,
+) -> None:
+    accepted, plan = _plan_context()
+    operation = execute_mcmc_evidence(accepted, plan)
+    assert operation.raw_capture is not None
+    states = list(operation.raw_capture.states)
+    if corruption == "reordered":
+        states[1], states[2] = states[2], states[1]
+    else:
+        state = states[1]
+        states[1] = EnsembleState(
+            state.ordinal + 1,
+            state.positions,
+            state.log_densities,
+        )
+
+    with pytest.raises(McmcConstructionError, match="contiguous"):
+        _copy_raw_capture(operation.raw_capture, states=tuple(states))
+
+
+def test_execution_qualification_does_not_repeat_chain_likelihoods(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     accepted, plan = _plan_context()
-    original = native_mcmc._ensemble_state
+    original_calculate = _LinearPulseSequence.calculate
+    calculation_count = 0
 
-    def wrong_backend_density(
-        ordinal: int,
-        positions: Array,
-        log_densities: Array,
-    ) -> EnsembleState:
-        state = original(ordinal, positions, log_densities)
-        if ordinal != 0:
-            return state
-        return EnsembleState(
-            state.ordinal,
-            state.positions,
-            (state.log_densities[0] + 1.0, *state.log_densities[1:]),
-        )
+    def count_calculation(
+        pulse_sequence: _LinearPulseSequence,
+        spectrometer: _LinearSpectrometer,
+        data: Data,
+    ) -> Array:
+        nonlocal calculation_count
+        calculation_count += 1
+        return original_calculate(pulse_sequence, spectrometer, data)
 
-    monkeypatch.setattr(native_mcmc, "_ensemble_state", wrong_backend_density)
+    monkeypatch.setattr(_LinearPulseSequence, "calculate", count_calculation)
 
     operation = execute_mcmc_evidence(accepted, plan)
 
-    assert operation.terminal is McmcOperationTerminal.FAILED
-    assert operation.evidence is None
+    assert operation.terminal is McmcOperationTerminal.COMPLETED
+    assert operation.raw_capture is not None
+    assert calculation_count == operation.raw_capture.evaluation_request_count
+    assert operation.evidence is not None
     assert operation.validation is not None
-    assert operation.validation.failures[0].category == "backend_log_density_mismatch"
+    assert operation.validation.is_complete
 
 
-def _plan_context() -> tuple[AcceptedFitResult, McmcPlan]:
-    accepted, problem, parameterization, engine = _native_context()
+def _plan_context(
+    *,
+    evaluation_observer: Any | None = None,
+    evaluation_barrier: Any | None = None,
+    fail_outside_pid: int | None = None,
+) -> tuple[AcceptedFitResult, McmcPlan]:
+    accepted, problem, parameterization, engine = _native_context(
+        evaluation_observer=evaluation_observer,
+        evaluation_barrier=evaluation_barrier,
+        fail_outside_pid=fail_outside_pid,
+    )
     return accepted, McmcPlan.for_accepted(
         accepted,
         source_problem=problem,

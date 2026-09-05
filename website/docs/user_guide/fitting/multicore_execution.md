@@ -35,8 +35,10 @@ simulation runs, plotting, and output writing are not controlled by
 `--workers`.
 
 Workers are active only while the parallel statistics task is running. Native
-MC, BS, BSN, and MCMC use worker threads with isolated native evaluators. The
-earlier deterministic fit and later output-writing phase remain serial.
+MCMC uses worker processes with one isolated native evaluator per process, so
+CPU-bound likelihood calculations can execute on separate CPU cores. Native MC,
+BS, and BSN use worker threads with isolated native evaluators. The earlier
+deterministic fit and later output-writing phase remain serial.
 
 ## Command-Line Controls
 
@@ -68,8 +70,9 @@ Controls native numerical library threads, such as BLAS or OpenMP threads.
 
 The default, `--native-threads auto`, leaves native thread settings untouched for
 serial runs. When ChemEx starts multiple workers, it sets native numerical
-threads to 1 inside the worker-pool context. This avoids oversubscription, where
-each ChemEx worker also starts many BLAS or OpenMP threads.
+threads to 1 before starting the worker pool; MCMC worker processes inherit that
+setting. This avoids oversubscription, where each ChemEx worker also starts many
+BLAS or OpenMP threads.
 
 Most users should keep the default. Use an explicit value only when you are
 benchmarking a specific machine:
@@ -106,11 +109,23 @@ Do not expect every fit to scale linearly. Parallel execution helps most when
 each likelihood evaluation or refit is expensive enough to dominate process-pool
 overhead. Very short MCMC runs or small bootstrap jobs may show little speedup.
 
+Interactive MCMC runs show completed ensemble transitions against the requested
+step count, together with elapsed time and an estimated time remaining. One
+completed transition advances the display by one step, independent of the
+number of walkers. Redirected or otherwise non-interactive output reports a
+concise start and terminal line instead of printing one line per step.
+
 ## Diagnostics
 
 Statistics diagnostics record the effective worker count. MCMC diagnostics also
 record the direct emcee sampler engine, timing information, acceptance
 fractions, and autocorrelation diagnostics.
+
+`sampling_seconds` covers sampler execution, worker-pool startup and shutdown,
+and structural capture qualification. Posterior selection, summary, and output
+timings are recorded separately. Capture qualification checks topology, content
+identities, bounds, and evidence lineage; it does not re-evaluate every stored
+likelihood after the authoritative native sampler has already evaluated it.
 
 Look at `Statistics/MCMC/diagnostics.toml` after a run to confirm the effective
 settings:

@@ -65,6 +65,28 @@ class FitProgressContext:
 type ContextualProgressObserver = Callable[[FitProgressContext, ProgressEvent], None]
 
 
+class McmcProgressPhase(StrEnum):
+    """Lifecycle phase for one visible MCMC sampling operation."""
+
+    STARTED = "started"
+    ADVANCED = "advanced"
+    TERMINATED = "terminated"
+
+
+@dataclass(frozen=True, slots=True)
+class McmcProgressEvent:
+    """Semantic progress for completed ensemble transitions."""
+
+    phase: McmcProgressPhase
+    completed_steps: int
+    requested_steps: int
+    elapsed_seconds: float
+    terminal_status: str | None = None
+
+
+type McmcProgressObserver = Callable[[McmcProgressEvent], None]
+
+
 @dataclass(frozen=True, slots=True)
 class ProgressUpdate:
     """One progress event selected for user-visible reporting."""
@@ -128,6 +150,9 @@ class ProgressRateLimiter:
 __all__ = [
     "ContextualProgressObserver",
     "FitProgressContext",
+    "McmcProgressEvent",
+    "McmcProgressObserver",
+    "McmcProgressPhase",
     "ProgressEvent",
     "ProgressPhase",
     "ProgressObserver",

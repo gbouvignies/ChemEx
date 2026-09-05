@@ -1685,6 +1685,58 @@ class EvaluationEngine:
             ),
         )
 
+    def worker_context(self) -> NativeEvaluationWorkerContext:
+        """Copy the narrow executable recipe needed by an isolated process."""
+        return NativeEvaluationWorkerContext(
+            self.plan,
+            self.compatibility_identity,
+            tuple(deepcopy(template) for template in self._templates),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class NativeEvaluationWorkerContext:
+    """Serializable native plan and trusted kernels for one process evaluator."""
+
+    plan: EvaluationPlan
+    compatibility_identity: str
+    _templates: tuple[_NativeKernelCapability, ...] = field(
+        repr=False,
+        compare=False,
+    )
+
+    def __post_init__(self) -> None:
+        if len(self._templates) != len(
+            self.plan.profiles
+        ) or self.compatibility_identity != _compatibility_identity(self.plan):
+            raise ValueError("Native worker context differs from its evaluation plan")
+
+    def new_evaluator(
+        self,
+        parameterization: ActiveParameterization,
+    ) -> BoundEvaluator:
+        """Build one process-owned evaluator from copied trusted kernels."""
+        if (
+            self.plan.parameterization_identity != parameterization.evaluator_identity
+            or self.plan.constraint_program_identity
+            != parameterization.program.fingerprint
+            or self.plan.resolved_ids != parameterization.scope_ids
+        ):
+            raise ValueError(
+                "Native worker context belongs to another parameterization"
+            )
+        return BoundEvaluator(
+            self.plan,
+            parameterization,
+            self.compatibility_identity,
+            _Workspace(
+                tuple(
+                    _ProfileWorkspace(deepcopy(template))
+                    for template in self._templates
+                )
+            ),
+        )
+
 
 class BoundEvaluator:
     """One non-reentrant evaluator with private reusable ChemEx workspaces."""

@@ -26,6 +26,16 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
 - Direct Python callers of `calculate_kij_3st_eyring` must use its linear-model
   signature; the obsolete `DH_AC` and `DS_AC` arguments have been removed.
 
+### Fixed
+- Native MCMC now uses isolated process workers for genuine CPU-parallel
+  likelihood evaluation, while preserving seeded serial/parallel chain
+  equivalence and native-library thread coordination.
+- Native MCMC capture qualification no longer serially re-evaluates every stored
+  walker state through the same authoritative evaluator. Structural, content,
+  bounds, transition-mask, and evidence-lineage checks remain fail-closed.
+- Native MCMC sampling now reports transition progress interactively and concise
+  start/completion status in non-interactive output.
+
 ## [2026.09.0] - 2026-09-02
 
 ### Added

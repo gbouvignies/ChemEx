@@ -24,7 +24,7 @@ The table below lists the available options for `chemex fit`. Each option links 
 | [`-d`](kinetic_models.md) or [`--model`](kinetic_models.md) | Specify the kinetic model for fitting (optional, default: `2st`). |
 | [`-o`](outputs.mdx) or [`--output`](outputs.mdx) | Set the output directory (optional, default: `./Output`). |
 | `--plot {nothing, normal, all}` | Select the plotting level (optional, default: `normal`). |
-| [`--workers N\|auto`](multicore_execution.md) | Set the number of ChemEx worker processes for fit statistics (optional, default: `auto`). |
+| [`--workers N\|auto`](multicore_execution.md) | Set the number of ChemEx worker slots for fit statistics (optional, default: `auto`). |
 | [`--native-threads N\|auto`](multicore_execution.md) | Set native numerical-library threads per worker (optional, default: `auto`). |
 | `--include` | Define residues to include in the fit (optional). |
 | `--exclude` | Define residues to exclude from the fit (optional). |
@@ -64,7 +64,7 @@ Output files are saved in the directory specified by `-o`. By default, plots ill
 For uncertainty analyses, ChemEx can use multiple CPU cores during the statistics
 phase. The default `--workers auto` setting chooses a conservative worker count,
 and `--native-threads auto` avoids oversubscribing native numerical-library
-threads when worker processes are used. See
+threads when parallel worker pools are used. See
 [Multicore Execution](multicore_execution.md) for tuning guidance.
 
 :::tip
