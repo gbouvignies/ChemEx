@@ -189,6 +189,9 @@ fit-quality statistics, and run provenance.
 
 ## Next steps
 
+- Continue with [From Your First Fit to a Full CPMG Analysis](./full_cpmg_analysis.md)
+  to expand this fit to all 108 profiles while preserving the shared exchange
+  parameters established by the five-residue subset.
 - Learn how to configure [experiments](./user_guide/fitting/experiment_files.md)
   and [data files](./user_guide/fitting/data_files.mdx).
 - Learn how to set [starting parameters and bounds](./user_guide/fitting/parameter_files.md).
@@ -197,7 +200,7 @@ fit-quality statistics, and run provenance.
 - Learn how to interpret and continue from [ChemEx outputs](./user_guide/fitting/outputs.mdx).
 - See the complete [pure in-phase ¹⁵N CPMG experiment reference](./experiments/cpmg/cpmg_15n_ip.md).
 
-The full `CPMG_15N_IP` example deliberately follows the five-profile global fit
+The full `CPMG_15N_IP` example deliberately follows the five-residue global fit
 with a second all-profile step that inherits parameter roles and fixes the
-shared exchange parameters. That more robust staged strategy is useful in real
-analyses, but is best learned after this first one-step fit.
+shared exchange parameters. The follow-up tutorial explains that staged
+strategy and the diagnostics produced by the current example.
