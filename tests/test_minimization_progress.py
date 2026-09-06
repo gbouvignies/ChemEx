@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from io import StringIO
 from unittest.mock import patch
 
@@ -33,6 +34,7 @@ def _event(
     terminal: str | None = None,
     observations: int = 8,
     parameters: int = 2,
+    normalizations: int = 0,
 ) -> ProgressEvent:
     return ProgressEvent(
         phase=phase,
@@ -44,6 +46,7 @@ def _event(
         best_chi_square=best,
         retained_observation_count=observations,
         controlled_parameter_count=parameters,
+        profiled_normalization_count=normalizations,
         objective_request_budget=100,
         elapsed_seconds=elapsed,
         terminal_status=terminal,
@@ -151,13 +154,13 @@ def test_noninteractive_progress_uses_ten_second_heartbeat() -> None:
 
 
 @pytest.mark.parametrize(
-    ("observations", "parameters", "expected"),
-    [(8, 2, 2.0), (2, 2, 12.0), (1, 2, 12.0)],
+    ("observations", "parameters", "normalizations"),
+    [(2, 1, 1), (1, 1, 1)],
 )
-def test_progress_reduced_chi_square_uses_existing_nonpositive_dof_convention(
+def test_progress_reduced_chi_square_is_nan_for_nonpositive_dof(
     observations: int,
     parameters: int,
-    expected: float,
+    normalizations: int,
 ) -> None:
     event = _event(
         ProgressPhase.EVALUATED,
@@ -166,9 +169,59 @@ def test_progress_reduced_chi_square_uses_existing_nonpositive_dof_convention(
         best=12.0,
         observations=observations,
         parameters=parameters,
+        normalizations=normalizations,
     )
 
-    assert event.reduced_chi_square == expected
+    assert event.reduced_chi_square is not None
+    assert math.isnan(event.reduced_chi_square)
+
+
+def test_progress_reduced_chi_square_counts_profiled_normalizations() -> None:
+    event = _event(
+        ProgressPhase.EVALUATED,
+        elapsed=1.0,
+        current=7.0,
+        best=7.0,
+        observations=7,
+        parameters=1,
+        normalizations=1,
+    )
+
+    assert event.reduced_chi_square == 7.0 / 5.0
+
+
+def test_final_progress_summary_counts_profiled_normalizations() -> None:
+    output_console, stream = _capturing_console()
+    reporter = MinimizationProgressReporter(
+        output_console,
+        interactive=False,
+        retained_observation_count=7,
+        controlled_parameter_count=1,
+        profiled_normalization_count=1,
+        clock=lambda: 0.0,
+    )
+
+    with reporter:
+        reporter.finish(final_chi_square=7.0, terminal_status="committed")
+
+    assert "1.4" in stream.getvalue()
+
+
+def test_final_progress_summary_renders_nonpositive_dof_as_nan() -> None:
+    output_console, stream = _capturing_console()
+    reporter = MinimizationProgressReporter(
+        output_console,
+        interactive=False,
+        retained_observation_count=2,
+        controlled_parameter_count=1,
+        profiled_normalization_count=1,
+        clock=lambda: 0.0,
+    )
+
+    with reporter:
+        reporter.finish(final_chi_square=12.0, terminal_status="committed")
+
+    assert "nan" in stream.getvalue()
 
 
 def _capturing_console(*, interactive: bool = False) -> tuple[Console, StringIO]:
@@ -201,6 +254,7 @@ def test_noninteractive_reporter_renders_bounded_component_context_and_summary()
         interactive=False,
         retained_observation_count=8,
         controlled_parameter_count=2,
+        profiled_normalization_count=0,
         component_labels={frozenset(context.controlled_ids): "L18CD1"},
         clock=lambda: next(times),
     )
@@ -252,6 +306,7 @@ def test_interactive_reporter_updates_one_transient_component_table() -> None:
         interactive=True,
         retained_observation_count=8,
         controlled_parameter_count=2,
+        profiled_normalization_count=0,
         component_labels={frozenset(context.controlled_ids): "L18CD1"},
         clock=lambda: 0.0,
     )
@@ -298,6 +353,7 @@ def test_interactive_one_component_table_omits_component_column() -> None:
         interactive=True,
         retained_observation_count=8,
         controlled_parameter_count=2,
+        profiled_normalization_count=0,
         clock=lambda: 0.0,
     )
     updates: list[object] = []
@@ -370,6 +426,7 @@ def test_noninteractive_reporter_rate_limits_component_transitions_fit_wide() ->
         interactive=False,
         retained_observation_count=8,
         controlled_parameter_count=2,
+        profiled_normalization_count=0,
         clock=lambda: next(times),
     )
 
@@ -404,6 +461,7 @@ def test_disabled_reporter_emits_no_output() -> None:
         interactive=False,
         retained_observation_count=8,
         controlled_parameter_count=2,
+        profiled_normalization_count=0,
         enabled=False,
     )
 
@@ -424,6 +482,7 @@ def test_reporting_failure_isolated_from_scientific_execution() -> None:
         interactive=False,
         retained_observation_count=8,
         controlled_parameter_count=2,
+        profiled_normalization_count=0,
         clock=lambda: 0.0,
     )
 
@@ -454,6 +513,7 @@ def test_grid_reporter_aggregates_local_attempts_instead_of_streaming_each_seed(
         interactive=False,
         retained_observation_count=8,
         controlled_parameter_count=2,
+        profiled_normalization_count=0,
         grid=True,
         clock=lambda: 0.0,
     )
@@ -507,6 +567,7 @@ def test_keyboard_interrupt_stops_live_reporting_and_prints_a_terminal_line() ->
         interactive=True,
         retained_observation_count=8,
         controlled_parameter_count=2,
+        profiled_normalization_count=0,
         clock=lambda: next(times),
     )
 
@@ -529,6 +590,7 @@ def test_exception_fallback_does_not_label_a_local_best_as_final() -> None:
         interactive=False,
         retained_observation_count=8,
         controlled_parameter_count=2,
+        profiled_normalization_count=0,
         clock=lambda: next(times),
     )
 
@@ -560,6 +622,7 @@ def test_live_elapsed_time_is_fit_wide_across_local_attempts(grid: bool) -> None
         interactive=True,
         retained_observation_count=8,
         controlled_parameter_count=2,
+        profiled_normalization_count=0,
         grid=grid,
         clock=lambda: next(times),
     )

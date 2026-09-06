@@ -17,6 +17,7 @@ from chemex.optimize.deterministic_uncertainty import (
     DeterministicUncertainty,
     InterpretationCompleteness,
 )
+from chemex.optimize.statistics import FitStatisticsCounts
 from chemex.optimize.uncertainty import UncertaintyUnavailableKind
 from chemex.parameters.feasible_coordinates import validate_relaxation_state
 from chemex.parameters.parameterization import (
@@ -39,20 +40,33 @@ from chemex.typing import Array
 
 def calculate_statistics_from_residuals(
     residuals: Array,
-    nvarys: int,
+    controlled_coordinate_count: int,
+    profiled_normalization_count: int = 0,
 ) -> dict[str, int | float]:
     """Calculate established fit statistics from an authoritative residual vector."""
-    ndata = len(residuals)
+    counts = FitStatisticsCounts(
+        len(residuals),
+        controlled_coordinate_count,
+        profiled_normalization_count,
+    )
     chisqr = sum(residuals**2)
-    redchi = chisqr / max(1, ndata - nvarys)
-    aic = chisqr + 2 * nvarys
-    bic = chisqr + np.log(ndata) * nvarys
+    degrees_of_freedom = counts.residual_degrees_of_freedom
+    estimated_parameter_count = counts.estimated_parameter_count
+    redchi = counts.reduced_chi_square(chisqr)
+    aic = chisqr + 2 * estimated_parameter_count
+    bic = chisqr + np.log(counts.residual_count) * estimated_parameter_count
     _, ks_p_value = stats.kstest(residuals, "norm")
     ks_p_value = float(ks_p_value)
-    pvalue: float = 1.0 - stats.chi2.cdf(chisqr, ndata - nvarys)
+    positive_degrees_of_freedom = counts.positive_residual_degrees_of_freedom
+    pvalue = (
+        float("nan")
+        if positive_degrees_of_freedom is None
+        else float(1.0 - stats.chi2.cdf(chisqr, positive_degrees_of_freedom))
+    )
     return {
-        "ndata": ndata,
-        "nvarys": nvarys,
+        "ndata": counts.residual_count,
+        "nvarys": counts.controlled_coordinate_count,
+        "dof": degrees_of_freedom,
         "chisqr": chisqr,
         "redchi": redchi,
         "pvalue": pvalue,
@@ -67,10 +81,15 @@ def _write_statistics(
     path: Path,
     *,
     residuals: Array,
-    nvarys: int,
+    controlled_coordinate_count: int,
+    profiled_normalization_count: int,
 ) -> None:
     """Write fitting statistics to a file."""
-    stats = calculate_statistics_from_residuals(residuals, nvarys)
+    stats = calculate_statistics_from_residuals(
+        residuals,
+        controlled_coordinate_count,
+        profiled_normalization_count,
+    )
     filename = path / "statistics.toml"
     with filename.open("w", encoding="utf-8") as f:
         f.write(f'"number of data points"                = {stats["ndata"]}\n')
@@ -90,7 +109,8 @@ def _write_files(
     path: Path,
     *,
     residuals: Array,
-    nvarys: int,
+    controlled_coordinate_count: int,
+    profiled_normalization_count: int,
     deterministic_uncertainty: DeterministicUncertainty | None = None,
     parameter_model: SealedParameterModel,
     parameter_values: Mapping[str, float],
@@ -118,7 +138,8 @@ def _write_files(
             experiments,
             path=path,
             residuals=residuals,
-            nvarys=nvarys,
+            controlled_coordinate_count=controlled_coordinate_count,
+            profiled_normalization_count=profiled_normalization_count,
         )
     if (
         deterministic_uncertainty is not None
@@ -209,7 +230,8 @@ def execute_post_fit(
     *,
     plot: bool = False,
     residuals: Array,
-    nvarys: int,
+    controlled_coordinate_count: int,
+    profiled_normalization_count: int,
     deterministic_uncertainty: DeterministicUncertainty | None = None,
     parameter_model: SealedParameterModel,
     parameter_values: Mapping[str, float],
@@ -220,7 +242,8 @@ def execute_post_fit(
         experiments,
         path,
         residuals=residuals,
-        nvarys=nvarys,
+        controlled_coordinate_count=controlled_coordinate_count,
+        profiled_normalization_count=profiled_normalization_count,
         deterministic_uncertainty=deterministic_uncertainty,
         parameter_model=parameter_model,
         parameter_values=parameter_values,

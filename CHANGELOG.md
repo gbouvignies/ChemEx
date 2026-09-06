@@ -32,6 +32,11 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   signature; the obsolete `DH_AC` and `DS_AC` arguments have been removed.
 
 ### Fixed
+- Corrected scaled-profile fit statistics to count analytically fitted
+  per-profile normalization factors in residual degrees of freedom and χ²
+  goodness-of-fit, and in the AIC/BIC model dimension. This changes reported
+  summary statistics for scaled profiles without changing χ² or fitted central
+  parameters.
 - Native MCMC automatic burn-in once again uses a valid finite positive
   tentative autocorrelation estimate from a short chain. Such runs publish
   posterior products with explicit tentative-estimate and tentative-burn

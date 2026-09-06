@@ -108,7 +108,8 @@ constrained, respectively. These reports are not restart bundles. Use
 
 #### Example Files
 
-import Tabs from '@theme/Tabs'; import TabItem from '@theme/TabItem';
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
 
 <Tabs>
 <TabItem value="fitted" label="fitted.toml" default>
@@ -170,12 +171,15 @@ derived error; fitted independent-parameter errors remain available.
 
 Contains `.pdf` plots of the fitting results, along with the raw input and fitted data points. Example plots for CPMG and CEST experiments are shown below:
 
-import CestProfile from '@site/static/img/cest_26hz_fit.png'; import CpmgProfile from '@site/static/img/cpmg_800mhz_fit.png';
+import CestProfile from "@site/static/img/cest_26hz_fit.png";
+import CpmgProfile from "@site/static/img/cpmg_800mhz_fit.png";
 
 <figure>
-  <img src={CestProfile} alt="CEST profile" width="50%"/>
-  <img src={CpmgProfile} alt="CPMG profile" width="50%"/>
-  <figcaption align="center"><b>Examples of CEST and CPMG fitting results</b></figcaption>
+    <img src={CestProfile} alt="CEST profile" width="50%" />
+    <img src={CpmgProfile} alt="CPMG profile" width="50%" />
+    <figcaption align="center">
+        <b>Examples of CEST and CPMG fitting results</b>
+    </figcaption>
 </figure>
 
 :::note
@@ -252,9 +256,16 @@ Contains goodness-of-fit statistics, such as χ<sup>2</sup>.
 "number of data points"                = 230
 "number of variables"                  = 17
 "chi-square"                           =  4.34824e+02
-"reduced-chi-square"                   =  2.04143e+00
-"Akaike Information Criterion (AIC)"   =  1.80479e+02
+"reduced-chi-square"                   =  2.14199e+00
+"Akaike Information Criterion (AIC)"   =  4.88824e+02
+"Bayesian Information Criterion (BIC)" =  5.81652e+02
 ```
+
+`"number of variables"` reports the controlled optimizer coordinates (`P`).
+Analytically fitted profile normalizations are not included in that field, but
+they are fitted nuisance parameters (`G`) when calculating residual degrees of
+freedom, the χ² goodness-of-fit test, AIC, and BIC. If `N - P - G` is not
+positive, the reduced χ² and χ² goodness-of-fit result are serialized as `nan`.
 
 ### `Statistics/`
 

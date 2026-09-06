@@ -180,6 +180,17 @@ def test_shipped_two_profile_dcest_plan_matches_direct_profiles_completely() -> 
     assert evaluator.cache_statistics.hits == 2
 
 
+def test_plan_counts_scaled_profiles_in_a_mixed_population() -> None:
+    session, experiments = _shipped_dcest("1N", "2N")
+    profiles = next(iter(experiments)).profiles
+    profiles[1].is_scaled = False
+    parameterization = session.compile_parameterization(Method(), experiments.param_ids)
+
+    plan = EvaluationEngine.from_experiments(experiments, parameterization).plan
+
+    assert plan.profiled_normalization_count == 1
+
+
 @pytest.mark.parametrize(
     "field,value",
     (

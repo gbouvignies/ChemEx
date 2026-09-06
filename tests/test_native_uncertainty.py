@@ -48,6 +48,7 @@ from chemex.optimize.direct_trf import (
     execute_direct_trf,
 )
 from chemex.optimize.grouped_direct_trf import FitDecomposition
+from chemex.optimize.helper import calculate_statistics_from_residuals
 from chemex.optimize.uncertainty import (
     ClaimAssessment,
     ClaimState,
@@ -812,6 +813,14 @@ def test_accepted_fit_yields_typed_covariance_and_joint_constraint_propagation()
     assert evidence.covariance.controlled_coordinate_count == 1
     assert evidence.covariance.profiled_normalization_count == 1
     assert evidence.covariance.nominal_residual_degrees_of_freedom == 5
+    fit_statistics = calculate_statistics_from_residuals(
+        accepted.evaluation_result.residuals,
+        controlled_coordinate_count=evidence.covariance.controlled_coordinate_count,
+        profiled_normalization_count=evidence.covariance.profiled_normalization_count,
+    )
+    assert fit_statistics["dof"] == (
+        evidence.covariance.nominal_residual_degrees_of_freedom
+    )
     assert evidence.covariance.rank == 1
     assert evidence.covariance.factorization == (
         "column-equilibrated-svd-factor-gram-v4"
