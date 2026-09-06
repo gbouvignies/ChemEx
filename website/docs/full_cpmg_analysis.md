@@ -111,7 +111,7 @@ A current run gives approximately:
 | `PB`         |   0.07030 |
 | `KEX_AB`     | 381.7 s⁻¹ |
 | χ²           |     434.6 |
-| Reduced χ²   |     2.040 |
+| Reduced χ²   |     2.141 |
 
 ### How STEP1 relates to the first tutorial
 
@@ -245,10 +245,12 @@ exchange process. This is the practical purpose of the second stage.
 
 A current run completes both steps. STEP1 reports covariance available, with a
 full-rank 17-parameter Jacobian. STEP2 gives approximately χ² = 2694.7 and
-reduced χ² = 1.160 for 2484 data points and 162 varying parameters. Its
-covariance is also available and full rank, but ChemEx reports boundary
-warnings: the fitted `DW_AB` for 27N lies near a fitted-coordinate boundary, so
-its symmetric covariance uncertainty may be misleading.
+reduced χ² = 1.217. Here, the residual degrees of freedom are
+ν = N − P − G = 2484 − 162 − 108 = 2214: 2484 observations, 162 controlled fit
+coordinates, and 108 analytically fitted profile normalizations. Its covariance
+is also available and full rank, but ChemEx reports boundary warnings: the fitted
+`DW_AB` for 27N lies near a fitted-coordinate boundary, so its symmetric
+covariance uncertainty may be misleading.
 
 These statements answer different questions. `status = "complete"` means every
 requested fit step and output operation finished. The covariance and boundary

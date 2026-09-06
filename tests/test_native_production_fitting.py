@@ -621,6 +621,124 @@ def test_real_direct_fit_uses_native_trf_and_commits_product_output(
     assert fitted_curve_rate == pytest.approx(fitted_value, rel=1.0e-3)
 
 
+@pytest.mark.parametrize(("scaled", "profiled_count"), ((True, 1), (False, 0)))
+def test_production_statistics_derive_profiled_normalizations_from_evaluation_plan(
+    tmp_path: Path,
+    scaled: bool,
+    profiled_count: int,
+) -> None:
+    output = tmp_path / ("Scaled" if scaled else "Unscaled")
+    args, session, experiments = _programmatic_fit_context(output)
+    assert len(experiments) == 1
+    (experiment,) = experiments
+    assert len(experiment.profiles) == 1
+    experiment.profiles[0].is_scaled = scaled
+
+    run_fit(
+        args,
+        experiments,
+        session,
+        input_files=(),
+        methods={"DEFAULT": Method(fix=["PB", "KEX_AB"])},
+    )
+
+    statistics = tomllib.loads((output / "statistics.toml").read_text(encoding="utf-8"))
+    evidence = json.loads(
+        (output / "Statistics" / "Covariance" / "evidence.json").read_text(
+            encoding="utf-8"
+        )
+    )["covariance"]
+    residual_count = evidence["retained_residual_count"]
+    controlled_count = evidence["controlled_coordinate_count"]
+    assert residual_count == 7
+    assert controlled_count == 1
+    assert evidence["profiled_normalization_count"] == profiled_count
+    assert evidence["nominal_residual_degrees_of_freedom"] == (
+        residual_count - controlled_count - profiled_count
+    )
+
+    chi_square = statistics["chi-square"]
+    model_dimension = controlled_count + profiled_count
+    assert statistics["number of data points"] == residual_count
+    assert statistics["number of variables"] == controlled_count
+    assert statistics["reduced-chi-square"] == pytest.approx(
+        chi_square / (residual_count - model_dimension),
+        rel=1.0e-5,
+    )
+    assert statistics["Akaike Information Criterion (AIC)"] == pytest.approx(
+        chi_square + 2 * model_dimension,
+        rel=1.0e-5,
+    )
+    assert statistics["Bayesian Information Criterion (BIC)"] == pytest.approx(
+        chi_square + math.log(residual_count) * model_dimension,
+        rel=1.0e-5,
+    )
+    if scaled:
+        assert statistics == {
+            "number of data points": 7,
+            "number of variables": 1,
+            "chi-square": 13.2171,
+            "reduced-chi-square": 2.64343,
+            "chi-squared test": 0.0214268,
+            "Kolmogorov-Smirnov test": 0.526228,
+            "Akaike Information Criterion (AIC)": 17.2171,
+            "Bayesian Information Criterion (BIC)": 17.109,
+        }
+    else:
+        # Origin/main oracle: G = 0 preserves the complete serialized artifact.
+        assert statistics == {
+            "number of data points": 7,
+            "number of variables": 1,
+            "chi-square": 41853.1,
+            "reduced-chi-square": 6975.52,
+            "chi-squared test": 0.0,
+            "Kolmogorov-Smirnov test": 0.0,
+            "Akaike Information Criterion (AIC)": 41855.1,
+            "Bayesian Information Criterion (BIC)": 41855.1,
+        }
+
+
+def test_production_statistics_publish_nan_when_residual_dof_is_zero(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "Saturated"
+    args, session, experiments = _programmatic_fit_context(output)
+    (experiment,) = experiments
+    profile = experiment.profiles[0]
+    profile.data.mask[:] = False
+    profile.data.mask[:2] = True
+    profile.data.mark_dirty()
+
+    run_fit(
+        args,
+        experiments,
+        session,
+        input_files=(),
+        methods={"DEFAULT": Method(fix=["PB", "KEX_AB"])},
+    )
+
+    statistics = tomllib.loads((output / "statistics.toml").read_text(encoding="utf-8"))
+    evidence = json.loads(
+        (output / "Statistics" / "Covariance" / "evidence.json").read_text(
+            encoding="utf-8"
+        )
+    )["covariance"]
+    assert evidence is not None
+    assert evidence["retained_residual_count"] == 2
+    assert evidence["controlled_coordinate_count"] == 1
+    assert evidence["profiled_normalization_count"] == 1
+    assert evidence["nominal_residual_degrees_of_freedom"] == 0
+    assert math.isnan(statistics["reduced-chi-square"])
+    assert math.isnan(statistics["chi-squared test"])
+    assert math.isfinite(statistics["chi-square"])
+    assert math.isfinite(statistics["Akaike Information Criterion (AIC)"])
+    assert math.isfinite(statistics["Bayesian Information Criterion (BIC)"])
+    outcome = tomllib.loads(
+        (output / "run_info" / "outcome.toml").read_text(encoding="utf-8")
+    )
+    assert outcome["status"] == "complete"
+
+
 def test_cest_1hn_ip_ap_commits_psd_transverse_relaxation_block(
     tmp_path: Path,
 ) -> None:

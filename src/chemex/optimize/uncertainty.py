@@ -43,6 +43,7 @@ from chemex.optimize.direct_trf import (
     accepted_occurrence_is_authoritative,
 )
 from chemex.optimize.grouped_direct_trf import FitPartitionProof
+from chemex.optimize.statistics import FitStatisticsCounts
 from chemex.parameters.feasible_coordinates import relaxation_state_is_on_boundary
 from chemex.parameters.parameterization import (
     ActiveParameterization,
@@ -1707,12 +1708,13 @@ class CovarianceEvidence:
         policy = self.source_policy
         engine = self.source_engine
         expected_residual_count = source.residual_count
-        expected_normalization_count = sum(
-            1 for profile in engine.plan.profiles if profile.is_scaled
+        counts = FitStatisticsCounts(
+            source.residual_count,
+            dimension,
+            engine.plan.profiled_normalization_count,
         )
-        expected_degrees = (
-            expected_residual_count - dimension - expected_normalization_count
-        )
+        expected_normalization_count = counts.profiled_normalization_count
+        expected_degrees = counts.residual_degrees_of_freedom
         expected_scale, scale_failure = _residual_variance_scale(
             accepted,
             degrees_of_freedom=expected_degrees,
@@ -3358,6 +3360,7 @@ def _derive_root_anchored_block_covariance_complete(  # noqa: C901
             evidence.source_engine.plan.profiles[index].is_scaled
             for index in profile_indices
         )
+        counts = FitStatisticsCounts(len(rows), len(scope), normalization_count)
         failure: EvidenceFailure | None = None
         constrained_failure: EvidenceFailure | None = None
         claims: tuple[ClaimAssessment, ...]
@@ -3366,7 +3369,7 @@ def _derive_root_anchored_block_covariance_complete(  # noqa: C901
         covariance: tuple[tuple[float, ...], ...] | None = None
         factor: tuple[tuple[float, ...], ...] | None = None
         correlations: tuple[tuple[CorrelationEntry, ...], ...] = ()
-        if len(rows) - normalization_count < len(scope):
+        if counts.effective_observation_count < counts.controlled_coordinate_count:
             failure = EvidenceFailure(
                 "block_covariance",
                 "insufficient_effective_observations",
@@ -3397,7 +3400,7 @@ def _derive_root_anchored_block_covariance_complete(  # noqa: C901
                     analysis,
                     analysis.equilibration_scales,
                     accepted,
-                    degrees_of_freedom=(len(rows) - len(scope) - normalization_count),
+                    degrees_of_freedom=counts.residual_degrees_of_freedom,
                     policy=policy,
                     source_identity=jacobian.identity,
                     cancellation_probe=None,
@@ -5423,11 +5426,14 @@ def _covariance_from_jacobian(
     _raise_if_terminated(cancellation_probe)
     residual_count = jacobian.residual_count
     coordinate_count = jacobian.coordinate_count
-    normalization_count = sum(
-        1 for profile in engine.plan.profiles if profile.is_scaled
+    counts = FitStatisticsCounts(
+        residual_count,
+        coordinate_count,
+        engine.plan.profiled_normalization_count,
     )
-    degrees_of_freedom = residual_count - coordinate_count - normalization_count
-    if residual_count - normalization_count < coordinate_count:
+    normalization_count = counts.profiled_normalization_count
+    degrees_of_freedom = counts.residual_degrees_of_freedom
+    if counts.effective_observation_count < coordinate_count:
         return (
             None,
             None,

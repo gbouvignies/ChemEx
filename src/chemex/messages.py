@@ -50,6 +50,7 @@ from chemex.optimize.progress import (
     ProgressRateLimiter,
     ProgressUpdate,
 )
+from chemex.optimize.statistics import FitStatisticsCounts
 
 console = Console()
 error_console = Console(stderr=True)
@@ -70,6 +71,7 @@ class MinimizationProgressReporter:
         interactive: bool,
         retained_observation_count: int,
         controlled_parameter_count: int,
+        profiled_normalization_count: int,
         component_labels: Mapping[frozenset[str], str] | None = None,
         grid: bool = False,
         enabled: bool = True,
@@ -79,6 +81,7 @@ class MinimizationProgressReporter:
         self._interactive = interactive
         self._retained_observation_count = retained_observation_count
         self._controlled_parameter_count = controlled_parameter_count
+        self._profiled_normalization_count = profiled_normalization_count
         self._component_labels = (
             {} if component_labels is None else dict(component_labels)
         )
@@ -279,11 +282,11 @@ class MinimizationProgressReporter:
         reduced = (
             None
             if chi_square is None
-            else chi_square
-            / max(
-                1,
-                self._retained_observation_count - self._controlled_parameter_count,
-            )
+            else FitStatisticsCounts(
+                self._retained_observation_count,
+                self._controlled_parameter_count,
+                self._profiled_normalization_count,
+            ).reduced_chi_square(chi_square)
         )
         table = Table(box=box.SIMPLE_HEAD)
         table.add_column("Evaluations", justify="right", style="blue")

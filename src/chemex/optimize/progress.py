@@ -6,6 +6,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 
+from chemex.optimize.statistics import FitStatisticsCounts
+
 _RELATIVE_IMPROVEMENT_THRESHOLD = 1.0e-3
 _INTERACTIVE_HEARTBEAT_SECONDS = 5.0
 _NONINTERACTIVE_HEARTBEAT_SECONDS = 10.0
@@ -32,6 +34,7 @@ class ProgressEvent:
     best_chi_square: float | None
     retained_observation_count: int
     controlled_parameter_count: int
+    profiled_normalization_count: int
     objective_request_budget: int
     elapsed_seconds: float
     terminal_status: str | None = None
@@ -41,11 +44,12 @@ class ProgressEvent:
         """Return reduced chi-square using ChemEx's established dof convention."""
         if self.best_chi_square is None:
             return None
-        degrees_of_freedom = max(
-            1,
-            self.retained_observation_count - self.controlled_parameter_count,
+        counts = FitStatisticsCounts(
+            self.retained_observation_count,
+            self.controlled_parameter_count,
+            self.profiled_normalization_count,
         )
-        return self.best_chi_square / degrees_of_freedom
+        return counts.reduced_chi_square(self.best_chi_square)
 
 
 type ProgressObserver = Callable[[ProgressEvent], None]

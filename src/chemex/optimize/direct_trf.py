@@ -2633,11 +2633,13 @@ class _ProgressEmitter:
         problem: OptimizationProblem,
         invocation: DirectTrfInvocation,
         retained_observation_count: int,
+        profiled_normalization_count: int,
         observer: ProgressObserver | None,
     ) -> None:
         self._problem = problem
         self._invocation = invocation
         self._retained_observation_count = retained_observation_count
+        self._profiled_normalization_count = profiled_normalization_count
         self._observer = observer
         self._started_at = monotonic() if observer is not None else None
         self._current: CandidateSummary | None = None
@@ -2656,6 +2658,7 @@ class _ProgressEmitter:
                 None,
                 self._retained_observation_count,
                 len(self._problem.controlled_ids),
+                self._profiled_normalization_count,
                 self._invocation.objective_request_budget,
                 self._elapsed(),
             )
@@ -2681,6 +2684,7 @@ class _ProgressEmitter:
                 best.chi_square,
                 self._retained_observation_count,
                 len(self._problem.controlled_ids),
+                self._profiled_normalization_count,
                 self._invocation.objective_request_budget,
                 self._elapsed(),
             )
@@ -2705,6 +2709,7 @@ class _ProgressEmitter:
                 ),
                 self._retained_observation_count,
                 len(self._problem.controlled_ids),
+                self._profiled_normalization_count,
                 self._invocation.objective_request_budget,
                 self._elapsed(),
                 status,
@@ -4066,6 +4071,7 @@ def execute_direct_trf(
         problem,
         invocation,
         engine.plan.retained_observation_count,
+        engine.plan.profiled_normalization_count,
         progress_observer,
     )
     progress.start()
@@ -4127,6 +4133,7 @@ def execute_direct_trf_candidate(
         problem,
         invocation,
         engine.plan.retained_observation_count,
+        engine.plan.profiled_normalization_count,
         progress_observer,
     )
     progress.start()

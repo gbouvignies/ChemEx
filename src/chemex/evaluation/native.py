@@ -571,6 +571,11 @@ class EvaluationPlan:
     def retained_observation_count(self) -> int:
         return sum(len(item.retained_observation_indices) for item in self.profiles)
 
+    @property
+    def profiled_normalization_count(self) -> int:
+        """Return the number of analytically fitted profile normalizations."""
+        return sum(profile.is_scaled for profile in self.profiles)
+
     def to_record(self) -> dict[str, object]:
         """Return an executable-object-free serialization payload."""
         return {
