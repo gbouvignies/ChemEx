@@ -32,6 +32,10 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   signature; the obsolete `DH_AC` and `DS_AC` arguments have been removed.
 
 ### Fixed
+- Corrected `error = "duplicates"` weighting for mixed experiments where only
+  some profiles contain duplicates. Duplicate-free profiles now contribute the
+  mean of their file-provided variances; affected mixed fits may therefore have
+  different residual weighting, fitted results, and reported statistics.
 - Corrected scaled-profile fit statistics to count analytically fitted
   per-profile normalization factors in residual degrees of freedom and χ²
   goodness-of-fit, and in the AIC/BIC model dimension. This changes reported
