@@ -6,21 +6,27 @@ sidebar_position: 7
 
 The kinetic model (specified with the `-d` or `--model` option) defines the type of exchange model to be used for data analysis. Available models include:
 
-| Model Name    | Description                                                                     |
-| ------------- | ------------------------------------------------------------------------------- |
-| `2st`         | 2-state exchange model (default)                                                |
-| `3st`         | 3-state exchange model                                                          |
-| `4st`         | 4-state exchange model                                                          |
-| `2st_hd`      | 2-state exchange model for H/D solvent exchange studies                         |
-| `2st_eyring`  | 2-state exchange model for temperature-dependent studies                        |
-| `3st_eyring`  | Compatibility name for the linear 3-state Eyring model                          |
-| `3st_eyring_linear` | Linear A ↔ B ↔ C Eyring model for temperature-dependent studies          |
-| `3st_eyring_fork` | Fork B ↔ A ↔ C Eyring model for temperature-dependent studies                |
-| `4st_eyring`  | 4-state exchange model for temperature-dependent studies                        |
-| `2st_binding` | 2-state exchange model for ligand binding studies                               |
-| `4st_hd`      | 4-state exchange model for simultaneous normal and H/D solvent exchange studies |
+| Model Name          | Description                                                                     |
+| ------------------- | ------------------------------------------------------------------------------- |
+| `2st`               | 2-state exchange model (default)                                                |
+| `3st`               | 3-state exchange model                                                          |
+| `4st`               | 4-state exchange model                                                          |
+| `2st_hd`            | 2-state exchange model for H/D solvent exchange studies                         |
+| `2st_eyring`        | 2-state exchange model for temperature-dependent studies                        |
+| `3st_eyring`        | Compatibility name for the linear 3-state Eyring model                          |
+| `3st_eyring_linear` | Linear A ↔ B ↔ C Eyring model for temperature-dependent studies                 |
+| `3st_eyring_fork`   | Fork B ↔ A ↔ C Eyring model for temperature-dependent studies                   |
+| `4st_eyring`        | 4-state exchange model for temperature-dependent studies                        |
+| `2st_binding`       | 2-state exchange model for ligand binding studies                               |
+| `4st_hd`            | 4-state exchange model for simultaneous normal and H/D solvent exchange studies |
 
-In these models, each state in the exchange process is represented with a unique parameter suffix (`A`, `B`, `C`, `D`, etc.). For example, `R1_A` denotes the R<sub>1</sub> relaxation rate of the major (ground) state, while `R2_B` refers to the R<sub>2</sub> rate of the first minor state, and so forth.
+In these models, each state in the exchange process is represented with a unique
+parameter suffix (`A`, `B`, `C`, `D`, etc.). For example, `R1_A` and `R2_B`
+refer to the R<sub>1</sub> rate of state A and the R<sub>2</sub> rate of state B.
+In many analyses A is assigned to the major or ground state and B to a minor or
+excited state, but this is an analyst-defined convention rather than an ordering
+enforced by ChemEx. See [Exchange States and Parameters](exchange_states_parameters.md)
+for populations, directional rates, shift signs, and label swapping.
 
 :::note
 For any kinetic model, you can add the `.rs` suffix to make the kinetic parameters residue-specific (for example, `2st.rs` or `3st_eyring.rs`). Suffixes can be combined, such as `2st.rs.mf`. The legacy `2st_rs` name remains supported as an alias for `2st.rs`.
@@ -47,6 +53,7 @@ k_ij = (k_B * T / h) * exp(-ΔG‡_ij / RT)
 ```
 
 where:
+
 - `k_ij` is the rate constant for transition from state i to j (s⁻¹)
 - `k_B` is Boltzmann's constant (1.380649×10⁻²³ J/K)
 - `T` is temperature in Kelvin
@@ -65,10 +72,12 @@ The activation free energy is calculated from enthalpic and entropic contributio
 The `2st_eyring` model uses the following thermodynamic parameters:
 
 **State Energies (relative to state A):**
+
 - `DH_B`: Enthalpy difference (J/mol) for state B relative to A
 - `DS_B`: Entropy difference (J/mol/K) for state B relative to A
 
 **Transition Barriers:**
+
 - `DH_AB`: Activation enthalpy (J/mol) for A → B transition
 - `DS_AB`: Activation entropy (J/mol/K) for A → B transition
 
@@ -84,10 +93,12 @@ The model automatically calculates both forward (k_AB) and reverse (k_BA) rate c
 Both topologies use the following state parameters:
 
 **State Energies (relative to state A):**
+
 - `DH_B`, `DH_C`: Enthalpy differences (J/mol) for states B, C
 - `DS_B`, `DS_C`: Entropy differences (J/mol/K) for states B, C
 
 **Linear Transition Barriers (`3st_eyring`, `3st_eyring_linear`):**
+
 - `DH_AB`, `DH_BC`: Activation enthalpies (J/mol) for the AB and BC transitions
 - `DS_AB`, `DS_BC`: Activation entropies (J/mol/K) for the AB and BC transitions
 
@@ -95,6 +106,7 @@ The linear models calculate k_AB, k_BA, k_BC, and k_CB. There is no direct A ↔
 pathway.
 
 **Fork Transition Barriers (`3st_eyring_fork`):**
+
 - `DH_AB`, `DH_AC`: Activation enthalpies (J/mol) for the AB and AC transitions
 - `DS_AB`, `DS_AC`: Activation entropies (J/mol/K) for the AB and AC transitions
 
@@ -109,10 +121,12 @@ Parameter files used with `3st_eyring` or `3st_eyring_linear` should not contain
 The `4st_eyring` model implements a full 4-state system:
 
 **State Energies (relative to state A):**
+
 - `DH_B`, `DH_C`, `DH_D`: Enthalpy differences (J/mol) for states B, C, D
 - `DS_B`, `DS_C`, `DS_D`: Entropy differences (J/mol/K) for states B, C, D
 
 **Transition Barriers:**
+
 - `DH_AB`, `DH_AC`, `DH_AD`: Activation enthalpies (J/mol) for transitions from A
 - `DH_BC`, `DH_BD`, `DH_CD`: Activation enthalpies (J/mol) for transitions between B, C, D
 - `DS_AB`, `DS_AC`, `DS_AD`: Activation entropies (J/mol/K) for transitions from A

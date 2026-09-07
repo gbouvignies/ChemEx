@@ -183,7 +183,12 @@ import CpmgProfile from "@site/static/img/cpmg_800mhz_fit.png";
 </figure>
 
 :::note
-In (D-/cos-)CEST plots, solid and dashed vertical lines indicate ground and excited states, respectively, with lighter colors for filtered data points. "Folded" positions are marked with `*`.
+In (D-/cos-)CEST plots, vertical-line styles follow stable ChemEx state-label
+order: A uses the first, solid style, while B, C, and later labels use the
+subsequent dash and dot patterns. The styles do not encode physical state
+identity, population, or energy. See
+[Exchange States and Parameters](exchange_states_parameters.md) for the label
+convention. "Folded" positions are marked with `*`.
 :::
 
 ### `Data/`
@@ -255,10 +260,12 @@ Contains goodness-of-fit statistics, such as χ<sup>2</sup>.
 ```toml title='"statistics.toml"'
 "number of data points"                = 230
 "number of variables"                  = 17
-"chi-square"                           =  4.34824e+02
-"reduced-chi-square"                   =  2.14199e+00
-"Akaike Information Criterion (AIC)"   =  4.88824e+02
-"Bayesian Information Criterion (BIC)" =  5.81652e+02
+"chi-square"                           =  4.34555e+02
+"reduced-chi-square"                   =  2.14067e+00
+"chi-squared test"                     =  0.00000e+00
+"Kolmogorov-Smirnov test"              =  6.66833e-02
+"Akaike Information Criterion (AIC)"   =  4.88555e+02
+"Bayesian Information Criterion (BIC)" =  5.81383e+02
 ```
 
 `"number of variables"` reports the controlled optimizer coordinates (`P`).
@@ -266,6 +273,8 @@ Analytically fitted profile normalizations are not included in that field, but
 they are fitted nuisance parameters (`G`) when calculating residual degrees of
 freedom, the χ² goodness-of-fit test, AIC, and BIC. If `N - P - G` is not
 positive, the reduced χ² and χ² goodness-of-fit result are serialized as `nan`.
+See [Scaling, Uncertainties, and Residuals](scaling_uncertainties_residuals.md)
+for the residual definition and the complete `N`, `P`, `G`, and `ν` convention.
 
 ### `Statistics/`
 

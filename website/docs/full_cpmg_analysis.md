@@ -93,6 +93,9 @@ model-owned quantities such as `PA`, `KAB`, and `KBA` remain derived.
 | `DW_AB`   | One value per residue                               | Fitted        | Residue-specific B-minus-A ¹⁵N shift difference, in ppm |
 | `R2_A`    | One value per residue and magnetic field            | Fitted        | Profile baseline transverse relaxation rate, in s⁻¹     |
 
+See [Exchange States and Parameters](./user_guide/fitting/exchange_states_parameters.md)
+for the exact `PB`, `KEX_AB`, directional-rate, and `DW_AB` conventions.
+
 The shared parameters can be informed simultaneously by several profiles
 because the analysis assumes that they report on the same exchange process.
 `DW_AB` describes how an individual nucleus responds to that process, while
@@ -259,7 +262,9 @@ accepted result. Completion does not erase a diagnostic that deserves
 inspection, and a non-fatal boundary warning does not by itself mean that the
 staged workflow failed.
 
-See [Outputs](./user_guide/fitting/outputs.mdx#statistics) for the generated
+See [Scaling, Uncertainties, and Residuals](./user_guide/fitting/scaling_uncertainties_residuals.md)
+for the `N`, `P`, `G`, and `ν` counting convention, and
+[Outputs](./user_guide/fitting/outputs.mdx#statistics) for the generated
 `Statistics/Covariance/evidence.json` and the meaning of parameter annotations.
 
 ## Adapt the strategy to your data

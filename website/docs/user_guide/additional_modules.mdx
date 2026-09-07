@@ -19,25 +19,28 @@ chemex simulate -e <FILE> \
 
 Example simulation results for CPMG and CEST experiments are shown below:
 
-import CestProfile from '@site/static/img/cest_26hz_simu.png'; import CpmgProfile from '@site/static/img/cpmg_800mhz_simu.png';
+import CestProfile from "@site/static/img/cest_26hz_simu.png";
+import CpmgProfile from "@site/static/img/cpmg_800mhz_simu.png";
 
 <figure>
-  <img src={CestProfile} alt="CEST profile" width="50%"/>
-  <img src={CpmgProfile} alt="CPMG profile" width="50%"/>
-  <figcaption align="center"><b>Examples of CEST and CPMG simulation results</b></figcaption>
+    <img src={CestProfile} alt="CEST profile" width="50%" />
+    <img src={CpmgProfile} alt="CPMG profile" width="50%" />
+    <figcaption align="center">
+        <b>Examples of CEST and CPMG simulation results</b>
+    </figcaption>
 </figure>
 
 ### Options
 
-| Option                    | Description                                                           |
-| ------------------------- | --------------------------------------------------------------------- |
-| `-e`, `--experiments`     | Specifies the files containing experimental setup and data location   |
-| `-p`, `--parameters`      | Specifies the files containing the initial parameter values           |
-| `-d`, `--model`           | Specifies the exchange model used for simulation (default: `2st`)     |
-| `-o`, `--output`          | Specifies the output directory (default: `./OutputSim`)               |
-| `--plot {nothing,normal}` | Sets the plotting level (default: `normal`)                           |
-| `--include`               | Residues to include in the simulation (optional)                      |
-| `--exclude`               | Residues to exclude from the simulation (optional)                    |
+| Option                    | Description                                                         |
+| ------------------------- | ------------------------------------------------------------------- |
+| `-e`, `--experiments`     | Specifies the files containing experimental setup and data location |
+| `-p`, `--parameters`      | Specifies the files containing the initial parameter values         |
+| `-d`, `--model`           | Specifies the exchange model used for simulation (default: `2st`)   |
+| `-o`, `--output`          | Specifies the output directory (default: `./OutputSim`)             |
+| `--plot {nothing,normal}` | Sets the plotting level (default: `normal`)                         |
+| `--include`               | Residues to include in the simulation (optional)                    |
+| `--exclude`               | Residues to exclude from the simulation (optional)                  |
 
 ### Example
 
@@ -72,7 +75,11 @@ These commands are also included in the `plot_param.sh` script in [this example]
 
 ## Initial Estimates of Δϖ for CEST Experiments
 
-In CEST (and D-CEST/COS-CEST) experiments, choosing appropriate initial values for Δϖ is crucial to avoid local minima in fitting. The `pick_cest` module in ChemEx facilitates manual selection of major and minor dips in CEST profiles, which correspond to the ground and excited states.
+In CEST (and D-CEST/COS-CEST) experiments, choosing appropriate initial values
+for Δϖ can help avoid local minima. The `pick_cest` module lets you assign two
+dips to the A and B labels and generates initial `CS_A` and `DW_AB` values. You
+may use a major/ground-state A and minor/excited-state B convention, but the tool
+does not establish that physical assignment or enforce a population ordering.
 
 Use the following command to launch the `pick_cest` module:
 
@@ -80,7 +87,15 @@ Use the following command to launch the `pick_cest` module:
 chemex pick_cest -e <FILE> -o <DIR>
 ```
 
-Upon running this command, a window displaying all CEST profiles will appear. For each profile, click first on the major dip, then on the minor dip(s). If only one dip is visible (indicating the minor dip overlaps with the major dip), click the major dip twice. Use the `Next` and `Previous` buttons to navigate profiles, `Swap` to switch between major and minor states, and `Clear` to reset selections on the current profile. During this process, two files are generated in real-time: `cs_a.toml` (chemical shifts of the major state) and `dw_ab.toml` (chemical shift differences between major and minor states).
+Upon running this command, a window displaying all CEST profiles appears. For
+each profile, click first on the dip to assign to A and then on the dip to assign
+to B. If only one dip is visible, click it twice. Use `Next` and `Previous` to
+navigate profiles, `Swap` to exchange the A/B assignments, and `Clear` to reset
+the current profile. The tool writes `cs_a.toml` and `dw_ab.toml` in real time,
+with `DW_AB = CS_B - CS_A`. These are initialization files; the assignments are
+not inferred or validated as major/minor states. See
+[Exchange States and Parameters](fitting/exchange_states_parameters.md) for the
+state-label and shift-sign conventions.
 
 ### Example
 

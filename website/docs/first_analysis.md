@@ -76,11 +76,14 @@ types in detail.
 
 The model calls the exchanging states A and B. These are stable labels; deciding
 which physical conformations they represent is the analyst's responsibility.
+ChemEx does not require A to be the major state or reorder the labels by fitted
+population. The complete conventions are defined in
+[Exchange States and Parameters](./user_guide/fitting/exchange_states_parameters.md).
 For this fit, the most important parameters are:
 
 - `PB`: the equilibrium population fraction of state B;
 - `KEX_AB`: the total A↔B exchange rate, in s⁻¹;
-- `DW_AB`: the profile-specific ¹⁵N chemical-shift difference
+- `DW_AB`: the residue-specific ¹⁵N chemical-shift difference
   (state B minus state A), in ppm.
 
 `PB` and `KEX_AB` are shared by all ten profiles: five residues measured at
@@ -183,9 +186,9 @@ available in `OutputTutorial/Plots/800mhz.exp`,
 
 ChemEx loaded the measured CPMG intensities, evaluated them under the selected
 two-state exchange model, and globally optimized shared exchange parameters
-together with profile-specific chemical-shift differences and relaxation
-rates. It then wrote the fitted parameters, back-calculated data, plots,
-fit-quality statistics, and run provenance.
+together with residue-specific chemical-shift differences and residue- and
+field-specific relaxation rates. It then wrote the fitted parameters,
+back-calculated data, plots, fit-quality statistics, and run provenance.
 
 ## Next steps
 
@@ -194,6 +197,7 @@ fit-quality statistics, and run provenance.
   parameters established by the five-residue subset.
 - Learn how to configure [experiments](./user_guide/fitting/experiment_files.md)
   and [data files](./user_guide/fitting/data_files.mdx).
+- Understand [profile scaling, uncertainties, residuals, and fit statistics](./user_guide/fitting/scaling_uncertainties_residuals.md).
 - Learn how to set [starting parameters and bounds](./user_guide/fitting/parameter_files.md).
 - Learn how [Method v2](./user_guide/fitting/method_files.md) controls profile
   selection, parameter roles, and multi-step fits.

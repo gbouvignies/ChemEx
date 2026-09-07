@@ -6,6 +6,10 @@ sidebar_position: 5
 
 ## Overview
 
+Parameter names use stable state labels and directional conventions. Before
+preparing values, read [Exchange States and Parameters](exchange_states_parameters.md),
+especially the definitions of `PB`, `KEX_AB`, `KAB`, `KBA`, and `DW_AB`.
+
 Parameter files contain initial estimates for the parameters used in the fitting process. These files are specified in ChemEx using the `-p` or `--parameters` option:
 
 ```shell
@@ -14,8 +18,8 @@ chemex fit [...] -p <parameter_file> [...]
 
 Parameter files are organized into sections:
 
--   The `[GLOBAL]` section applies parameters universally to all residues.
--   Residue-specific parameters are defined in sections named after each parameter, such as `[CS_A]`. Multiple parameter files can be provided if needed.
+- The `[GLOBAL]` section applies parameters universally to all residues.
+- Residue-specific parameters are defined in sections named after each parameter, such as `[CS_A]`. Multiple parameter files can be provided if needed.
 
 :::warning
 To ensure accurate results and avoid local minima, set appropriate initial values for each parameter, as the χ<sup>2</sup> minimization process involves multidimensional searching.
