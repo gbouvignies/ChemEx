@@ -57,15 +57,15 @@ Each experiment available in ChemEx includes a sample configuration file, which 
 
 The `[experiment]` section defines the type and settings of the pulse sequence. Common keys include:
 
-| Key               | Description                                                                                           |
-| ----------------- | ----------------------------------------------------------------------------------------------------- |
-| `name`            | Pulse sequence name.                                                                                  |
-| `carrier`         | Carrier position during the experiment, in ppm.                                                       |
-| `time_t2`, `time_t1` | Relaxation delays in seconds (e.g., for CPMG relaxation dispersion experiments).                   |
-| `pw90`            | 90-degree pulse width, in seconds.                                                                    |
-| `b1_frq`          | B1 radio-frequency field strength, in Hz.                                                             |
-| `observed_state`  | Observed state; final-magnetization experiments also accept a list whose components are summed.       |
-| `start_state`     | Optional state or list of states used for non-equilibrium starting magnetization.                     |
+| Key                  | Description                                                                                     |
+| -------------------- | ----------------------------------------------------------------------------------------------- |
+| `name`               | Pulse sequence name.                                                                            |
+| `carrier`            | Carrier position during the experiment, in ppm.                                                 |
+| `time_t2`, `time_t1` | Relaxation delays in seconds (e.g., for CPMG relaxation dispersion experiments).                |
+| `pw90`               | 90-degree pulse width, in seconds.                                                              |
+| `b1_frq`             | B1 radio-frequency field strength, in Hz.                                                       |
+| `observed_state`     | Observed state; final-magnetization experiments also accept a list whose components are summed. |
+| `start_state`        | Optional state or list of states used for non-equilibrium starting magnetization.               |
 
 #### `observed_state`
 
@@ -150,12 +150,12 @@ fast-exchange lineshapes.
 
 The `[conditions]` section provides experimental and sample conditions, such as Larmor frequency, temperature, concentration, and labeling. `h_larmor_frq` (Larmor frequency) is required, while `temperature`, `p_total`, and `l_total` depend on the kinetic model used.
 
-| Key                 | Description                                                                                           |
-| ------------------- | ----------------------------------------------------------------------------------------------------- |
-| `h_larmor_frq`      | Larmor frequency in MHz.                                                                              |
-| `temperature`       | Sample temperature in °C (optional, required by certain kinetic models).                              |
-| `p_total`, `l_total`| Protein and ligand concentrations in M (optional, required by certain kinetic models).                |
-| `label`             | Labeling scheme for the sample.                                                                       |
+| Key                  | Description                                                                            |
+| -------------------- | -------------------------------------------------------------------------------------- |
+| `h_larmor_frq`       | Larmor frequency in MHz.                                                               |
+| `temperature`        | Sample temperature in °C (optional, required by certain kinetic models).               |
+| `p_total`, `l_total` | Protein and ligand concentrations in M (optional, required by certain kinetic models). |
+| `label`              | Labeling scheme for the sample.                                                        |
 
 #### `label`
 
@@ -174,27 +174,38 @@ label = ["13C", "2H"]
 
 The `[data]` section specifies data file locations, spin system assignments, and methods for error estimation and data filtering.
 
-| Key              | Description                                                                                             |
-| ---------------- | ------------------------------------------------------------------------------------------------------- |
-| `path`           | Path to the directory containing data files.                                                            |
-| `error`          | Method for error estimation.                                                                            |
-| `filter_offsets` | List of offsets to exclude from calculations (e.g., in CEST experiments).                               |
-| `filter_planes`  | List of planes to exclude from calculations (e.g., in CEST and CPMG experiments).                       |
-| `[data.profiles]`| Subsection listing experimental profile file names with their spin-system assignments.                  |
+| Key                 | Description                                                                                  |
+| ------------------- | -------------------------------------------------------------------------------------------- |
+| `path`              | Path to the directory containing data files.                                                 |
+| `error`             | Source or estimator for experimental uncertainties.                                          |
+| `global_error`      | Pool profile variances within this experiment for estimated-error modes; defaults to `true`. |
+| `scaled`            | Analytically fit one amplitude per profile; defaults to `true` except for shift data.        |
+| `filter_offsets`    | Offset regions to exclude from the objective where supported.                                |
+| `filter_planes`     | Plane indices to exclude from the objective where supported.                                 |
+| `filter_ref_planes` | Whether reference planes are excluded from the objective where supported.                    |
+| `[data.profiles]`   | Subsection listing experimental profile file names with their spin-system assignments.       |
 
 #### `error`
 
 The `error` key specifies the method for estimating uncertainties:
 
-| Value         | Description                                                                                                                               |
-| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `"file"`      | Use uncertainties directly from the data file.                                                                                            |
-| `"duplicates"`| Calculate uncertainty from duplicate points. If no profile in the experiment contains duplicates, keep the uncertainties from the data files. |
-| `"scatter"`   | Estimate uncertainty by assuming additive Gaussian noise on the profile, suitable for CEST data.                                          |
+| Value          | Description                                                                                                            |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `"file"`       | Use the pointwise uncertainties from the data file.                                                                    |
+| `"duplicates"` | Estimate profile variance from duplicate points, with a defined file-uncertainty fallback for duplicate-free profiles. |
+| `"scatter"`    | Estimate profile variance from local point-to-point scatter, for suitable sampled profiles such as CEST data.          |
+
+See [Scaling, Uncertainties, and Residuals](scaling_uncertainties_residuals.md)
+for the exact scaling formula, uncertainty fallbacks, experiment-level meaning
+of `global_error`, masking behavior, and residual definition.
 
 #### `filter_offsets`
 
-This key filters out specified offsets from CEST profiles, useful for removing artifacts like sidebands. Provide a list of offset and bandwidth pairs, where each pair specifies an offset relative to the main resonance and a bandwidth around the offset to exclude. Values are in Hz.
+This key filters specified offsets from the CEST fit objective, which is useful
+for removing artifacts such as sidebands. Filtered points remain available for
+calculation and output. Provide a list of offset and bandwidth pairs, where each
+pair specifies an offset relative to the main resonance and a bandwidth around
+the offset to exclude. Values are in Hz.
 
 Example:
 
