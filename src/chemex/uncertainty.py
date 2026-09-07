@@ -17,8 +17,8 @@ def _variance_from_duplicates(data: Data) -> float:
 
     This function calculates the variance using the pooled standard deviation method.
     It groups the data points by their metadata and computes the variance for each
-    group. If no duplicates are found, the average of the experimental error values is
-    returned.
+    group. If no duplicates are found, the mean variance represented by the file
+    uncertainties is returned.
 
     Args:
         data (Data): The data containing experimental values and associated metadata.
@@ -42,7 +42,7 @@ def _variance_from_duplicates(data: Data) -> float:
             variances.append(np.var(group, ddof=1))
             weights.append(group_size - 1)
     if not variances:
-        return float(np.mean(data.err))
+        return float(np.mean(np.square(data.err)))
     return float(np.average(variances, weights=weights))
 
 
