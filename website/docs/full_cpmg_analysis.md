@@ -288,6 +288,8 @@ should follow the experiment, model, and question being tested.
 ## Next steps
 
 - Return to [Run Your First ChemEx Analysis](./first_analysis.md).
+- Continue with [Fit ¹⁵N CEST Data](./cest_15n_tutorial.md) to analyze
+  saturation-offset profiles at two B1 fields.
 - Read the complete [Method-v2 reference](./user_guide/fitting/method_files.md).
 - Learn how to set [starting parameters and bounds](./user_guide/fitting/parameter_files.md).
 - Learn how to inspect [ChemEx outputs and evidence](./user_guide/fitting/outputs.mdx).
