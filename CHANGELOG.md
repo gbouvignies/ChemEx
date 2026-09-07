@@ -32,6 +32,17 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   signature; the obsolete `DH_AC` and `DS_AC` arguments have been removed.
 
 ### Fixed
+- Repaired `4st_hd` parameter construction while preserving its intended square
+  topology: A/B are protonated conformers, C/D are their deuterated counterparts,
+  and the diagonal A↔D and B↔C pathways remain structurally absent. Its constrained
+  `PHI_B` default is now also valid within the declared physical bounds, and
+  population identities restore their required residue and D2O scoping to prevent
+  cross-profile collisions. The model previously failed before construction, so
+  this identity correction affects no successfully constructed result.
+- Corrected the `L2_FREE` parameter identity in `3st_binding_partner_2st` and
+  `4st_binding_partner_2st`. Both association paths previously resolved through
+  `L2_FREE` whenever the free partner populations differed, so affected
+  simulations and fitted results may change.
 - Corrected `error = "duplicates"` weighting for mixed experiments where only
   some profiles contain duplicates. Duplicate-free profiles now contribute the
   mean of their file-provided variances; affected mixed fits may therefore have
