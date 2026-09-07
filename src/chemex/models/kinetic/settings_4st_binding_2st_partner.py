@@ -141,7 +141,7 @@ def make_settings_4st_binding_partner_2st(
             expr=f"calc_conc({p_total},{l_total},{{kd_ab}},{{kd_ac}},{{keq_l}},{{keq_pl}})['l1']",
         ),
         "l2_free": ParamLocalSetting(
-            name_setting=NameSetting("l1_free", "", TPL),
+            name_setting=NameSetting("l2_free", "", TPL),
             expr=f"calc_conc({p_total},{l_total},{{kd_ab}},{{kd_ac}},{{keq_l}},{{keq_pl}})['l2']",
         ),
         "pl1": ParamLocalSetting(

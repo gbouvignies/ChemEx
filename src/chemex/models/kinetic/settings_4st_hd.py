@@ -1,28 +1,43 @@
 from __future__ import annotations
 
-from itertools import combinations
-
 from chemex.configuration.conditions import Conditions
-from chemex.models.constraints import pop_4st
 from chemex.models.factory import model_factory
 from chemex.parameters.setting import NameSetting, ParamLocalSetting
-from chemex.parameters.userfunctions import user_function_registry
 
 NAME = "4st_hd"
 
 TPL = ("temperature", "p_total", "l_total")
 
 
-def create_pop_4st_eyring_settings() -> dict[str, ParamLocalSetting]:
-    arguments = ", ".join(
-        f"{{k{i}{j}}}, {{k{j}{i}}}" for i, j in combinations("abcd", 2)
-    )
+def create_pop_4st_hd_settings() -> dict[str, ParamLocalSetting]:
+    population_conditions = (*TPL, "d2o")
+    denominator_a = "(1.0 + {d2o} * ({phi_a} - 1.0))"
+    denominator_b = "(1.0 + {d2o} * ({phi_b} - 1.0))"
     return {
-        f"p{state}": ParamLocalSetting(
-            name_setting=NameSetting(f"p{state}", "", TPL),
-            expr=(f"pop_4st({arguments})['p{state}']"),
-        )
-        for state in "abcd"
+        "pa": ParamLocalSetting(
+            name_setting=NameSetting("pa", "g", population_conditions),
+            min=0.0,
+            max=1.0,
+            expr=f"(1.0 - {{pop_b}}) * (1.0 - {{d2o}}) / {denominator_a}",
+        ),
+        "pb": ParamLocalSetting(
+            name_setting=NameSetting("pb", "g", population_conditions),
+            min=0.0,
+            max=1.0,
+            expr=f"{{pop_b}} * (1.0 - {{d2o}}) / {denominator_b}",
+        ),
+        "pc": ParamLocalSetting(
+            name_setting=NameSetting("pc", "g", population_conditions),
+            min=0.0,
+            max=1.0,
+            expr=f"(1.0 - {{pop_b}}) * {{d2o}} * {{phi_a}} / {denominator_a}",
+        ),
+        "pd": ParamLocalSetting(
+            name_setting=NameSetting("pd", "g", population_conditions),
+            min=0.0,
+            max=1.0,
+            expr=f"{{pop_b}} * {{d2o}} * {{phi_b}} / {denominator_b}",
+        ),
     }
 
 
@@ -76,7 +91,7 @@ def make_settings_4st_hd(conditions: Conditions) -> dict[str, ParamLocalSetting]
         ),
         "phi_b": ParamLocalSetting(
             name_setting=NameSetting("phi_b", "g", ("temperature",)),
-            value=0.02,
+            value=1.1,
             min=0.75,
             max=1.50,
             expr="{phi_a}",
@@ -121,10 +136,9 @@ def make_settings_4st_hd(conditions: Conditions) -> dict[str, ParamLocalSetting]
             min=0.0,
             expr="(1.0 - {d2o}) * {kdh_b}",
         ),
-        **create_pop_4st_eyring_settings(),
+        **create_pop_4st_hd_settings(),
     }
 
 
 def register() -> None:
     model_factory.register(name=NAME, setting_maker=make_settings_4st_hd)
-    user_function_registry.register(name=NAME, user_functions={"pop_4st": pop_4st})
