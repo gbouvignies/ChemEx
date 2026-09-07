@@ -75,7 +75,7 @@ def make_settings_2st_monomer_tetramer(
         ),
         "kab": ParamLocalSetting(
             name_setting=NameSetting("kab", "", TP),
-            expr="4.0 * {kon} * {c_monomer}",
+            expr="4.0 * {kon} * {c_monomer} * {c_monomer} * {c_monomer}",
         ),
         "kba": ParamLocalSetting(
             name_setting=NameSetting("kba", "", TP),

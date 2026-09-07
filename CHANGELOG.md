@@ -32,6 +32,12 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   signature; the obsolete `DH_AC` and `DS_AC` arguments have been removed.
 
 ### Fixed
+- Corrected direct monomer-trimer and monomer-tetramer tagged association rates
+  to quadratic and cubic monomer-concentration dependence, restoring dimensional
+  consistency and agreement between NMR stationary and chemical monomer-equivalent
+  populations; affected simulations and fitted results can change materially.
+  Repaired `3st_monomer_dimer_tetramer` construction and parameter identities while
+  preserving its intended kinetics. Historical `KD = KOFF / KON` semantics are unchanged.
 - Repaired `4st_hd` parameter construction while preserving its intended square
   topology: A/B are protonated conformers, C/D are their deuterated counterparts,
   and the diagonal A↔D and B↔C pathways remain structurally absent. Its constrained

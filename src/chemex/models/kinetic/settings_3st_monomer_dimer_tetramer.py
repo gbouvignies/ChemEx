@@ -95,27 +95,31 @@ def make_settings_3st_monomer_dimer_tetramer(
             expr="{koff2} / max({kd2}, 1e-32)",
         ),
         "c_monomer": ParamLocalSetting(
-            name_setting=NameSetting("monomer", "", TP),
+            name_setting=NameSetting("c_monomer", "", TP),
             expr=f"concentrations({p_total}, {{kd1}}, {{kd2}})['monomer']",
         ),
         "c_dimer": ParamLocalSetting(
-            name_setting=NameSetting("dimer", "", TP),
+            name_setting=NameSetting("c_dimer", "", TP),
             expr=f"concentrations({p_total}, {{kd1}}, {{kd2}})['dimer']",
+        ),
+        "c_tetramer": ParamLocalSetting(
+            name_setting=NameSetting("c_tetramer", "", TP),
+            expr=f"concentrations({p_total}, {{kd1}}, {{kd2}})['tetramer']",
         ),
         "kab": ParamLocalSetting(
             name_setting=NameSetting("kab", "", TP),
-            expr="2.0 * {kon1} * {monomer}",
+            expr="2.0 * {kon1} * {c_monomer}",
         ),
         "kba": ParamLocalSetting(
             name_setting=NameSetting("kba", "", TP),
             expr="{koff1}",
         ),
         "kbc": ParamLocalSetting(
-            name_setting=NameSetting("kab", "", TP),
-            expr="2.0 * {kon2} * {dimer}",
+            name_setting=NameSetting("kbc", "", TP),
+            expr="2.0 * {kon2} * {c_dimer}",
         ),
         "kcb": ParamLocalSetting(
-            name_setting=NameSetting("kba", "", TP),
+            name_setting=NameSetting("kcb", "", TP),
             expr="{koff2}",
         ),
         "pa": ParamLocalSetting(
