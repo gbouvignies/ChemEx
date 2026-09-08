@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from math import isfinite
 from types import SimpleNamespace
 
 import pytest
@@ -71,6 +72,173 @@ def _construct_and_resolve(
     )
 
     return name_map, {name: resolved[local_ids[name]] for name in resolved_names}
+
+
+def test_2st_hd_exact_zero_kdh_preserves_equilibrium_composition() -> None:
+    conditions = Conditions(
+        h_larmor_frq=600.0,
+        temperature=25.0,
+        d2o=0.25,
+    )
+
+    _, values = _construct_and_resolve(
+        "2st_hd",
+        conditions,
+        {"kdh": 0.0, "phi": 1.2},
+        {"kab", "kba", "pa", "pb"},
+    )
+
+    assert values == pytest.approx(
+        {
+            "kab": 0.0,
+            "kba": 0.0,
+            "pa": 5.0 / 7.0,
+            "pb": 2.0 / 7.0,
+        },
+        rel=RELATIVE_TOLERANCE,
+        abs=ABSOLUTE_TOLERANCE,
+    )
+
+
+def test_2st_hd_populations_are_invariant_to_kdh_scale() -> None:
+    conditions = Conditions(
+        h_larmor_frq=600.0,
+        temperature=25.0,
+        d2o=0.25,
+    )
+    expected_populations = {"pa": 5.0 / 7.0, "pb": 2.0 / 7.0}
+
+    for kdh in (0.0, 1.0e-20, 1.0, 1.0e6):
+        _, values = _construct_and_resolve(
+            "2st_hd",
+            conditions,
+            {"kdh": kdh, "phi": 1.2},
+            {"kab", "kba", "pa", "pb"},
+        )
+
+        assert {name: values[name] for name in ("pa", "pb")} == pytest.approx(
+            expected_populations,
+            rel=RELATIVE_TOLERANCE,
+            abs=ABSOLUTE_TOLERANCE,
+        )
+        if kdh > 0.0:
+            rate_sum = values["kab"] + values["kba"]
+            assert values["pa"] == pytest.approx(
+                values["kba"] / rate_sum,
+                rel=RELATIVE_TOLERANCE,
+                abs=ABSOLUTE_TOLERANCE,
+            )
+            assert values["pb"] == pytest.approx(
+                values["kab"] / rate_sum,
+                rel=RELATIVE_TOLERANCE,
+                abs=ABSOLUTE_TOLERANCE,
+            )
+
+
+def test_2st_hd_preserves_ordinary_positive_rate_behavior() -> None:
+    conditions = Conditions(
+        h_larmor_frq=600.0,
+        temperature=25.0,
+        d2o=0.2,
+    )
+
+    _, values = _construct_and_resolve(
+        "2st_hd",
+        conditions,
+        {"kdh": 10.0, "phi": 1.25},
+        {"kab", "kba", "pa", "pb"},
+    )
+
+    assert values == pytest.approx(
+        {
+            "kab": 2.5,
+            "kba": 8.0,
+            "pa": 8.0 / 10.5,
+            "pb": 2.5 / 10.5,
+        },
+        rel=RELATIVE_TOLERANCE,
+        abs=ABSOLUTE_TOLERANCE,
+    )
+
+
+@pytest.mark.parametrize(
+    ("d2o", "phi", "expected_populations"),
+    [
+        (0.0, 0.75, {"pa": 1.0, "pb": 0.0}),
+        (1.0, 1.5, {"pa": 0.0, "pb": 1.0}),
+    ],
+)
+def test_2st_hd_exact_zero_kdh_preserves_solvent_endpoints(
+    d2o: float,
+    phi: float,
+    expected_populations: dict[str, float],
+) -> None:
+    conditions = Conditions(
+        h_larmor_frq=600.0,
+        temperature=25.0,
+        d2o=0.25,
+    )
+
+    _, values = _construct_and_resolve(
+        "2st_hd",
+        conditions,
+        {"d2o": d2o, "kdh": 0.0, "phi": phi},
+        {"pa", "pb"},
+    )
+
+    assert values == pytest.approx(
+        expected_populations,
+        rel=RELATIVE_TOLERANCE,
+        abs=ABSOLUTE_TOLERANCE,
+    )
+
+
+@pytest.mark.parametrize(
+    ("d2o", "phi"),
+    [
+        (0.0, 0.75),
+        (1.0e-12, 1.5),
+        (0.25, 1.2),
+        (0.5, 1.0),
+        (1.0 - 1.0e-12, 0.75),
+        (1.0, 1.5),
+    ],
+)
+def test_2st_hd_populations_satisfy_equilibrium_invariants(
+    d2o: float,
+    phi: float,
+) -> None:
+    conditions = Conditions(
+        h_larmor_frq=600.0,
+        temperature=25.0,
+        d2o=0.25,
+    )
+
+    _, values = _construct_and_resolve(
+        "2st_hd",
+        conditions,
+        {"d2o": d2o, "kdh": 0.0, "phi": phi},
+        {"pa", "pb"},
+    )
+    denominator = 1.0 + d2o * (phi - 1.0)
+    expected = {
+        "pa": (1.0 - d2o) / denominator,
+        "pb": d2o * phi / denominator,
+    }
+
+    assert all(isfinite(values[name]) for name in ("pa", "pb"))
+    assert values["pa"] >= 0.0
+    assert values["pb"] >= 0.0
+    assert values["pa"] + values["pb"] == pytest.approx(
+        1.0,
+        rel=RELATIVE_TOLERANCE,
+        abs=ABSOLUTE_TOLERANCE,
+    )
+    assert values == pytest.approx(
+        expected,
+        rel=RELATIVE_TOLERANCE,
+        abs=ABSOLUTE_TOLERANCE,
+    )
 
 
 def test_4st_hd_constructs_the_conformer_hd_square_topology() -> None:

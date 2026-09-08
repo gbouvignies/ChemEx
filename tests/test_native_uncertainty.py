@@ -65,7 +65,11 @@ from chemex.optimize.uncertainty import (
     compile_constraint_linearization_capabilities,
     derive_uncertainty_evidence,
 )
-from chemex.parameters.parameterization import ActiveParameterization
+from chemex.parameters.parameterization import (
+    ActiveParameterization,
+    FunctionExpression,
+    ReferenceExpression,
+)
 from chemex.parameters.spin_system import SpinSystem
 from chemex.printers.parameters import uncertainty_unavailable_reason
 from chemex.runtime import AnalysisSession
@@ -562,8 +566,38 @@ def _qualification_policy(controlled_id: str) -> UncertaintyPolicy:
     )
 
 
+def _with_pop_2st_pa_constraint(
+    parameterization: ActiveParameterization,
+) -> ActiveParameterization:
+    """Keep scientific-function capability tests independent of model policy."""
+    output_id = "__PA_1_0_1000"
+    kab_id = "__KAB_1_0_1000"
+    kba_id = "__KBA_1_0_1000"
+    replacement_expression = FunctionExpression(
+        "pop_2st",
+        (ReferenceExpression(kab_id), ReferenceExpression(kba_id)),
+        "pa",
+    )
+    constraints = tuple(
+        dataclasses.replace(
+            constraint,
+            expression=replacement_expression,
+            dependencies=(kab_id, kba_id),
+            expression_text=f"pop_2st({kab_id}, {kba_id})['pa']",
+        )
+        if constraint.target_id == output_id
+        else constraint
+        for constraint in parameterization.program.constraints
+    )
+    assert sum(item.target_id == output_id for item in constraints) == 1
+    program = dataclasses.replace(parameterization.program, constraints=constraints)
+    return dataclasses.replace(parameterization, program=program)
+
+
 def _hd_problem(
     method: Method,
+    *,
+    use_pop_2st_pa_constraint: bool = False,
 ) -> tuple[ActiveParameterization, EvaluationEngine, OptimizationProblem]:
     session = AnalysisSession.create()
     session.set_model("2st_hd")
@@ -577,6 +611,8 @@ def _hd_problem(
         session.parameter_factory.native_construction_error
     )
     parameterization = session.compile_parameterization(method, experiments.param_ids)
+    if use_pop_2st_pa_constraint:
+        parameterization = _with_pop_2st_pa_constraint(parameterization)
     engine = EvaluationEngine.from_experiments(experiments, parameterization)
     configuration = session.parameter_factory.sealed_configuration
     assert configuration is not None
@@ -599,7 +635,10 @@ def _accepted_hd_fit() -> tuple[
         fit=("D2O",),
         fix=("CS_A", "DW_AB", "KDH", "PHI", "R1_A", "R2_A", "R2_B"),
     )
-    parameterization, engine, problem = _hd_problem(method)
+    parameterization, engine, problem = _hd_problem(
+        method,
+        use_pop_2st_pa_constraint=True,
+    )
     outcome = execute_direct_trf(
         problem,
         DirectTrfInvocation.for_problem(problem, objective_request_budget=80),
@@ -2195,7 +2234,10 @@ def test_absolute_observation_uncertainties_do_not_apply_residual_scaling() -> N
 
 
 def test_product_request_excludes_unsupported_scientific_function_propagation() -> None:
-    parameterization, engine, problem = _hd_problem(Method())
+    parameterization, engine, problem = _hd_problem(
+        Method(),
+        use_pop_2st_pa_constraint=True,
+    )
     accepted = _accepted_reference_anchor(parameterization, engine, problem)
     uncertainty = _derive_product_uncertainty(
         accepted,
