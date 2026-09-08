@@ -31,6 +31,7 @@ from chemex.optimize.fitting import invalidate_planned_outputs
 from chemex.optimize.helper import execute_simulation
 from chemex.optimize.method_plan_execution import execute_method_plan
 from chemex.parameters.parameterization import (
+    ConstraintDomainError,
     IncompleteParameterDependenciesError,
 )
 from chemex.parameters.sealed import InvalidConfigurationError
@@ -247,11 +248,18 @@ def run(
             (
                 IncompleteParameterDependenciesError,
                 InvalidConfigurationError,
+                ConstraintDomainError,
             ),
         ):
+            explanation = str(construction_error)
+            if isinstance(construction_error, ConstraintDomainError) and isinstance(
+                construction_error.__cause__,
+                (ArithmeticError, ValueError),
+            ):
+                explanation = str(construction_error.__cause__)
             raise ParameterConfigurationError(
                 tuple(args.parameters),
-                str(construction_error),
+                explanation,
             ) from construction_error
         raise RuntimeError(f"{msg}: {construction_error}") from construction_error
 

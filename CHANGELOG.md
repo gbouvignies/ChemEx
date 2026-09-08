@@ -32,6 +32,14 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   signature; the obsolete `DH_AC` and `DS_AC` arguments have been removed.
 
 ### Fixed
+- Oligomerization models now retain literal semantics for every finite positive
+  `KD`, including sub-`1e-32` values; the hidden `1e-32` effective-KD floor has
+  been removed, so affected results can change materially. Exact `KD = 0` is now
+  rejected because it is not representable by these finite reversible kinetic
+  parameterizations. Concentrations and tagged rates use stable log-domain and
+  detailed-balance evaluation, and the eager derived `KON`/`KON1`/`KON2`
+  outputs have been removed. Independent `KD` and `KOFF` inputs, their physical
+  meanings, and exact-`KOFF = 0` population behavior are unchanged.
 - `2st_hd` populations are now derived directly from `D2O` and `PHI`, preserving
   the model's equilibrium H/D composition as `KDH` tends to zero. Exact
   `KDH = 0` therefore changes from the former generic state-A fallback;
