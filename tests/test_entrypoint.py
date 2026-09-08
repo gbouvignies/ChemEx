@@ -26,6 +26,9 @@ ROOT = Path(__file__).parent.parent
 EXAMPLE = ROOT / "examples/Experiments/RELAXATION_HZNZ"
 EXPERIMENT = EXAMPLE / "Experiments/800mhz.toml"
 PARAMETERS = EXAMPLE / "Parameters/parameters.toml"
+OLIGOMERIZATION_EXAMPLE = ROOT / "examples/Experiments/CPMG_15N_IP"
+OLIGOMERIZATION_DATA = OLIGOMERIZATION_EXAMPLE / "Data/500MHz"
+OLIGOMERIZATION_PARAMETERS = OLIGOMERIZATION_EXAMPLE / "Parameters/parameters.toml"
 
 
 def _entry_commands() -> tuple[tuple[str, ...], ...]:
@@ -211,6 +214,64 @@ def test_cli_entrypoints_report_invalid_model_as_unsuccessful_error(
     assert completed.returncode == 1
     assert "Exchange model selection is invalid" in completed.stderr
     assert model in completed.stderr
+    assert TRACEBACK_HEADER not in combined
+
+
+@pytest.mark.parametrize("command", _entry_commands())
+def test_cli_reports_configured_zero_oligomerization_kd_as_parameter_error(
+    command: tuple[str, ...],
+    tmp_path: Path,
+) -> None:
+    experiment = tmp_path / "oligomerization.toml"
+    experiment.write_text(
+        f"""
+[experiment]
+name = "cpmg_15n_ip"
+carrier = 118.559
+pw90 = 40.6625e-6
+time_equil = 2.0e-3
+time_t2 = 30.0e-3
+
+[conditions]
+h_larmor_frq = 500.0
+temperature = 25.0
+p_total = 1.0e-3
+label = ["2H"]
+
+[data]
+error = "file"
+path = "{OLIGOMERIZATION_DATA.as_posix()}"
+
+[data.profiles]
+1N = "1N-HN.out"
+""".lstrip(),
+        encoding="utf-8",
+    )
+    zero_kd = tmp_path / "zero-kd.toml"
+    zero_kd.write_text("[GLOBAL]\nKD = [0.0, 0.0, 1.0]\nKOFF = 100.0\n")
+
+    completed = _run(
+        command,
+        "simulate",
+        "-e",
+        str(experiment),
+        "-p",
+        str(OLIGOMERIZATION_PARAMETERS),
+        str(zero_kd),
+        "-o",
+        str(tmp_path / "output"),
+        "-d",
+        "2st_monomer_dimer",
+        "--plot",
+        "nothing",
+    )
+
+    combined = completed.stdout + completed.stderr
+    assert completed.returncode == 1
+    assert "Parameter configuration is invalid" in completed.stderr
+    assert str(zero_kd) in completed.stderr
+    assert "KD must be finite and strictly positive" in completed.stderr
+    assert "unexpected internal error" not in combined
     assert TRACEBACK_HEADER not in combined
 
 

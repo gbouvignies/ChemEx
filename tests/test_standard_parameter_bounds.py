@@ -66,6 +66,13 @@ def test_approved_kinetic_family_domains_apply_only_to_independent_settings() ->
     }
     direct_rates = {"kab", "kba", "kbc", "kcb"}
     approved_equilibria = {"keq", "keq_l", "keq_pl"}
+    oligomerization_models = {
+        "2st_monomer_dimer",
+        "2st_monomer_trimer",
+        "2st_monomer_tetramer",
+        "3st_monomer_dimer_trimer",
+        "3st_monomer_dimer_tetramer",
+    }
 
     for model_name in sorted(model_factory.set):
         for local_name, setting in model_factory.create(
@@ -77,6 +84,8 @@ def test_approved_kinetic_family_domains_apply_only_to_independent_settings() ->
                 expected = (0.0, 1.0e6)
             elif local_name in approved_equilibria:
                 expected = expected_domains["keq"]
+            elif model_name in oligomerization_models and local_name.startswith("kd"):
+                expected = (math.nextafter(0.0, 1.0), 1.0)
             else:
                 family = next(
                     (
