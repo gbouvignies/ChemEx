@@ -32,6 +32,12 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   signature; the obsolete `DH_AC` and `DS_AC` arguments have been removed.
 
 ### Fixed
+- Two-state stationary populations now preserve the ratio of all positive rates
+  regardless of absolute exchange timescale. Positive rates at or below the former
+  approximate-zero threshold (`1e-8 s^-1` under the current NumPy behavior) were
+  previously treated as absent, so affected very-slow exchange populations can
+  change materially. The exact both-zero compatibility fallback is unchanged;
+  exact-zero model semantics have not changed.
 - Oligomerization concentration solving now uses the unique bracketed physical
   solution for supported positive inputs, preventing silent failed or inaccurate
   HYBR roots and negative algebraic branches. Strongly associated cases affected

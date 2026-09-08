@@ -6,15 +6,15 @@ from scipy import linalg
 
 @lru_cache(maxsize=100)
 def pop_2st(kab: float = 0.0, kba: float = 0.0) -> dict[str, float]:
-    if np.isclose(kab, 0.0):
+    scale = max(abs(kab), abs(kba))
+    if scale == 0.0:
         return {"pa": 1.0, "pb": 0.0}
 
-    if np.isclose(kba, 0.0):
-        return {"pa": 0.0, "pb": 1.0}
+    kab_scaled = kab / scale
+    kba_scaled = kba / scale
+    total = kab_scaled + kba_scaled
 
-    kex = kab + kba
-
-    return {"pa": kba / kex, "pb": kab / kex}
+    return {"pa": kba_scaled / total, "pb": kab_scaled / total}
 
 
 @lru_cache(maxsize=100)
