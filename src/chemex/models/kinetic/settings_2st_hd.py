@@ -48,11 +48,11 @@ def make_settings_2st_hd(conditions: Conditions) -> dict[str, ParamLocalSetting]
         ),
         "pa": ParamLocalSetting(
             name_setting=NameSetting("pa", "g", ("temperature", "d2o")),
-            expr="pop_2st({kab}, {kba})['pa']",
+            expr="(1.0 - {d2o}) / (1.0 + {d2o} * ({phi} - 1.0))",
         ),
         "pb": ParamLocalSetting(
             name_setting=NameSetting("pb", "g", ("temperature", "d2o")),
-            expr="pop_2st({kab}, {kba})['pb']",
+            expr="{d2o} * {phi} / (1.0 + {d2o} * ({phi} - 1.0))",
         ),
     }
 

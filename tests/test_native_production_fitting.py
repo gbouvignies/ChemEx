@@ -2394,7 +2394,7 @@ FIX = ["KEX_AB"]
     assert "uncertainty unavailable: rank deficient" in rendered
 
 
-def test_unsupported_scientific_constraint_keeps_product_fitted_errors(
+def test_algebraic_hd_population_constraints_keep_product_fitted_errors(
     tmp_path: Path,
 ) -> None:
     output = tmp_path / "Output"
@@ -2435,7 +2435,19 @@ FIX = ["CS_A", "DW_AB", "KDH", "PHI", "R1_A", "R2_A", "R2_B"]
         encoding="utf-8"
     )
     assert "# ±" in fitted
-    assert "error unavailable: unsupported constrained derivative" in constrained
+    constrained_lines = constrained.splitlines()
+    for population in ("PA", "PB"):
+        header_index = next(
+            index
+            for index, line in enumerate(constrained_lines)
+            if line.startswith(f'["{population}, ')
+        )
+        population_record = constrained_lines[header_index + 1]
+        assert "# ±" in population_record
+        assert "error unavailable" not in population_record
+        population_error = float(population_record.split("# ±", 1)[1].split()[0])
+        assert math.isfinite(population_error)
+    assert "error unavailable: unsupported constrained derivative" not in constrained
     constrained_evidence = (
         output / "Statistics" / "Constrained" / "evidence.json"
     ).read_text(encoding="utf-8")

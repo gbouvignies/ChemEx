@@ -32,6 +32,10 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   signature; the obsolete `DH_AC` and `DS_AC` arguments have been removed.
 
 ### Fixed
+- `2st_hd` populations are now derived directly from `D2O` and `PHI`, preserving
+  the model's equilibrium H/D composition as `KDH` tends to zero. Exact
+  `KDH = 0` therefore changes from the former generic state-A fallback;
+  positive-`KDH` behavior is unchanged.
 - Two-state stationary populations now preserve the ratio of all positive rates
   regardless of absolute exchange timescale. Positive rates at or below the former
   approximate-zero threshold (`1e-8 s^-1` under the current NumPy behavior) were
