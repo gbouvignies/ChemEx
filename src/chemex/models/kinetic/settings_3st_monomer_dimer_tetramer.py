@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from functools import lru_cache
 
 import numpy as np
@@ -8,6 +9,7 @@ from scipy.optimize import root
 from chemex.configuration.conditions import Conditions
 from chemex.models.constraints import pop_3st
 from chemex.models.factory import model_factory
+from chemex.models.kinetic._oligomerization import solve_oligomerization_fractions
 from chemex.parameters.setting import NameSetting, ParamLocalSetting
 from chemex.parameters.userfunctions import user_function_registry
 from chemex.typing import Array
@@ -39,6 +41,33 @@ def calculate_concentrations(
     kd1: float,
     kd2: float,
 ) -> dict[str, float]:
+    if (
+        math.isfinite(p_total)
+        and p_total > 0.0
+        and math.isfinite(kd1)
+        and kd1 >= 1e-32
+        and math.isfinite(kd2)
+        and kd2 >= 1e-32
+    ):
+        try:
+            tetramer_coefficient = p_total**3 / (kd1**2 * kd2)
+        except OverflowError:
+            msg = "Oligomerization concentration solver produced an invalid coefficient"
+            raise RuntimeError(msg) from None
+        monomer_fraction, (dimer_fraction, tetramer_fraction) = (
+            solve_oligomerization_fractions(
+                (
+                    (2, p_total / kd1),
+                    (4, tetramer_coefficient),
+                ),
+            )
+        )
+        return {
+            "monomer": p_total * monomer_fraction,
+            "dimer": p_total * dimer_fraction,
+            "tetramer": p_total * tetramer_fraction,
+        }
+
     concentrations_start = (p_total, 0.0, 0.0)
     results = root(calculate_residuals, concentrations_start, args=(p_total, kd1, kd2))
     return {

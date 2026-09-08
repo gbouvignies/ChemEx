@@ -21,6 +21,8 @@ def _load_register(name: str) -> Callable[[], None]:
 def register_kinetic_settings() -> None:
     """Loads the plugins defined in the plugins list."""
     for module in iter_modules(kinetic.__path__):
+        if module.name.startswith("_"):
+            continue
         module_name = f"{kinetic.__name__}.{module.name}"
         register = _load_register(module_name)
         register()

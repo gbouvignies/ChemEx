@@ -32,6 +32,11 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   signature; the obsolete `DH_AC` and `DS_AC` arguments have been removed.
 
 ### Fixed
+- Oligomerization concentration solving now uses the unique bracketed physical
+  solution for supported positive inputs, preventing silent failed or inaccurate
+  HYBR roots and negative algebraic branches. Strongly associated cases affected
+  by those failures can change numerically; kinetic equations, historical KD
+  semantics, and exact-zero semantics are unchanged.
 - Corrected direct monomer-trimer and monomer-tetramer tagged association rates
   to quadratic and cubic monomer-concentration dependence, restoring dimensional
   consistency and agreement between NMR stationary and chemical monomer-equivalent

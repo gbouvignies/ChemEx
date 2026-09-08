@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from functools import lru_cache
 
 import numpy as np
@@ -8,6 +9,7 @@ from scipy.optimize import root
 from chemex.configuration.conditions import Conditions
 from chemex.models.constraints import pop_2st
 from chemex.models.factory import model_factory
+from chemex.models.kinetic._oligomerization import solve_oligomerization_fractions
 from chemex.parameters.setting import NameSetting, ParamLocalSetting
 from chemex.parameters.userfunctions import user_function_registry
 from chemex.typing import Array
@@ -33,6 +35,15 @@ def calculate_residuals(
 
 @lru_cache(maxsize=100)
 def calculate_concentrations(p_total: float, kd: float) -> dict[str, float]:
+    if math.isfinite(p_total) and p_total > 0.0 and math.isfinite(kd) and kd >= 1e-32:
+        monomer_fraction, (dimer_fraction,) = solve_oligomerization_fractions(
+            ((2, p_total / kd),),
+        )
+        return {
+            "monomer": p_total * monomer_fraction,
+            "dimer": p_total * dimer_fraction,
+        }
+
     concentrations_start = (p_total, 0.0)
     results = root(calculate_residuals, concentrations_start, args=(p_total, kd))
     return {"monomer": results["x"][0], "dimer": results["x"][1]}
