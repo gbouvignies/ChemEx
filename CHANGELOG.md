@@ -11,8 +11,23 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
 - Added explicit `3st_eyring_linear` (A ↔ B ↔ C) and `3st_eyring_fork`
   (B ↔ A ↔ C) temperature-dependent kinetic models. The existing
   `3st_eyring` name remains a compatibility name for the linear topology.
+- Added generic `4st_linear`, `4st_fork`, `5st_linear`, `5st_fork`,
+  `6st_linear`, and `6st_fork` kinetic models. Generic `_linear` models are
+  A-B-C-… chains, generic `_fork` models are A-centered stars, and unsuffixed
+  generic models are complete graphs. The historical `3st_triangle` name
+  remains an exact compatibility name for complete `3st`.
 
 ### Changed
+- **Breaking generic N-state default:** bare `4st`, `5st`, and `6st` now fit
+  every complete-graph `KEX` from the normal `200 s^-1` default. In particular,
+  `KEX_AD` and `KEX_BD` no longer inherit historical zero/fixed defaults. To
+  reproduce the previous sparse behavior, set both values to `0.0` in the
+  parameter file and explicitly apply
+  `ROLES = [{ FIX = ["KEX_AD", "KEX_BD"] }]` in the version 2 Method Step.
+  Existing `run_info/restart.toml` files retain explicit zero values and bounds
+  but not old fit/fix roles, so the explicit Method action is also required when
+  continuing those fits. Omitted historical defaults carry no reliable version
+  signal and receive the new complete-model policy.
 - ChemEx now presents known failures and user interruptions once at the CLI
   boundary, reports verified diagnostic paths when available, and exits with
   status 130 for Ctrl-C. Unexpected internal exceptions remain concise and
@@ -32,6 +47,18 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   signature; the obsolete `DH_AC` and `DS_AC` arguments have been removed.
 
 ### Fixed
+- Generic three- through six-state models now enforce one closed population
+  simplex before scientific evaluation and derive every structural directional
+  pair from one validated `KEX = k_forward + k_reverse` authority. This prevents
+  constrained negative populations or exchange scales from reaching NMR
+  matrices, removes the former `1e-100` denominator floor, preserves exact-zero
+  populations and exact-zero `KEX`, rejects a positive-`KEX` pair whose two
+  endpoint populations are zero, and fails when a mathematically positive
+  direction cannot be represented in binary64. Direct TRF and resampling now
+  use boundary-capable simplex coordinates; invalid MCMC proposals follow the
+  existing zero-density contract. Qualified deterministic uncertainty is
+  propagated analytically to `PA` and directional rates, with the established
+  boundary warning on simplex faces.
 - Eyring models now use one log-domain transition-state authority without the
   former `1e16 s^-1` rate saturation. Positive rates outside binary64
   representability fail explicitly, while representable subnormal rates remain

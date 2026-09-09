@@ -112,6 +112,38 @@ def _simple_bound_warning_ids(
     return frozenset(warned)
 
 
+def _population_simplex_warning_ids(
+    problem: OptimizationProblem,
+    resolved_values: Mapping[str, float],
+    controlled_ids: Sequence[str],
+    covariance: Sequence[Sequence[float]],
+) -> frozenset[str]:
+    """Attribute a complement-face warning to its varying populations."""
+    chart = problem.feasible_coordinates
+    if chart is None or not chart.population_simplexes:
+        return frozenset()
+    local_indices = {param_id: index for index, param_id in enumerate(controlled_ids)}
+    warned: set[str] = set()
+    for simplex in chart.population_simplexes:
+        varying = tuple(
+            param_id for param_id in simplex.population_ids if param_id in local_indices
+        )
+        if not varying:
+            continue
+        slack = resolved_values[simplex.complement_id]
+        indices = tuple(local_indices[param_id] for param_id in varying)
+        variance = math.fsum(
+            float(covariance[row][column]) for row in indices for column in indices
+        )
+        if slack < 0.0 or (
+            variance > 0.0
+            and math.isfinite(variance)
+            and slack / math.sqrt(variance) <= _BOUNDARY_THRESHOLD
+        ):
+            warned.update(varying)
+    return frozenset(warned)
+
+
 class UncertaintyConstructionError(ValueError):
     """Raised only for malformed policy or artifact construction."""
 
@@ -1879,20 +1911,27 @@ class CovarianceEvidence:
 
     @property
     def simple_bound_warning_ids(self) -> frozenset[str]:
-        """Controlled coordinates within the threshold of their own box bounds."""
+        """Controlled coordinates near a box bound or simplex complement face."""
         standard_errors = {
             param_id: math.sqrt(self.covariance[index][index])
             if self.covariance[index][index] > 0.0
             else None
             for index, param_id in enumerate(self.controlled_ids)
         }
-        return _simple_bound_warning_ids(
+        box = _simple_bound_warning_ids(
             self.controlled_ids,
             self.accepted_vector,
             self.source_problem.lower_bounds,
             self.source_problem.upper_bounds,
             standard_errors,
         )
+        simplex = _population_simplex_warning_ids(
+            self.source_problem,
+            self.accepted_anchor.evaluation_result.resolved_values,
+            self.controlled_ids,
+            self.covariance,
+        )
+        return box | simplex
 
 
 @dataclass(frozen=True, slots=True)
@@ -2977,6 +3016,38 @@ class RootAnchoredBlockCovariance:
         return UncertaintyUnavailableKind.COVARIANCE_NUMERICAL_FAILURE
 
 
+def _root_anchored_simple_bound_warning_ids(
+    source_bundle: UncertaintyEvidence,
+    completed_blocks: Sequence[RootAnchoredBlockCovariance],
+) -> frozenset[str]:
+    """Return box- and simplex-face warnings from completed covariance blocks."""
+    standard_errors = {
+        entry.param_id: entry.value
+        for block in completed_blocks
+        for entry in block.marginal_errors
+    }
+    box = _simple_bound_warning_ids(
+        source_bundle.source_problem.controlled_ids,
+        source_bundle.accepted_anchor.vector,
+        source_bundle.source_problem.lower_bounds,
+        source_bundle.source_problem.upper_bounds,
+        standard_errors,
+    )
+    simplex = frozenset().union(
+        *(
+            _population_simplex_warning_ids(
+                source_bundle.source_problem,
+                source_bundle.accepted_anchor.evaluation_result.resolved_values,
+                block.controlled_ids,
+                block.covariance,
+            )
+            for block in completed_blocks
+            if block.covariance is not None
+        )
+    )
+    return box | simplex
+
+
 @dataclass(frozen=True, slots=True)
 class RootAnchoredBlockCovarianceEvidence:
     """Failure-isolated covariance blocks anchored to one accepted root result."""
@@ -3095,19 +3166,10 @@ class RootAnchoredBlockCovarianceEvidence:
 
     @property
     def simple_bound_warning_ids(self) -> frozenset[str]:
-        """Recovered controlled coordinates near their own root box bounds."""
-        source = self.source_bundle
-        standard_errors = {
-            entry.param_id: entry.value
-            for block in self.blocks
-            for entry in block.marginal_errors
-        }
-        return _simple_bound_warning_ids(
-            source.source_problem.controlled_ids,
-            source.accepted_anchor.vector,
-            source.source_problem.lower_bounds,
-            source.source_problem.upper_bounds,
-            standard_errors,
+        """Recovered controlled coordinates near a root domain boundary."""
+        return _root_anchored_simple_bound_warning_ids(
+            self.source_bundle,
+            self.blocks,
         )
 
 
@@ -3206,18 +3268,9 @@ class RootAnchoredBlockCovarianceOperation:
 
     @property
     def simple_bound_warning_ids(self) -> frozenset[str]:
-        source = self.source_bundle
-        standard_errors = {
-            entry.param_id: entry.value
-            for block in self.completed_blocks
-            for entry in block.marginal_errors
-        }
-        return _simple_bound_warning_ids(
-            source.source_problem.controlled_ids,
-            source.accepted_anchor.vector,
-            source.source_problem.lower_bounds,
-            source.source_problem.upper_bounds,
-            standard_errors,
+        return _root_anchored_simple_bound_warning_ids(
+            self.source_bundle,
+            self.completed_blocks,
         )
 
     def to_record(self) -> dict[str, object]:
@@ -4806,6 +4859,98 @@ def _profiled_normalization_regular(
     return True
 
 
+def _population_simplex_boundary_claims(
+    accepted: AcceptedFitResult,
+    problem: OptimizationProblem,
+    covariance: tuple[tuple[float, ...], ...],
+    controlled_indices: tuple[int, ...],
+    residual_variance_scale: float,
+) -> tuple[bool, ClaimState, tuple[str, ...]]:
+    """Qualify complement faces represented by model-owned simplex charts."""
+    chart = problem.feasible_coordinates
+    if chart is None:
+        return True, ClaimState.SATISFIED, ()
+    local_by_id = {
+        problem.controlled_ids[root_index]: local_index
+        for local_index, root_index in enumerate(controlled_indices)
+    }
+    strict_interior = True
+    separation = ClaimState.SATISFIED
+    details: list[str] = []
+    resolved = accepted.evaluation_result.resolved_values
+    for simplex in chart.population_simplexes:
+        varying = tuple(
+            param_id for param_id in simplex.population_ids if param_id in local_by_id
+        )
+        if not varying:
+            continue
+        slack = resolved[simplex.complement_id]
+        label = f"simplex[{simplex.complement_id}]"
+        if slack < 0.0:
+            return False, ClaimState.VIOLATED, (f"{label}: negative slack",)
+        strict_interior = strict_interior and slack != 0.0
+        local_indices = tuple(local_by_id[item] for item in varying)
+        variance = math.fsum(
+            covariance[row][column] for row in local_indices for column in local_indices
+        )
+        if residual_variance_scale == 0.0 or variance == 0.0:
+            separation = ClaimState.INDETERMINATE
+            details.append(f"{label}: zero scaled variance")
+            continue
+        if variance < 0.0 or not math.isfinite(variance):
+            separation = ClaimState.INDETERMINATE
+            details.append(f"{label}: invalid directional variance")
+            continue
+        zeta = float(slack / math.sqrt(variance))
+        details.append(f"{label} zeta={zeta.hex()}")
+        if not math.isfinite(zeta):
+            separation = ClaimState.INDETERMINATE
+        elif zeta <= _BOUNDARY_THRESHOLD:
+            separation = ClaimState.VIOLATED
+    return strict_interior, separation, tuple(details)
+
+
+def _least_qualified_claim_state(left: ClaimState, right: ClaimState) -> ClaimState:
+    if ClaimState.VIOLATED in (left, right):
+        return ClaimState.VIOLATED
+    if ClaimState.INDETERMINATE in (left, right):
+        return ClaimState.INDETERMINATE
+    return ClaimState.SATISFIED
+
+
+def _coordinate_box_boundary_claims(
+    value: float,
+    lower: float,
+    upper: float,
+    variance: float,
+    residual_variance_scale: float,
+    root_index: int,
+) -> tuple[bool, ClaimState, tuple[str, ...]]:
+    if not lower <= value <= upper:
+        return False, ClaimState.VIOLATED, (f"box[{root_index}]: outside bounds",)
+    strict_interior = value not in (lower, upper)
+    separation = ClaimState.SATISFIED
+    details: list[str] = []
+    for label, slack in (("lower", value - lower), ("upper", upper - value)):
+        if math.isinf(slack):
+            continue
+        if residual_variance_scale == 0.0 or variance == 0.0:
+            separation = ClaimState.INDETERMINATE
+            details.append(f"{label}[{root_index}]: zero scaled variance")
+            continue
+        if variance < 0.0 or not math.isfinite(variance):
+            separation = ClaimState.INDETERMINATE
+            details.append(f"{label}[{root_index}]: invalid directional variance")
+            continue
+        zeta = float(slack / math.sqrt(variance))
+        details.append(f"{label}[{root_index}] zeta={zeta.hex()}")
+        if not math.isfinite(zeta):
+            separation = ClaimState.INDETERMINATE
+        elif zeta <= _BOUNDARY_THRESHOLD:
+            separation = ClaimState.VIOLATED
+    return strict_interior, separation, tuple(details)
+
+
 def _box_boundary_claims(
     accepted: AcceptedFitResult,
     problem: OptimizationProblem,
@@ -4822,37 +4967,34 @@ def _box_boundary_claims(
     separation = ClaimState.SATISFIED
     details: list[str] = []
     for local_index, root_index in enumerate(indices):
-        value = accepted.vector[root_index]
-        lower = problem.lower_bounds[root_index]
-        upper = problem.upper_bounds[root_index]
-        if not lower <= value <= upper:
-            return (
-                ClaimAssessment("INTERIOR_POINT", ClaimState.VIOLATED),
-                ClaimAssessment("BOUNDARY_SEPARATION", ClaimState.VIOLATED),
+        coordinate_interior, coordinate_separation, coordinate_details = (
+            _coordinate_box_boundary_claims(
+                accepted.vector[root_index],
+                problem.lower_bounds[root_index],
+                problem.upper_bounds[root_index],
+                covariance[local_index][local_index],
+                residual_variance_scale,
+                root_index,
             )
-        if value in (lower, upper):
-            strict_interior = False
-        for label, slack in (
-            ("lower", value - lower),
-            ("upper", upper - value),
-        ):
-            if math.isinf(slack):
-                continue
-            variance = covariance[local_index][local_index]
-            if residual_variance_scale == 0.0 or variance == 0.0:
-                separation = ClaimState.INDETERMINATE
-                details.append(f"{label}[{root_index}]: zero scaled variance")
-                continue
-            if variance < 0.0 or not math.isfinite(variance):
-                separation = ClaimState.INDETERMINATE
-                details.append(f"{label}[{root_index}]: invalid directional variance")
-                continue
-            zeta = float(slack / math.sqrt(variance))
-            details.append(f"{label}[{root_index}] zeta={zeta.hex()}")
-            if not math.isfinite(zeta):
-                separation = ClaimState.INDETERMINATE
-            elif zeta <= _BOUNDARY_THRESHOLD:
-                separation = ClaimState.VIOLATED
+        )
+        strict_interior = strict_interior and coordinate_interior
+        separation = _least_qualified_claim_state(
+            separation,
+            coordinate_separation,
+        )
+        details.extend(coordinate_details)
+    simplex_interior, simplex_separation, simplex_details = (
+        _population_simplex_boundary_claims(
+            accepted,
+            problem,
+            covariance,
+            indices,
+            residual_variance_scale,
+        )
+    )
+    strict_interior = strict_interior and simplex_interior
+    separation = _least_qualified_claim_state(separation, simplex_separation)
+    details.extend(simplex_details)
     return (
         ClaimAssessment(
             "INTERIOR_POINT",

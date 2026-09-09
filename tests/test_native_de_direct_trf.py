@@ -228,6 +228,28 @@ def test_mixed_domain_de_uses_the_derived_child_psd_bound() -> None:
     )
 
 
+def test_de_rejects_private_relaxation_coordinates_without_measure() -> None:
+    _session, _experiments, _parameterization, _engine, problem = (
+        _qualification_problem(
+            Method(
+                fit=["ETAZ_A", "R1A_A"],
+                fix=["R1_A", "PB", "KEX_AB"],
+            )
+        )
+    )
+    selected_id = next(item for item in problem.controlled_ids if "__ETAZ_A" in item)
+
+    with pytest.raises(
+        DirectTrfConstructionError,
+        match="relaxation-feasibility coordinates",
+    ):
+        DeSearchInvocation.for_product_problem(
+            problem,
+            search_coordinates=((selected_id, -1.0, 1.0, "linear"),),
+            root_seed=597,
+        )
+
+
 def _successful_backend_result(
     invocation: DeSearchInvocation,
     solver_vector: np.ndarray,

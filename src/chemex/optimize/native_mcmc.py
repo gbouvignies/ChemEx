@@ -1014,7 +1014,7 @@ class McmcPlan:
                 "Native MCMC qualification currently supports box-bounded problems"
             )
         feasible = problem.feasible_coordinates
-        if feasible is not None and not feasible.supports_box_only_algorithms:
+        if feasible is not None and feasible.uses_private_relaxation_coordinates:
             raise McmcConstructionError(
                 "Native MCMC has not qualified the Jacobian measure for private "
                 "relaxation-feasibility coordinates"

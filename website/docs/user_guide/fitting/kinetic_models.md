@@ -9,8 +9,19 @@ The kinetic model (specified with the `-d` or `--model` option) defines the type
 | Model Name          | Description                                                                     |
 | ------------------- | ------------------------------------------------------------------------------- |
 | `2st`               | 2-state exchange model (default)                                                |
-| `3st`               | 3-state exchange model                                                          |
-| `4st`               | 4-state exchange model                                                          |
+| `3st`               | Complete 3-state exchange model                                                  |
+| `3st_triangle`      | Historical explicit compatibility name for `3st`                                |
+| `3st_linear`        | Linear A ↔ B ↔ C exchange model                                                  |
+| `3st_fork`          | A-centered B ↔ A ↔ C exchange model                                              |
+| `4st`               | Complete 4-state exchange model                                                  |
+| `4st_linear`        | Linear 4-state exchange model                                                    |
+| `4st_fork`          | A-centered 4-state exchange model                                                |
+| `5st`               | Complete 5-state exchange model                                                  |
+| `5st_linear`        | Linear 5-state exchange model                                                    |
+| `5st_fork`          | A-centered 5-state exchange model                                                |
+| `6st`               | Complete 6-state exchange model                                                  |
+| `6st_linear`        | Linear 6-state exchange model                                                    |
+| `6st_fork`          | A-centered 6-state exchange model                                                |
 | `2st_hd`            | 2-state exchange model for H/D solvent exchange studies                         |
 | `2st_eyring`        | 2-state exchange model for temperature-dependent studies                        |
 | `3st_eyring`        | Compatibility name for the linear 3-state Eyring model                          |
@@ -37,6 +48,108 @@ For any kinetic model, you can add the `.rs` suffix to make the kinetic paramete
 :::note
 For any kinetic model, you can add the `.mf` suffix to create a model that fits model-free parameters directly (e.g., `TAUC_A`, `S2_A`), rather than individual relaxation parameters (e.g., `R1_A`, `R2_A`). For an example, see `CEST_15N_TR/` under `Examples/Experiments/`.
 :::
+
+## Generic N-state models
+
+The generic family supports three through six states. Its public model name is
+the topology contract:
+
+| Model | Topology |
+| --- | --- |
+| `3st`, `4st`, `5st`, `6st` | Complete graph: every unordered state pair exchanges |
+| `3st_linear`, `4st_linear`, `5st_linear`, `6st_linear` | Chain A ↔ B ↔ C ↔ D ↔ E ↔ F, truncated at the selected state count |
+| `3st_fork`, `4st_fork`, `5st_fork`, `6st_fork` | A-centered star: A exchanges directly with every other state |
+| `3st_triangle` | Exact historical compatibility name for the canonical complete `3st` model |
+
+`PB`, `PC`, and any higher non-A populations are independent fractions; `PA`
+is derived so that all populations sum to one. ChemEx enforces the complete
+closed simplex: every population must be finite and nonnegative and their sum
+must be exactly representable as no greater than one. Exact zero populations
+and `PA = 0` are valid. Values are not clipped, renormalized, or replaced by a
+small positive floor.
+
+For every structural edge `i` ↔ `j`, `KEX_ij` is the total exchange scale in
+s⁻¹:
+
+$$
+KEX_{ij} = K_{ij} + K_{ji}.
+$$
+
+ChemEx derives the directional rates from the prescribed populations:
+
+$$
+K_{ij} = KEX_{ij}\frac{P_j}{P_i + P_j}, \qquad
+K_{ji} = KEX_{ij}\frac{P_i}{P_i + P_j}.
+$$
+
+The first state in a directional name is its source, so `KAB` means A → B.
+`KEX_ij = 0` produces exact zero in both directions and dynamically switches
+off an existing structural edge. If exactly one endpoint population is zero,
+the outgoing rate from that endpoint equals `KEX_ij` and the reciprocal rate is
+zero. If both endpoint populations are zero, `KEX_ij = 0` remains valid, but a
+positive `KEX_ij` is rejected because its directional split is undefined.
+Positive rates too small to be represented as positive binary64 values are
+also rejected instead of being changed into structural zero.
+
+An absent edge in a `_linear` or `_fork` model is different from an edge fixed
+to zero in a complete model: the absent edge has no `KEX` or directional-rate
+parameters and cannot be selected by a Method Step. In a complete model,
+setting selected structural `KEX` values to zero can create disconnected
+kinetic components. Positive prescribed populations may remain in multiple
+components; ChemEx treats them as static mixture weights for non-interconverting
+subensembles and does not require an irreducible generator or a unique global
+stationary distribution.
+
+Direct TRF and its Monte Carlo/bootstrap reruns use closed, bounded simplex
+coordinates internally while continuation and output retain public `PB`, `PC`,
+and higher-state coordinates. MCMC remains in those public coordinates and
+rejects proposals outside the simplex through its normal zero-density path.
+Qualified interior deterministic covariance is propagated analytically to
+`PA` and the directional rates. At a population boundary, symmetric errors are
+reported only with ChemEx's boundary warning; the positive-`KEX` zero/zero split
+has no valid central rate or derivative.
+
+### Breaking default change for complete 4/5/6-state models
+
+Bare `4st`, `5st`, and `6st` are now genuinely complete by default. Every
+structural `KEX`, including `KEX_AD` and `KEX_BD`, starts at `200 s⁻¹`, is
+bounded to `[0, 1e6] s⁻¹`, and is fitted by default. Earlier releases inherited
+historical `KEX_AD = KEX_BD = 0` fixed defaults. This is an intentional breaking
+change.
+
+To reproduce the old sparse behavior for any of `4st`, `5st`, or `6st`, use a
+normal parameter file:
+
+```toml title="legacy-complete-parameters.toml"
+[GLOBAL]
+KEX_AD = 0.0
+KEX_BD = 0.0
+```
+
+and explicitly preserve the roles in a version 2 Method Plan:
+
+```toml title="legacy-complete-method.toml"
+FORMAT_VERSION = 2
+
+[FIT]
+ROLES = [{ FIX = ["KEX_AD", "KEX_BD"] }]
+```
+
+Select the required state count normally:
+
+```text
+chemex fit ... -d 4st -p legacy-complete-parameters.toml -m legacy-complete-method.toml
+chemex fit ... -d 5st -p legacy-complete-parameters.toml -m legacy-complete-method.toml
+chemex fit ... -d 6st -p legacy-complete-parameters.toml -m legacy-complete-method.toml
+```
+
+Old generated `run_info/restart.toml` files preserve the numerical zero values
+and their bounds, but do not preserve the historical fitted/fixed roles. When
+such a restart is loaded under the new complete model, `KEX_AD` and `KEX_BD`
+therefore become ordinary fitted coordinates unless the Method Step above fixes
+them. Plain historical parameter files that omitted the two values carry no
+reliable version or intent signal; ChemEx applies the new complete defaults
+rather than guessing their age.
 
 ## Three-State Association Models
 

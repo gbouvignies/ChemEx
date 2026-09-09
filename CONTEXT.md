@@ -25,6 +25,30 @@ One named stage in a Method Plan that defines profile selection, parameter
 roles and constraints, search, and requested statistics for that stage.
 _Avoid_: Method section, Method
 
+**Generic N-state Model**:
+A population-authoritative kinetic model whose public name declares a complete,
+linear, or A-centered-fork structural exchange topology over three through six
+states.
+_Avoid_: Generic graph, N-state DSL
+
+**Structural Exchange Edge**:
+An unordered state pair present in a kinetic model's declared topology. It owns
+one public `KEX_ij` and the derived directional pair `Kij`/`Kji`; setting its
+`KEX_ij` to zero switches the edge off dynamically without making it absent.
+_Avoid_: Enabled edge, nonzero edge
+
+**Population Simplex**:
+The closed scientific domain in which every state population is nonnegative and
+the complete population vector sums to one. Generic N-state models expose the
+non-A populations and derive `PA` as the validated complement.
+_Avoid_: Population normalization, softmax coordinates
+
+**Feasible Coordinates**:
+Private solver coordinates compiled from model-owned scientific domains. They
+keep public parameter names and continuation values unchanged while ensuring a
+local optimizer proposes only representable domain states.
+_Avoid_: Public reparameterization, clipping
+
 **Evidence**:
 The validated source observations or samples of a statistical analysis together
 with their scientific state.

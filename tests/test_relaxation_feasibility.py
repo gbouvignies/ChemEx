@@ -1008,6 +1008,7 @@ def test_component_projection_rejects_a_non_closed_root_feasibility_domain() -> 
     )
 
     assert root is not None
+    assert root.uses_private_relaxation_coordinates
     with pytest.raises(TypeError):
         dataclasses.replace(
             root,

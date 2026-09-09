@@ -1,4 +1,4 @@
-"""Exact private solver coordinates for model-owned relaxation feasibility."""
+"""Exact private solver coordinates for model-owned scientific feasibility."""
 
 from __future__ import annotations
 
@@ -170,6 +170,112 @@ class RateFloor:
     cross_id: str
 
 
+@dataclass(frozen=True, slots=True)
+class PopulationSimplex:
+    """One model-owned population complement and its independent coordinates."""
+
+    complement_id: str
+    population_ids: tuple[str, ...]
+
+
+def _population_interval(
+    param_id: str,
+    remaining_ids: Sequence[str],
+    used_values: Sequence[float],
+    lower_by_id: Mapping[str, float],
+    upper_by_id: Mapping[str, float],
+) -> tuple[float, float]:
+    lower = max(0.0, lower_by_id[param_id])
+    future_minimum = math.fsum(
+        max(0.0, lower_by_id[remaining_id]) for remaining_id in remaining_ids
+    )
+    available = 1.0 - math.fsum(used_values)
+    upper = min(1.0, upper_by_id[param_id], available - future_minimum)
+    if lower > upper:
+        raise ScientificFeasibilityError(
+            f"Population {param_id!r} has no feasible simplex interval"
+        )
+    return lower, upper
+
+
+def _decode_population_simplexes(
+    simplexes: Sequence[PopulationSimplex],
+    base_values: Mapping[str, float],
+    public: dict[str, float],
+    lower_by_id: Mapping[str, float],
+    upper_by_id: Mapping[str, float],
+) -> None:
+    controlled = set(public)
+    for simplex in simplexes:
+        transformed_ids = tuple(
+            param_id for param_id in simplex.population_ids if param_id in controlled
+        )
+        used_values = [
+            base_values[param_id]
+            for param_id in simplex.population_ids
+            if param_id not in controlled
+        ]
+        for index, param_id in enumerate(transformed_ids):
+            lower, upper = _population_interval(
+                param_id,
+                transformed_ids[index + 1 :],
+                used_values,
+                lower_by_id,
+                upper_by_id,
+            )
+            coordinate = public[param_id]
+            if not 0.0 <= coordinate <= 1.0:
+                raise ScientificFeasibilityError(
+                    f"Private population coordinate for {param_id!r} is outside [0, 1]"
+                )
+            value = (
+                lower
+                if coordinate == 0.0
+                else upper
+                if coordinate == 1.0
+                else lower + coordinate * (upper - lower)
+            )
+            public[param_id] = value
+            used_values.append(value)
+
+
+def _encode_population_simplexes(
+    simplexes: Sequence[PopulationSimplex],
+    public_start: Mapping[str, float],
+    controlled_ids: Sequence[str],
+    lower_by_id: Mapping[str, float],
+    upper_by_id: Mapping[str, float],
+) -> dict[str, float]:
+    controlled = set(controlled_ids)
+    solver_values: dict[str, float] = {}
+    for simplex in simplexes:
+        transformed_ids = tuple(
+            param_id for param_id in simplex.population_ids if param_id in controlled
+        )
+        used_values = [
+            public_start[param_id]
+            for param_id in simplex.population_ids
+            if param_id not in controlled
+        ]
+        for index, param_id in enumerate(transformed_ids):
+            lower, upper = _population_interval(
+                param_id,
+                transformed_ids[index + 1 :],
+                used_values,
+                lower_by_id,
+                upper_by_id,
+            )
+            value = public_start[param_id]
+            if not lower <= value <= upper:
+                raise ScientificFeasibilityError(
+                    f"Initial population {param_id!r} is outside its simplex interval"
+                )
+            width = upper - lower
+            solver_values[param_id] = 0.0 if width == 0.0 else (value - lower) / width
+            used_values.append(value)
+    return solver_values
+
+
 def _rate_floor(specification: RateFloor, values: Mapping[str, float]) -> float:
     cross = values[specification.cross_id]
     if specification.kind is RateFloorKind.REPEATED_DIAGONAL:
@@ -204,16 +310,43 @@ def _floor_within_finite_ceiling(
 
 
 @dataclass(frozen=True, slots=True)
-class _FeasibilityProjectionProvenance:
-    """Private immutable closure proof compiled with one feasibility chart."""
+class _RelaxationDomainProvenance:
+    """One relaxation block bound to its controlled dependency closure."""
 
-    controlled_domain_groups: tuple[frozenset[str], ...]
+    block: RelaxationPsdBlock
+    controlled_dependencies: frozenset[str]
+
+
+@dataclass(frozen=True, slots=True)
+class _PopulationDomainProvenance:
+    """One population simplex bound to its controlled dependency closure."""
+
+    simplex: PopulationSimplex
+    controlled_dependencies: frozenset[str]
+
+
+@dataclass(frozen=True, slots=True)
+class _FeasibilityProjectionProvenance:
+    """Named domain associations and the chart's immutable closure proof."""
+
+    relaxation_domains: tuple[_RelaxationDomainProvenance, ...]
+    population_domains: tuple[_PopulationDomainProvenance, ...]
     has_root_projection_authority: bool
+
+    @property
+    def domain_records(
+        self,
+    ) -> tuple[_RelaxationDomainProvenance | _PopulationDomainProvenance, ...]:
+        return self.relaxation_domains + self.population_domains
+
+    @property
+    def controlled_domain_groups(self) -> tuple[frozenset[str], ...]:
+        return tuple(item.controlled_dependencies for item in self.domain_records)
 
 
 @dataclass(frozen=True, slots=True)
 class FeasibleCoordinates:
-    """Role-aware exact chart over the represented relaxation PSD domains."""
+    """Role-aware exact chart over represented model-owned domains."""
 
     parameterization: ActiveParameterization = field(repr=False, compare=False)
     base_frame: IndependentValueFrame = field(repr=False, compare=False)
@@ -225,6 +358,7 @@ class FeasibleCoordinates:
     static_rate_floors: tuple[tuple[str, float], ...]
     cross_rate_ids: tuple[str, ...]
     blocks: tuple[RelaxationPsdBlock, ...]
+    population_simplexes: tuple[PopulationSimplex, ...]
     _projection_provenance: _FeasibilityProjectionProvenance | None = field(
         default=None,
         init=False,
@@ -263,6 +397,16 @@ class FeasibleCoordinates:
 
     @property
     def has_coordinate_transform(self) -> bool:
+        return bool(
+            self.rate_excess_ids
+            or self.rate_floors
+            or self.cross_rate_ids
+            or self.population_simplexes
+        )
+
+    @property
+    def uses_private_relaxation_coordinates(self) -> bool:
+        """Whether this chart changes public relaxation coordinates privately."""
         return bool(self.rate_excess_ids or self.rate_floors or self.cross_rate_ids)
 
     @property
@@ -271,6 +415,7 @@ class FeasibleCoordinates:
             not self.rate_excess_ids
             and not self.rate_floors
             and not self.cross_rate_ids
+            and not self.population_simplexes
             and self.solver_lower_bounds == self.public_lower_bounds
             and self.solver_upper_bounds == self.public_upper_bounds
         )
@@ -295,7 +440,7 @@ class FeasibleCoordinates:
     @property
     def domain_parameter_groups(self) -> tuple[frozenset[str], ...]:
         """Return parameter-ID hyperedges that must remain in one fit component."""
-        return tuple(
+        relaxation_groups = tuple(
             frozenset(
                 (
                     *block.diagonal_ids,
@@ -304,6 +449,10 @@ class FeasibleCoordinates:
             )
             for block in self.blocks
         )
+        population_groups = tuple(
+            frozenset(simplex.population_ids) for simplex in self.population_simplexes
+        )
+        return relaxation_groups + population_groups
 
     def frame_with_updates(self, updates: Mapping[str, float]) -> IndependentValueFrame:
         """Return a compatible source frame with independent public updates."""
@@ -335,6 +484,11 @@ class FeasibleCoordinates:
     ) -> FeasibleCoordinates | None:
         """Project an exact root chart onto one closed fit component."""
         self.require_root_projection_authority()
+        provenance = self._projection_provenance
+        if provenance is None:
+            raise FeasibleCoordinateConstructionError(
+                "Component feasibility projection lacks compiler provenance"
+            )
         selected = set(controlled_ids)
         root_indices = {
             param_id: index for index, param_id in enumerate(self.controlled_ids)
@@ -346,10 +500,10 @@ class FeasibleCoordinates:
             )
             != controlled_ids
             or len(selected) != len(controlled_ids)
-            or len(self.controlled_domain_groups) != len(self.blocks)
             or any(
-                dependencies & selected and not dependencies <= selected
-                for dependencies in self.controlled_domain_groups
+                item.controlled_dependencies & selected
+                and not item.controlled_dependencies <= selected
+                for item in provenance.domain_records
             )
         ):
             raise FeasibleCoordinateConstructionError(
@@ -367,37 +521,60 @@ class FeasibleCoordinates:
             raise FeasibleCoordinateConstructionError(
                 "Component feasibility projection changed root public bounds"
             )
+        projected_relaxation_domains = tuple(
+            _RelaxationDomainProvenance(
+                block=item.block,
+                controlled_dependencies=item.controlled_dependencies & selected,
+            )
+            for item in provenance.relaxation_domains
+        )
+        projected_population_domains = tuple(
+            _PopulationDomainProvenance(
+                simplex=item.simplex,
+                controlled_dependencies=item.controlled_dependencies & selected,
+            )
+            for item in provenance.population_domains
+            if item.controlled_dependencies & selected
+        )
+        projected_population_simplexes = tuple(
+            item.simplex for item in projected_population_domains
+        )
         projected = _seal_projection_provenance(
             type(self)(
-                self.parameterization,
-                frame,
-                controlled_ids,
-                lower_bounds,
-                upper_bounds,
-                tuple(item for item in self.rate_excess_ids if item[0] in selected),
-                tuple(item for item in self.rate_floors if item.rate_id in selected),
-                tuple(item for item in self.static_rate_floors if item[0] in selected),
-                tuple(
+                parameterization=self.parameterization,
+                base_frame=frame,
+                controlled_ids=controlled_ids,
+                public_lower_bounds=lower_bounds,
+                public_upper_bounds=upper_bounds,
+                rate_excess_ids=tuple(
+                    item for item in self.rate_excess_ids if item[0] in selected
+                ),
+                rate_floors=tuple(
+                    item for item in self.rate_floors if item.rate_id in selected
+                ),
+                static_rate_floors=tuple(
+                    item for item in self.static_rate_floors if item[0] in selected
+                ),
+                cross_rate_ids=tuple(
                     param_id for param_id in self.cross_rate_ids if param_id in selected
                 ),
-                self.blocks,
-                tuple(
+                blocks=self.blocks,
+                population_simplexes=projected_population_simplexes,
+                solver_start=tuple(
                     self.solver_start[root_indices[param_id]]
                     for param_id in controlled_ids
                 ),
-                tuple(
+                solver_lower_bounds=tuple(
                     self.solver_lower_bounds[root_indices[param_id]]
                     for param_id in controlled_ids
                 ),
-                tuple(
+                solver_upper_bounds=tuple(
                     self.solver_upper_bounds[root_indices[param_id]]
                     for param_id in controlled_ids
                 ),
             ),
-            tuple(
-                dependencies & selected
-                for dependencies in self.controlled_domain_groups
-            ),
+            projected_relaxation_domains,
+            projected_population_domains,
             has_root_projection_authority=False,
         )
         return None if projected.is_noop else projected
@@ -417,21 +594,37 @@ class FeasibleCoordinates:
         floor_rate_ids = {item.rate_id for item in self.rate_floors}
         static_rate_floors = dict(self.static_rate_floors)
         cross_rates = set(self.cross_rate_ids)
-        raw_updates = {
-            param_id: value
-            for param_id, value in public.items()
-            if param_id not in rate_excess
-            and param_id not in floor_rate_ids
-            and param_id not in cross_rates
+        population_ids = {
+            param_id
+            for simplex in self.population_simplexes
+            for param_id in simplex.population_ids
         }
-        frame = self.base_frame.with_updates(raw_updates)
-        resolved = self.parameterization.resolve(frame)
         lower_by_id = dict(
             zip(self.controlled_ids, self.public_lower_bounds, strict=True)
         )
         upper_by_id = dict(
             zip(self.controlled_ids, self.public_upper_bounds, strict=True)
         )
+        _decode_population_simplexes(
+            self.population_simplexes,
+            dict(self.base_frame.ordered_items()),
+            public,
+            lower_by_id,
+            upper_by_id,
+        )
+        raw_updates = {
+            param_id: value
+            for param_id, value in public.items()
+            if param_id not in rate_excess
+            and param_id not in floor_rate_ids
+            and param_id not in cross_rates
+            and param_id not in population_ids
+        }
+        raw_updates.update(
+            {param_id: public[param_id] for param_id in population_ids & set(public)}
+        )
+        frame = self.base_frame.with_updates(raw_updates)
+        resolved = self.parameterization.resolve(frame)
         excess_by_rate = {
             rate_id: tuple(
                 diagonal_id
@@ -862,14 +1055,21 @@ def _controlled_dependencies(
 
 def _seal_projection_provenance(
     chart: FeasibleCoordinates,
-    controlled_domain_groups: tuple[frozenset[str], ...],
+    relaxation_domains: tuple[_RelaxationDomainProvenance, ...],
+    population_domains: tuple[_PopulationDomainProvenance, ...],
     *,
     has_root_projection_authority: bool,
 ) -> FeasibleCoordinates:
     """Seal compiler-owned closure proof and complete scientific chart identity."""
     controlled = frozenset(chart.controlled_ids)
-    if len(controlled_domain_groups) != len(chart.blocks) or any(
-        not dependencies <= controlled for dependencies in controlled_domain_groups
+    domain_records = relaxation_domains + population_domains
+    if (
+        tuple(item.block for item in relaxation_domains) != chart.blocks
+        or tuple(item.simplex for item in population_domains)
+        != chart.population_simplexes
+        or any(
+            not item.controlled_dependencies <= controlled for item in domain_records
+        )
     ):
         raise FeasibleCoordinateConstructionError(
             "Feasibility dependency provenance differs from its root chart"
@@ -878,8 +1078,9 @@ def _seal_projection_provenance(
         chart,
         "_projection_provenance",
         _FeasibilityProjectionProvenance(
-            controlled_domain_groups,
-            has_root_projection_authority,
+            relaxation_domains=relaxation_domains,
+            population_domains=population_domains,
+            has_root_projection_authority=has_root_projection_authority,
         ),
     )
     object.__setattr__(
@@ -907,8 +1108,24 @@ def _seal_projection_provenance(
                 chart.cross_rate_ids,
                 relaxation_blocks_identity(chart.blocks),
                 tuple(
-                    tuple(sorted(dependencies))
-                    for dependencies in controlled_domain_groups
+                    (simplex.complement_id, simplex.population_ids)
+                    for simplex in chart.population_simplexes
+                ),
+                tuple(
+                    (
+                        "relaxation",
+                        item.block.domain_id,
+                        tuple(sorted(item.controlled_dependencies)),
+                    )
+                    for item in relaxation_domains
+                ),
+                tuple(
+                    (
+                        "population",
+                        item.simplex.complement_id,
+                        tuple(sorted(item.controlled_dependencies)),
+                    )
+                    for item in population_domains
                 ),
                 chart.solver_start,
                 chart.solver_lower_bounds,
@@ -919,12 +1136,16 @@ def _seal_projection_provenance(
     return chart
 
 
-def _controlled_domain_groups(
+def _controlled_domain_provenance(
     parameterization: ActiveParameterization,
     blocks: Sequence[RelaxationPsdBlock],
+    population_simplexes: Sequence[PopulationSimplex],
     controlled_ids: Sequence[str],
-) -> tuple[frozenset[str], ...]:
-    """Resolve every PSD domain to immutable root-controlled dependencies."""
+) -> tuple[
+    tuple[_RelaxationDomainProvenance, ...],
+    tuple[_PopulationDomainProvenance, ...],
+]:
+    """Bind every represented domain to its root-controlled dependencies."""
     controlled = frozenset(controlled_ids)
     constraints = {
         item.target_id: item for item in parameterization.program.constraints
@@ -947,17 +1168,32 @@ def _controlled_domain_groups(
         cache[param_id] = result
         return result
 
-    return tuple(
-        frozenset(
-            dependency
-            for param_id in (
-                *block.diagonal_ids,
-                *(item[2] for item in block.off_diagonal_ids),
-            )
-            for dependency in resolve(param_id)
+    relaxation_domains = tuple(
+        _RelaxationDomainProvenance(
+            block=block,
+            controlled_dependencies=frozenset(
+                dependency
+                for param_id in (
+                    *block.diagonal_ids,
+                    *(item[2] for item in block.off_diagonal_ids),
+                )
+                for dependency in resolve(param_id)
+            ),
         )
         for block in blocks
     )
+    population_domains = tuple(
+        _PopulationDomainProvenance(
+            simplex=simplex,
+            controlled_dependencies=frozenset(
+                dependency
+                for param_id in simplex.population_ids
+                for dependency in resolve(param_id)
+            ),
+        )
+        for simplex in population_simplexes
+    )
+    return relaxation_domains, population_domains
 
 
 def _is_intrinsic_rate_derivation(
@@ -1221,6 +1457,43 @@ def _bounded_dynamic_floor_controller_bounds(
     return bounds
 
 
+def _active_population_simplexes(
+    parameterization: ActiveParameterization,
+    frame: IndependentValueFrame,
+    controlled_ids: Sequence[str],
+) -> tuple[PopulationSimplex, ...]:
+    """Find generic N-state simplexes declared by model-owned complements."""
+    independent = {param_id for param_id, _value in frame.ordered_items()}
+    controlled = set(controlled_ids)
+    simplexes: list[PopulationSimplex] = []
+    for constraint in parameterization.program.constraints:
+        expression = constraint.expression
+        if (
+            not isinstance(expression, FunctionExpression)
+            or expression.function_id != "population_complement"
+            or expression.component != "pa"
+            or not all(
+                isinstance(argument, ReferenceExpression)
+                for argument in expression.arguments
+            )
+        ):
+            continue
+        population_ids = tuple(
+            argument.param_id
+            for argument in expression.arguments
+            if isinstance(argument, ReferenceExpression)
+        )
+        if (
+            len(population_ids) < 2
+            or len(set(population_ids)) != len(population_ids)
+            or not set(population_ids) <= independent
+            or not set(population_ids) & controlled
+        ):
+            continue
+        simplexes.append(PopulationSimplex(constraint.target_id, population_ids))
+    return tuple(simplexes)
+
+
 def compile_feasible_coordinates(  # noqa: C901 - complete role-aware chart
     parameterization: ActiveParameterization,
     frame: IndependentValueFrame,
@@ -1228,7 +1501,7 @@ def compile_feasible_coordinates(  # noqa: C901 - complete role-aware chart
     lower_bounds: tuple[float, ...],
     upper_bounds: tuple[float, ...],
 ) -> FeasibleCoordinates | None:
-    """Compile an exact supported chart for the active relaxation domains."""
+    """Compile exact supported coordinates for active model-owned domains."""
     blocks = active_relaxation_blocks(parameterization)
     chart_blocks = tuple(
         block
@@ -1236,6 +1509,11 @@ def compile_feasible_coordinates(  # noqa: C901 - complete role-aware chart
         if not _is_intrinsic_relaxation_block(parameterization, block)
     )
     controlled = set(controlled_ids)
+    population_simplexes = _active_population_simplexes(
+        parameterization,
+        frame,
+        controlled_ids,
+    )
     rate_excess_ids = _derived_diagonal_transforms(
         parameterization,
         controlled,
@@ -1416,6 +1694,13 @@ def compile_feasible_coordinates(  # noqa: C901 - complete role-aware chart
     solver_upper: list[float] = []
     lower_by_id = dict(zip(controlled_ids, lower_bounds, strict=True))
     upper_by_id = dict(zip(controlled_ids, upper_bounds, strict=True))
+    population_solver_values = _encode_population_simplexes(
+        population_simplexes,
+        public_start,
+        controlled_ids,
+        lower_by_id,
+        upper_by_id,
+    )
     transformed_ids = frozenset(
         {
             *(item[0] for item in rate_excess_ids),
@@ -1434,7 +1719,11 @@ def compile_feasible_coordinates(  # noqa: C901 - complete role-aware chart
         transformed_ids,
     )
     for param_id in controlled_ids:
-        if rate_map[param_id]:
+        if param_id in population_solver_values:
+            solver_start.append(population_solver_values[param_id])
+            solver_lower.append(0.0)
+            solver_upper.append(1.0)
+        elif rate_map[param_id]:
             floor = max(
                 lower_by_id[param_id],
                 static_rate_floors.get(param_id, -math.inf),
@@ -1530,23 +1819,31 @@ def compile_feasible_coordinates(  # noqa: C901 - complete role-aware chart
                 )
             )
             solver_upper.append(min(upper_by_id[param_id], controller_upper))
+    relaxation_provenance, population_provenance = _controlled_domain_provenance(
+        parameterization,
+        blocks,
+        population_simplexes,
+        controlled_ids,
+    )
     chart = _seal_projection_provenance(
         FeasibleCoordinates(
-            parameterization,
-            frame,
-            controlled_ids,
-            lower_bounds,
-            upper_bounds,
-            rate_excess_ids,
-            tuple(rate_floors),
-            tuple(sorted(static_rate_floors.items())),
-            cross_ids,
-            blocks,
-            tuple(solver_start),
-            tuple(solver_lower),
-            tuple(solver_upper),
+            parameterization=parameterization,
+            base_frame=frame,
+            controlled_ids=controlled_ids,
+            public_lower_bounds=lower_bounds,
+            public_upper_bounds=upper_bounds,
+            rate_excess_ids=rate_excess_ids,
+            rate_floors=tuple(rate_floors),
+            static_rate_floors=tuple(sorted(static_rate_floors.items())),
+            cross_rate_ids=cross_ids,
+            blocks=blocks,
+            population_simplexes=population_simplexes,
+            solver_start=tuple(solver_start),
+            solver_lower_bounds=tuple(solver_lower),
+            solver_upper_bounds=tuple(solver_upper),
         ),
-        _controlled_domain_groups(parameterization, blocks, controlled_ids),
+        relaxation_provenance,
+        population_provenance,
         has_root_projection_authority=True,
     )
     return None if chart.is_noop else chart
