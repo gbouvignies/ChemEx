@@ -593,12 +593,12 @@ class DeSearchInvocation:
 
         search_problem = derive_search_problem()
         feasible = search_problem.feasible_coordinates
-        if feasible is not None and not feasible.supports_box_only_algorithms:
+        if feasible is not None and feasible.uses_private_relaxation_coordinates:
             raise DirectTrfConstructionError(
                 "DE search over relaxation-feasibility coordinates is not yet "
                 "qualified; use Direct TRF for this method section"
             )
-        if feasible is not None:
+        if feasible is not None and feasible.supports_box_only_algorithms:
             feasible_lower, feasible_upper = feasible.solver_bounds
             child_indices = {
                 param_id: index

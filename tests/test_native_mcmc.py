@@ -1166,6 +1166,7 @@ def test_mcmc_rejects_private_relaxation_coordinates_without_measure() -> None:
         feasible_coordinates=SimpleNamespace(
             is_noop=False,
             identity="private-relaxation-chart",
+            uses_private_relaxation_coordinates=True,
             supports_box_only_algorithms=False,
             solver_bounds=(problem.lower_bounds, problem.upper_bounds),
         ),
