@@ -94,6 +94,8 @@ def _construct_and_resolve(
         ("2st_binding", ("pa", "pb"), {}),
         ("3st_double_binding", ("pa", "pb", "pc"), {}),
         ("3st_binding_partner_2st", ("pa", "pb", "pc"), {}),
+        ("3st_binding_cs", ("pa", "pb", "pc"), {}),
+        ("3st_binding_if", ("pa", "pb", "pc"), {}),
         ("4st_binding_partner_2st", ("pa", "pb", "pc", "pd"), {}),
         (
             "4st_binding_3_bound_states",

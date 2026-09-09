@@ -18,10 +18,12 @@ from chemex.parameters.factory import ParameterFactory
 from chemex.parameters.parameterization import (
     ActiveParameterization,
     NonFiniteParameterValueError,
+    ReportableParameterSet,
     build_initial_analysis_values,
     compile_active_parameterization,
     compile_active_parameterization_from_actions,
     deferred_derived_ids,
+    extend_parameterization_for_report_only_outputs,
     report_only_derived_ids,
 )
 from chemex.parameters.values import AnalysisValues
@@ -224,6 +226,31 @@ class AnalysisSession:
                 continue
             values[param_id] = resolved[param_id]
         return MappingProxyType(values)
+
+    def resolve_reportable_parameters(
+        self,
+        parameterization: ActiveParameterization,
+    ) -> ReportableParameterSet:
+        """Select once the finite report-only outputs used by uncertainty and output."""
+        parameter_model = self.parameter_factory.sealed_parameter_model
+        if parameter_model is None:
+            raise RuntimeError("Native parameter model is unavailable")
+        snapshot = self.analysis_values.snapshot()
+        report_only_values = self.resolve_report_only_values()
+        reporting_parameterization = extend_parameterization_for_report_only_outputs(
+            parameter_model,
+            snapshot,
+            parameterization,
+            tuple(report_only_values),
+        )
+        resolved = reporting_parameterization.resolve(
+            reporting_parameterization.frame_from_snapshot(snapshot)
+        )
+        return ReportableParameterSet(
+            reporting_parameterization,
+            resolved,
+            tuple(report_only_values),
+        )
 
 
 def ensure_plugins_registered() -> None:

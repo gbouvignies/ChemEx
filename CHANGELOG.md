@@ -32,6 +32,21 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   signature; the obsolete `DH_AC` and `DS_AC` arguments have been removed.
 
 ### Fixed
+- `3st_binding_cs` and `3st_binding_if` now use equilibrium parameters and mass
+  balances as the sole population authority, independently of tagged kinetic
+  scales. This is a breaking independent-parameter change: conformational
+  selection replaces `KAB`/`KBA` with `KEQ_AB = KAB / KBA` and
+  `KEX_AB = KAB + KBA`; induced fit replaces `KBC`/`KCB` with
+  `KEQ_BC = KBC / KCB` and `KEX_BC = KBC + KCB`. Directional rates remain
+  derived outputs. A legacy `(0,0)` pair determines `KEX = 0` but leaves KEQ
+  ambiguous and is rejected with migration guidance. Induced fit supports exact
+  `KEQ_BC = 0`; conformational selection rejects exact `KEQ_AB = 0`. Migration
+  diagnostics are scoped by parameter identity, reject unrepresentable ratio or
+  sum advice instead of printing false zero/infinity, and show explicit bound
+  override syntax when an exact replacement exceeds the new `1e6` safety bound.
+  MCMC initialization now preserves valid exact-zero nonnegative coordinates.
+  Representable report-only intrinsic KD and KON outputs participate in the same
+  deterministic uncertainty propagation as the final parameter report.
 - Category-A association models now use one equilibrium-composition authority
   for reported populations and tagged detailed-balance rates. Exact-zero kinetic
   scales therefore freeze exchange without erasing equilibrium species. Binding
@@ -47,10 +62,8 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   unrepresentable report-only value is omitted. Positive directional exchange
   rates that cannot be represented in binary64 are rejected instead of being
   silently rounded to structural zero. Canonical association-population
-  constraints now carry deterministic propagated uncertainties.
-  `3st_binding_cs` and `3st_binding_if` retain their existing parameterizations
-  pending a separate equilibrium-authority pass; generic kinetic models are
-  unchanged.
+  constraints now carry deterministic propagated uncertainties. Generic kinetic
+  models are unchanged.
 - Oligomerization models now retain literal semantics for every finite positive
   `KD`, including sub-`1e-32` values; the hidden `1e-32` effective-KD floor has
   been removed, so affected results can change materially. Exact `KD = 0` is now

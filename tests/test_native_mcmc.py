@@ -112,12 +112,16 @@ class _LinearPulseSequence:
         evaluation_observer: Any | None = None,
         evaluation_barrier: Any | None = None,
         fail_outside_pid: int | None = None,
+        maximum_available_a: float | None = None,
+        exact_available_a: float | None = None,
         *,
         source_pid: int | None = None,
     ) -> None:
         self._evaluation_observer = evaluation_observer
         self._evaluation_barrier = evaluation_barrier
         self._fail_outside_pid = fail_outside_pid
+        self._maximum_available_a = maximum_available_a
+        self._exact_available_a = exact_available_a
         self._source_pid = os.getpid() if source_pid is None else source_pid
         self._barrier_used = False
 
@@ -126,6 +130,8 @@ class _LinearPulseSequence:
             self._evaluation_observer,
             self._evaluation_barrier,
             self._fail_outside_pid,
+            self._maximum_available_a,
+            self._exact_available_a,
             source_pid=self._source_pid,
         )
 
@@ -147,7 +153,12 @@ class _LinearPulseSequence:
             )
         if self._fail_outside_pid is not None and os.getpid() != self._fail_outside_pid:
             raise RuntimeError("worker kernel failure")
-        return spectrometer.values["a"] + spectrometer.values["b"] * np.asarray(
+        a = spectrometer.values["a"]
+        if (
+            self._maximum_available_a is not None and a > self._maximum_available_a
+        ) or (self._exact_available_a is not None and a != self._exact_available_a):
+            return np.full_like(data.metadata, np.nan, dtype=np.float64)
+        return a + spectrometer.values["b"] * np.asarray(
             data.metadata,
             dtype=np.float64,
         )
@@ -173,9 +184,12 @@ def test_linear_pulse_sequence_deepcopy_preserves_source_process_identity(
 def _native_context(
     *,
     fit_b: bool = True,
+    accepted_a: float = 1.0,
     evaluation_observer: Any | None = None,
     evaluation_barrier: Any | None = None,
     fail_outside_pid: int | None = None,
+    maximum_available_a: float | None = None,
+    exact_available_a: float | None = None,
 ) -> tuple[
     AcceptedFitResult,
     OptimizationProblem,
@@ -227,6 +241,8 @@ def _native_context(
                 evaluation_observer,
                 evaluation_barrier,
                 fail_outside_pid,
+                maximum_available_a,
+                exact_available_a,
             ),
         ),
         {"a": "A", "b": "B"},
@@ -240,7 +256,7 @@ def _native_context(
     start = (0.5, 1.5) if fit_b else (0.5,)
     lower = (0.0, 1.0) if fit_b else (0.0,)
     upper = (2.0, 3.0) if fit_b else (2.0,)
-    accepted_vector = (1.0, 2.0) if fit_b else (1.0,)
+    accepted_vector = (accepted_a, 2.0) if fit_b else (accepted_a,)
     problem = OptimizationProblem(
         engine.plan.identity,
         parameterization.identity,
@@ -705,6 +721,98 @@ def test_product_initial_ensemble_is_seeded_accepted_point_jitter() -> None:
         (1.0, 2.0),
         atol=2.0e-4,
     )
+
+
+def test_accepted_point_jitter_preserves_a_valid_exact_zero_lower_bound() -> None:
+    positions = np.asarray(
+        build_accepted_point_ensemble(
+            (0.0,),
+            (0.0,),
+            (1.0,),
+            walkers=16,
+            seed=733,
+        )
+    )
+
+    assert np.all(positions >= 0.0)
+    assert np.all(positions <= 1.0)
+    assert np.any(positions == 0.0)
+    assert not np.any(positions == np.nextafter(0.0, 1.0))
+
+
+def test_mcmc_executes_from_an_accepted_point_on_an_exact_zero_bound() -> None:
+    accepted, problem, parameterization, engine = _native_context(accepted_a=0.0)
+    plan = McmcPlan.for_accepted(
+        accepted,
+        source_problem=problem,
+        parameterization=parameterization,
+        source_engine=engine,
+        policy=resolve_product_mcmc_policy(
+            dimension=2,
+            walkers=8,
+            steps=3,
+            root_seed=612,
+        ),
+        coordinate_units=(
+            ("A", ParameterUnit.DIMENSIONLESS),
+            ("B", ParameterUnit.DIMENSIONLESS),
+        ),
+    )
+
+    operation = execute_mcmc_evidence(accepted, plan)
+
+    assert operation.terminal is McmcOperationTerminal.COMPLETED
+    assert operation.evidence is not None
+    assert any(row[0] == 0.0 for row in plan.initial_ensemble)
+    assert all(
+        np.isfinite(value) for value in operation.evidence.states[0].log_densities
+    )
+
+
+def test_initialization_retries_parameter_resolvable_walkers_without_density() -> None:
+    accepted, plan = _plan_context(maximum_available_a=1.0)
+    assert any(row[0] > 1.0 for row in plan.initial_ensemble)
+
+    operation = execute_mcmc_evidence(accepted, plan)
+
+    assert operation.terminal is McmcOperationTerminal.COMPLETED
+    assert operation.evidence is not None
+    initial_state = operation.evidence.states[0]
+    assert initial_state.positions != plan.initial_ensemble
+    assert all(position[0] <= 1.0 for position in initial_state.positions)
+    assert all(np.isfinite(value) for value in initial_state.log_densities)
+    assert operation.raw_capture is not None
+    attempts = native_mcmc._initialization_attempts_for_positions(
+        plan,
+        initial_state.positions,
+    )
+    assert attempts is not None and sum(attempts) > 0
+    assert operation.raw_capture.objective_request_count == (
+        plan.policy.objective_request_budget + sum(attempts)
+    )
+
+
+def test_initialization_density_retry_exhaustion_is_bounded_and_typed() -> None:
+    accepted, plan = _plan_context(exact_available_a=1.0)
+
+    first = execute_mcmc_evidence(accepted, plan)
+    second = execute_mcmc_evidence(accepted, plan)
+
+    for operation in (first, second):
+        assert operation.terminal is McmcOperationTerminal.FAILED
+        assert isinstance(operation.failure, native_mcmc.McmcInitializationError)
+        assert operation.failure_message == (
+            "MCMC initialization found no parameter-and-density-feasible initial "
+            "point for walker 0 after 64 retries (65 candidates evaluated)"
+        )
+        assert operation.raw_capture is not None
+        assert operation.raw_capture.objective_request_count == (
+            plan.policy.walkers + native_mcmc._MAX_INITIALIZATION_ATTEMPTS
+        )
+        assert operation.raw_capture.evaluation_request_count == (
+            operation.raw_capture.objective_request_count
+        )
+    assert first.failure_message == second.failure_message
 
 
 def test_product_policy_initializes_from_exact_accepted_fit() -> None:
@@ -1594,7 +1702,7 @@ def test_capture_qualification_rejects_validly_encoded_state_corruption(
     state = source.states[1]
     positions = [list(row) for row in state.positions]
     if corruption == "bounds":
-        positions[0][0] = plan.upper_bounds[0]
+        positions[0][0] = float(np.nextafter(plan.upper_bounds[0], np.inf))
         expected_category = "state_outside_frozen_bounds"
     else:
         positions = [row[:-1] for row in positions]
@@ -1687,11 +1795,15 @@ def _plan_context(
     evaluation_observer: Any | None = None,
     evaluation_barrier: Any | None = None,
     fail_outside_pid: int | None = None,
+    maximum_available_a: float | None = None,
+    exact_available_a: float | None = None,
 ) -> tuple[AcceptedFitResult, McmcPlan]:
     accepted, problem, parameterization, engine = _native_context(
         evaluation_observer=evaluation_observer,
         evaluation_barrier=evaluation_barrier,
         fail_outside_pid=fail_outside_pid,
+        maximum_available_a=maximum_available_a,
+        exact_available_a=exact_available_a,
     )
     return accepted, McmcPlan.for_accepted(
         accepted,

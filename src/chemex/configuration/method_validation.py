@@ -25,6 +25,10 @@ from chemex.configuration.method_plan import (
     SourceRef,
     UnaryExpression,
 )
+from chemex.models.kinetic._binding_migration import (
+    binding_rate_migration,
+    legacy_binding_migration_message,
+)
 from chemex.parameters.name import ParamName, matches_parameter_index_selector
 from chemex.parameters.parameterization import (
     ParameterRole,
@@ -175,6 +179,76 @@ def _references(expression: ConstraintExpression) -> Iterator[ParameterSelector]
     elif isinstance(expression, BinaryExpression):
         yield from _references(expression.left)
         yield from _references(expression.right)
+
+
+def _action_selectors(
+    action: FitAction | FixAction | ConstrainAction,
+) -> Iterator[tuple[ParameterSelector, SourceRef]]:
+    if isinstance(action, (FitAction, FixAction)):
+        for selector in action.selectors:
+            yield selector, _source(selector, action.source)
+        return
+    for constraint in action.constraints:
+        yield constraint.target, constraint.source
+        for selector in _references(constraint.expression):
+            yield selector, _source(selector, constraint.source)
+
+
+def _method_selectors(
+    plan: MethodPlan,
+) -> Iterator[tuple[ParameterSelector, SourceRef]]:
+    for step in plan.steps:
+        for action in step.role_actions:
+            yield from _action_selectors(action)
+        search = step.search
+        if isinstance(search, GridSearch):
+            for axis in search.axes:
+                yield axis.selector, _source(axis.selector, axis.source)
+        elif isinstance(search, DeSearch):
+            for coordinate in search.coordinates:
+                yield (
+                    coordinate.selector,
+                    _source(coordinate.selector, coordinate.source),
+                )
+
+
+def _validate_legacy_binding_selectors(
+    plan: MethodPlan,
+    model: SealedParameterModel,
+) -> None:
+    migration = binding_rate_migration(model.model_name)
+    if migration is None:
+        return
+    selectors = tuple(_method_selectors(plan))
+    grouped: dict[str, tuple[ParamName, set[str], SourceRef]] = {}
+    for selector, source in selectors:
+        name = selector.name.upper()
+        if name not in migration.legacy_names | migration.replacement_names:
+            continue
+        parsed = _selector_name(selector)
+        scope = ParamName("", parsed.spin_system, parsed.conditions)
+        _stored_scope, names, _stored_source = grouped.setdefault(
+            scope.id_,
+            (scope, set(), source),
+        )
+        names.add(name)
+    affected = tuple(
+        (scope, names, source)
+        for scope, names, source in grouped.values()
+        if migration.legacy_names & names
+    )
+    if not affected:
+        return
+    messages = tuple(
+        legacy_binding_migration_message(migration, names, scope=scope)
+        for scope, names, _source in affected
+    )
+    source = affected[0][2]
+    first_legacy_name = sorted(migration.legacy_names & affected[0][1])[0]
+    raise MethodFormatError(
+        f"{first_legacy_name} is a derived output. " + "\n".join(messages),
+        source,
+    )
 
 
 def _check_bounds(
@@ -458,6 +532,7 @@ def resolve_de_coordinates(
 
 
 def validate_method_plan(plan: MethodPlan, model: SealedParameterModel) -> None:
+    _validate_legacy_binding_selectors(plan, model)
     baseline = {
         param_id: baseline_parameter_role(declaration)
         for param_id, declaration in model.declarations.items()

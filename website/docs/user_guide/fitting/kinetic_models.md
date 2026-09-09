@@ -18,6 +18,8 @@ The kinetic model (specified with the `-d` or `--model` option) defines the type
 | `3st_eyring_fork`   | Fork B ↔ A ↔ C Eyring model for temperature-dependent studies                   |
 | `4st_eyring`        | 4-state exchange model for temperature-dependent studies                        |
 | `2st_binding`       | 2-state exchange model for ligand binding studies                               |
+| `3st_binding_cs`    | 3-state conformational-selection ligand binding model                           |
+| `3st_binding_if`    | 3-state induced-fit ligand binding model                                         |
 | `4st_hd`            | 4-state exchange model for simultaneous normal and H/D solvent exchange studies |
 
 In these models, each state in the exchange process is represented with a unique
@@ -35,6 +37,116 @@ For any kinetic model, you can add the `.rs` suffix to make the kinetic paramete
 :::note
 For any kinetic model, you can add the `.mf` suffix to create a model that fits model-free parameters directly (e.g., `TAUC_A`, `S2_A`), rather than individual relaxation parameters (e.g., `R1_A`, `R2_A`). For an example, see `CEST_15N_TR/` under `Examples/Experiments/`.
 :::
+
+## Three-State Association Models
+
+The `3st_binding_cs` and `3st_binding_if` models separate equilibrium
+composition from tagged-magnetization exchange speed. In both models,
+`KD_APP` and the equilibrium ratio determine `PA`, `PB`, and `PC`; changing a
+`KEX` or `KOFF` value does not change those populations.
+
+All independent association parameters are scoped by temperature. `KD_APP` is
+in M, `KOFF_*` and `KEX_*` are in s⁻¹, and `KEQ_*` is dimensionless. The upper
+bounds shown below are broad safety defaults rather than scientific priors;
+parameter files can override them using the normal explicit-bound syntax.
+
+### Conformational selection: `3st_binding_cs`
+
+The reaction scheme is
+
+```text
+A ⇌ B
+    B + L ⇌ C
+```
+
+where A is apo conformer 1, B is the apo binding-competent conformer, and C is
+the bound complex. The independent parameters are:
+
+| Parameter | Meaning | Default | Default bounds |
+| --- | --- | ---: | ---: |
+| `KD_APP` | apparent dissociation constant against total unbound protein | `1e-6` M | `(0, 1.0]` M |
+| `KOFF_BC` | tagged B←C dissociation-rate scale | `100.0` s⁻¹ | `[0, 1e6]` s⁻¹ |
+| `KEQ_AB` | apo equilibrium ratio `B / A` | `1.0` | `(0, 1e6]` |
+| `KEX_AB` | total tagged A↔B exchange scale | `200.0` s⁻¹ | `[0, 1e6]` s⁻¹ |
+
+Writing `q = KEQ_AB` and `U = A + B`, the apo distribution is
+`A = U / (1 + q)` and `B = U q / (1 + q)`. The apparent equilibrium definition
+is `KD_APP = U L / C`, so the intrinsic binding constant is
+`KD_BC = KD_APP q / (1 + q)`. Directional conformational rates are
+`KAB = KEX_AB q / (1 + q)` and `KBA = KEX_AB / (1 + q)`. The tagged binding
+edge uses `KCB = KOFF_BC` and detailed balance, `PB KBC = PC KCB`.
+
+`KEX_AB = 0` sets both A↔B tagged rates to zero without changing the apo
+equilibrium. `KOFF_BC = 0` freezes both tagged binding directions without
+changing composition. `L_TOTAL = 0` retains the A/B apo distribution and makes
+the tagged association rate zero. `KD_APP = 0`, `KEQ_AB = 0`, and
+`P_TOTAL = 0` are rejected; exact-zero `KEQ_AB` is incompatible with this
+finite reversible apparent-binding parameterization.
+
+`KAB`, `KBA`, `KD_BC`, `KON_BC`, `C_L`, `KBC`, `KCB`, `PA`, `PB`, and `PC`
+remain public derived outputs. `KD_BC` and `KON_BC` are report-only, so an
+unrepresentable intrinsic value cannot block otherwise finite tagged dynamics.
+When representable, these report-only values are included in normal parameter
+output with propagated deterministic uncertainty when its registered derivative
+qualifies; otherwise the output gives the explicit uncertainty-unavailable reason.
+
+### Induced fit: `3st_binding_if`
+
+The reaction scheme is
+
+```text
+A + L ⇌ B ⇌ C
+```
+
+where A is free protein, B is the first bound complex, and C is the rearranged
+bound complex. The independent parameters are:
+
+| Parameter | Meaning | Default | Default bounds |
+| --- | --- | ---: | ---: |
+| `KD_APP` | apparent dissociation constant against total bound protein | `1e-3` M | `(0, 1.0]` M |
+| `KOFF_AB` | tagged A←B dissociation-rate scale | `100.0` s⁻¹ | `[0, 1e6]` s⁻¹ |
+| `KEQ_BC` | bound-state equilibrium ratio `C / B` | `1.0` | `[0, 1e6]` |
+| `KEX_BC` | total tagged B↔C exchange scale | `200.0` s⁻¹ | `[0, 1e6]` s⁻¹ |
+
+Writing `q = KEQ_BC`, the apparent equilibrium definition is
+`KD_APP = A L / (B + C)`, with `B:C = 1:q`; therefore
+`KD_AB = KD_APP (1 + q)`. Directional conformational rates are
+`KBC = KEX_BC q / (1 + q)` and `KCB = KEX_BC / (1 + q)`. The tagged binding
+edge uses `KBA = KOFF_AB` and detailed balance, `PA KAB = PB KBA`.
+
+`KEX_BC = 0` and `KOFF_AB = 0` freeze their respective tagged edges without
+changing composition. `KEQ_BC = 0` is supported exactly: C has zero equilibrium
+weight, `KBC = 0`, `KCB = KEX_BC`, and `KD_AB = KD_APP`. `L_TOTAL = 0` puts all
+protein in free A and makes the tagged association rate zero. `KD_APP = 0` and
+`P_TOTAL = 0` are rejected.
+
+`KBC`, `KCB`, `KD_AB`, `KON_AB`, `C_L`, `KAB`, `KBA`, `PA`, `PB`, and `PC`
+remain public derived outputs. `KD_AB` and `KON_AB` are report-only, with the same
+representability and uncertainty-reporting policy as `KD_BC` and `KON_BC` above.
+
+### Migrating directional-rate inputs
+
+Directional rates remain available as outputs but can no longer be supplied as
+independent parameter values, Method Plan roles, constraints, or grid targets.
+For `3st_binding_cs`, replace a positive legacy pair using
+`KEQ_AB = KAB / KBA` and `KEX_AB = KAB + KBA`. For `3st_binding_if`, use
+`KEQ_BC = KBC / KCB` and `KEX_BC = KBC + KCB`.
+
+A legacy `(0, 0)` pair determines only `KEX = 0`; its equilibrium ratio is
+ambiguous and must be chosen explicitly. For induced fit, `KBC = 0` with
+`KCB > 0` maps exactly to `KEQ_BC = 0` and `KEX_BC = KCB`. A positive forward
+rate with a zero reverse rate would require an infinite equilibrium ratio and
+cannot be migrated to the finite parameter domain. Conformational selection
+also rejects a legacy `KAB = 0` mapping because `KEQ_AB` must be positive.
+
+The migration diagnostic prints a numerical replacement only when the exact
+positive ratio and sum are representable in binary64. If either result is outside
+that domain, it asks for manual model/parameter reconsideration instead of
+printing a false zero or infinity. A representable replacement can still exceed
+the new broad default upper bound of `1e6`. In that case keep the exact migrated
+value and override the bound explicitly with the normal three-value parameter
+syntax, for example `KEX_BC = [1200000.0, 0.0, 1200000.0]`; for positive CS
+`KEQ_AB`, use a positive lower bound such as `5e-324`.
 
 ## Temperature-Dependent Eyring Models
 

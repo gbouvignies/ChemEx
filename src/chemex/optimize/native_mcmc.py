@@ -55,6 +55,7 @@ _INITIALIZATION_VERSION = "bounded-latin-hypercube-v1"
 _PRODUCT_INITIALIZATION_VERSION = "accepted-point-jitter-v1"
 _PROPOSAL_VERSION = "emcee-stretch-v1"
 _MAX_U64 = (1 << 64) - 1
+_MAX_INITIALIZATION_ATTEMPTS = 64
 _EMCEE_MONITOR_INTEGRATED_TIME = emcee.autocorr.integrated_time
 
 
@@ -178,6 +179,10 @@ class BackendTransitionEvidenceKind(StrEnum):
 
 class McmcExecutionError(RuntimeError):
     """Raised internally when native evaluation cannot produce log density."""
+
+
+class McmcInitializationError(McmcExecutionError):
+    """Raised when bounded retries cannot construct a finite-density ensemble."""
 
 
 class _McmcCancelled(RuntimeError):
@@ -570,12 +575,6 @@ def build_accepted_point_ensemble(
             "Accepted-point MCMC initialization requires a finite accepted vector "
             "inside finite strictly ordered bounds"
         )
-    interior_lower = np.nextafter(lower, upper)
-    interior_upper = np.nextafter(upper, lower)
-    if not np.all(interior_lower < interior_upper):
-        raise McmcConstructionError(
-            "Accepted-point MCMC initialization has no representable open interval"
-        )
     scale = np.maximum.reduce(
         (
             np.abs(center) * 1.0e-4,
@@ -585,10 +584,13 @@ def build_accepted_point_ensemble(
     )
     rng = np.random.Generator(np.random.PCG64(rng_seed))
     positions = center + rng.standard_normal((walker_count, center.size)) * scale
-    positions = np.clip(positions, interior_lower, interior_upper)
-    if not np.all((positions > lower) & (positions < upper)):
+    # Declared parameter bounds are inclusive. In particular, an exact lower-bound
+    # zero is valid for nonnegative parameters; replacing it with the minimum
+    # positive float can create a scientifically unevaluable coupled state.
+    positions = np.clip(positions, lower, upper)
+    if not np.all((positions >= lower) & (positions <= upper)):
         raise McmcConstructionError(
-            "Accepted-point MCMC initialization reached a closed bound"
+            "Accepted-point MCMC initialization exceeded its declared bounds"
         )
     return tuple(tuple(float(value) for value in row) for row in positions)
 
@@ -927,7 +929,7 @@ class McmcAcceptedAnchor:
 
 @dataclass(frozen=True, slots=True)
 class McmcPlan:
-    """One accepted-result MCMC request with all choices frozen pre-run."""
+    """One accepted-result MCMC request with first candidates frozen pre-run."""
 
     accepted: AcceptedFitResult = field(repr=False, compare=False)
     source_problem: OptimizationProblem = field(repr=False, compare=False)
@@ -1132,6 +1134,70 @@ class McmcPlan:
             policy,
             tuple(coordinate_units),
         )
+
+
+def _initialization_candidate(
+    plan: McmcPlan,
+    walker_index: int,
+    attempt: int,
+) -> tuple[float, ...]:
+    """Return one deterministic bounded candidate; attempt zero is the plan seed."""
+    if attempt == 0:
+        return plan.initial_ensemble[walker_index]
+    retry_seed = _derive_seed(
+        plan.policy.initialization_seed,
+        "mcmc-initialization-retry",
+        f"{walker_index}:{attempt}",
+    )
+    if plan.policy.initialization is InitializationKind.ACCEPTED_POINT_JITTER:
+        return build_accepted_point_ensemble(
+            plan.accepted.vector,
+            plan.lower_bounds,
+            plan.upper_bounds,
+            walkers=1,
+            seed=retry_seed,
+        )[0]
+    return build_bounded_latin_hypercube(
+        plan.lower_bounds,
+        plan.upper_bounds,
+        walkers=1,
+        seed=retry_seed,
+    )[0]
+
+
+def _initialization_attempts_for_positions(
+    plan: McmcPlan,
+    positions: tuple[tuple[float, ...], ...],
+) -> tuple[int, ...] | None:
+    """Recover each deterministic retry ordinal from an initialized ensemble."""
+    if len(positions) != plan.policy.walkers:
+        return None
+    attempts: list[int] = []
+    for walker_index, position in enumerate(positions):
+        for attempt in range(_MAX_INITIALIZATION_ATTEMPTS + 1):
+            if position == _initialization_candidate(plan, walker_index, attempt):
+                attempts.append(attempt)
+                break
+        else:
+            return None
+    return tuple(attempts)
+
+
+def _maximum_objective_request_count(plan: McmcPlan) -> int:
+    return (
+        plan.policy.objective_request_budget
+        + plan.policy.walkers * _MAX_INITIALIZATION_ATTEMPTS
+    )
+
+
+def _completed_objective_request_count(
+    plan: McmcPlan,
+    initial_positions: tuple[tuple[float, ...], ...],
+) -> int | None:
+    attempts = _initialization_attempts_for_positions(plan, initial_positions)
+    if attempts is None:
+        return None
+    return plan.policy.objective_request_budget + sum(attempts)
 
 
 def _finite_state_scalar(value: object, *, name: str) -> float:
@@ -1918,9 +1984,13 @@ class McmcEvidence:
             raise McmcConstructionError(
                 "MCMC evidence must preserve a contiguous prefix of complete states"
             )
-        if states[0].positions != self.plan.initial_ensemble:
+        expected_requests = _completed_objective_request_count(
+            self.plan,
+            states[0].positions,
+        )
+        if expected_requests is None:
             raise McmcConstructionError(
-                "MCMC evidence initial state differs from its frozen plan"
+                "MCMC evidence initial state is not a deterministic plan candidate"
             )
         for state in states:
             if len(state.positions) != self.plan.policy.walkers or any(
@@ -1948,9 +2018,14 @@ class McmcEvidence:
             )
         if (
             self.objective_request_count < len(states[0].positions)
-            or self.objective_request_count > self.plan.policy.objective_request_budget
+            or self.objective_request_count
+            > _maximum_objective_request_count(self.plan)
             or self.evaluation_request_count < 0
             or self.evaluation_request_count > self.objective_request_count
+            or (
+                self.lifecycle is McmcEvidenceLifecycle.COMPLETED
+                and self.objective_request_count != expected_requests
+            )
         ):
             raise McmcConstructionError("MCMC request accounting is inconsistent")
         if self.backend_transition_evidence is not None:
@@ -2296,13 +2371,8 @@ def validate_raw_mcmc_capture(  # noqa: C901 - state/walker validation boundary
             None,
         )
     if (
-        raw_capture.objective_request_count > plan.policy.objective_request_budget
+        raw_capture.objective_request_count > _maximum_objective_request_count(plan)
         or raw_capture.evaluation_request_count > raw_capture.objective_request_count
-        or (
-            raw_capture.terminal is McmcOperationTerminal.COMPLETED
-            and raw_capture.objective_request_count
-            != plan.policy.objective_request_budget
-        )
     ):
         return McmcChainValidation(
             raw_capture.identity,
@@ -2339,18 +2409,37 @@ def validate_raw_mcmc_capture(  # noqa: C901 - state/walker validation boundary
                 )
             )
             break
-        if state.ordinal == 0 and state.positions != plan.initial_ensemble:
-            failures.append(
-                McmcValidationFailure(
-                    0,
-                    0,
-                    "initial_ensemble_mismatch",
-                    "raw MCMC initial state differs from its frozen construction",
-                )
+        if state.ordinal == 0:
+            expected_requests = _completed_objective_request_count(
+                plan,
+                state.positions,
             )
-            break
+            if expected_requests is None:
+                failures.append(
+                    McmcValidationFailure(
+                        0,
+                        0,
+                        "initial_ensemble_mismatch",
+                        "raw MCMC initial state is not a deterministic plan candidate",
+                    )
+                )
+                break
+            if (
+                raw_capture.terminal is McmcOperationTerminal.COMPLETED
+                and raw_capture.objective_request_count != expected_requests
+            ):
+                failures.append(
+                    McmcValidationFailure(
+                        0,
+                        0,
+                        "request_accounting_mismatch",
+                        "raw MCMC request accounting differs from its initialized "
+                        "ensemble",
+                    )
+                )
+                break
         positions = np.asarray(state.positions, dtype=np.float64)
-        outside = np.any((positions <= lower) | (positions >= upper), axis=1)
+        outside = np.any((positions < lower) | (positions > upper), axis=1)
         if np.any(outside):
             walker = int(np.flatnonzero(outside)[0])
             failures.append(
@@ -3736,8 +3825,8 @@ class _LogDensityKernel:
         if (
             candidate.shape != (self._context.dimension,)
             or not np.all(np.isfinite(candidate))
-            or np.any(candidate <= np.asarray(self._context.lower_bounds))
-            or np.any(candidate >= np.asarray(self._context.upper_bounds))
+            or np.any(candidate < np.asarray(self._context.lower_bounds))
+            or np.any(candidate > np.asarray(self._context.upper_bounds))
         ):
             return _LogDensityResult(-np.inf, False)
         try:
@@ -3771,6 +3860,15 @@ class _LogDensityKernel:
             -0.5 * canonical_chi_square(outcome.residuals),
             True,
         )
+
+
+@dataclass(frozen=True, slots=True)
+class _InitializedEnsemble:
+    """Finite native densities and the exact deterministic candidates that own them."""
+
+    positions: tuple[tuple[float, ...], ...]
+    log_densities: tuple[float, ...]
+    attempts: tuple[int, ...]
 
 
 class _LogDensityAccounting:
@@ -3808,6 +3906,9 @@ class _SerialLogDensityEvaluator:
             raise
         self._accounting.record_evaluations(int(result.evaluated))
         return result.value
+
+    def evaluate_many(self, vectors: Iterable[Array]) -> list[float]:
+        return [self(vector) for vector in vectors]
 
 
 @dataclass(frozen=True, slots=True)
@@ -3925,6 +4026,43 @@ class _McmcProcessPool:
                 )
         return [receipt.result.value for receipt in receipts if receipt.result]
 
+    def evaluate_many(self, vectors: Iterable[Array]) -> list[float]:
+        return self.map(_process_log_density, vectors)
+
+
+def _initialize_finite_density_walkers(
+    plan: McmcPlan,
+    evaluator: _SerialLogDensityEvaluator | _McmcProcessPool,
+) -> _InitializedEnsemble:
+    """Accept only bounded, resolvable walkers with finite native log density."""
+    positions = list(plan.initial_ensemble)
+    log_densities = evaluator.evaluate_many(np.asarray(positions, dtype=np.float64))
+    attempts = [0] * plan.policy.walkers
+    for walker_index, value in enumerate(log_densities):
+        if math.isfinite(value):
+            continue
+        for attempt in range(1, _MAX_INITIALIZATION_ATTEMPTS + 1):
+            candidate = _initialization_candidate(plan, walker_index, attempt)
+            [candidate_density] = evaluator.evaluate_many((np.asarray(candidate),))
+            if math.isfinite(candidate_density):
+                positions[walker_index] = candidate
+                log_densities[walker_index] = candidate_density
+                attempts[walker_index] = attempt
+                break
+        else:
+            candidate_count = _MAX_INITIALIZATION_ATTEMPTS + 1
+            raise McmcInitializationError(
+                "MCMC initialization found no parameter-and-density-feasible "
+                f"initial point for walker {walker_index} after "
+                f"{_MAX_INITIALIZATION_ATTEMPTS} retries "
+                f"({candidate_count} candidates evaluated)"
+            )
+    return _InitializedEnsemble(
+        positions=tuple(positions),
+        log_densities=tuple(log_densities),
+        attempts=tuple(attempts),
+    )
+
 
 class _RecordingStretchMove(emcee.moves.StretchMove):
     """Capture the backend's exact per-transition acceptance mask."""
@@ -3970,7 +4108,7 @@ def execute_mcmc_evidence(  # noqa: C901 - checkpointed lifecycle boundary
     plan.validate_integrity(accepted)
     signal = CancellationToken() if cancellation is None else cancellation
     worker_context = _McmcWorkerContext.from_plan(plan)
-    accounting = _LogDensityAccounting(plan.policy.objective_request_budget)
+    accounting = _LogDensityAccounting(_maximum_objective_request_count(plan))
     backend_observation = _mint_backend_execution_observation(
         plan,
         backend_implementation_identity="emcee-stretch-backend-v1",
@@ -4013,24 +4151,27 @@ def execute_mcmc_evidence(  # noqa: C901 - checkpointed lifecycle boundary
                 if execution_settings.is_parallel
                 else None
             )
-            log_density = (
-                _SerialLogDensityEvaluator(worker_context, accounting)
-                if pool is None
-                else _process_log_density
-            )
-            checkpoint(McmcExecutionStage.BEFORE_INITIALIZATION)
-            initial = np.asarray(plan.initial_ensemble, dtype=np.float64)
-            checkpoint(McmcExecutionStage.INITIALIZING)
-            initial_values = (
-                [log_density(row) for row in initial]
-                if pool is None
-                else pool.map(_process_log_density, initial)
-            )
-            initial_log_density = np.asarray(initial_values, dtype=np.float64)
-            if not np.all(np.isfinite(initial_log_density)):
-                raise McmcExecutionError(
-                    "MCMC initial ensemble has unavailable native log density"
+            if pool is None:
+                serial_evaluator = _SerialLogDensityEvaluator(
+                    worker_context,
+                    accounting,
                 )
+                density_evaluator = serial_evaluator
+                log_density = serial_evaluator
+            else:
+                density_evaluator = pool
+                log_density = _process_log_density
+            checkpoint(McmcExecutionStage.BEFORE_INITIALIZATION)
+            checkpoint(McmcExecutionStage.INITIALIZING)
+            initialized = _initialize_finite_density_walkers(
+                plan,
+                density_evaluator,
+            )
+            initial = np.asarray(initialized.positions, dtype=np.float64)
+            initial_log_density = np.asarray(
+                initialized.log_densities,
+                dtype=np.float64,
+            )
             initialization_outcome = McmcInitializationOutcome.COMPLETED
             states.append(_ensemble_state(0, initial, initial_log_density))
             checkpoint(McmcExecutionStage.AFTER_INITIALIZATION)
@@ -4077,7 +4218,10 @@ def execute_mcmc_evidence(  # noqa: C901 - checkpointed lifecycle boundary
                 if state_observer is not None:
                     state_observer(state)
                 checkpoint(McmcExecutionStage.AFTER_COMPLETE_STATE)
-        if accounting.objective_request_count != plan.policy.objective_request_budget:
+        expected_objective_requests = plan.policy.objective_request_budget + sum(
+            initialized.attempts
+        )
+        if accounting.objective_request_count != expected_objective_requests:
             raise McmcExecutionError(
                 "MCMC backend request count differs from the frozen budget"
             )

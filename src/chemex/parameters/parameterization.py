@@ -910,6 +910,21 @@ class ActiveParameterization:
 
 
 @dataclass(frozen=True, slots=True)
+class ReportableParameterSet:
+    """The finite derived values selected once for uncertainty and output."""
+
+    parameterization: ActiveParameterization
+    values: ResolvedParameterValues
+    report_only_ids: tuple[str, ...]
+
+    @property
+    def report_only_values(self) -> Mapping[str, float]:
+        return MappingProxyType(
+            {param_id: self.values[param_id] for param_id in self.report_only_ids}
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class _RoleRule:
     role: ParameterRole
     selector: str
@@ -1924,6 +1939,124 @@ def compile_active_parameterization_from_actions(
         rules,
         required_ids,
         require_active_rule_matches=False,
+    )
+
+
+def extend_parameterization_for_report_only_outputs(
+    parameter_model: SealedParameterModel,
+    snapshot: AnalysisValuesSnapshot,
+    parameterization: ActiveParameterization,
+    report_only_ids: Sequence[str],
+) -> ActiveParameterization:
+    """Add finite model-owned report constraints without changing fit roles."""
+    requested = tuple(dict.fromkeys(report_only_ids))
+    if not requested:
+        return ActiveParameterization(
+            parameterization.program,
+            parameterization.binder,
+            snapshot.occurrence_identity,
+            snapshot.revision,
+            tuple(
+                (param_id, parameterization.role(param_id))
+                for param_id in parameterization.scope_ids
+            ),
+        )
+    if (
+        parameterization.program.parameter_model_identity != parameter_model.identity
+        or snapshot.model_identity != parameter_model.model_identity
+        or snapshot.definitions_identity != parameter_model.definitions.identity
+        or snapshot.configuration_identity != parameter_model.configuration.identity
+    ):
+        raise IncompatibleParameterizationInputError(
+            "Report outputs do not belong to the active parameter model"
+        )
+
+    active = set(parameterization.scope_ids)
+    constraints = {
+        constraint.target_id: constraint
+        for constraint in parameterization.program.constraints
+    }
+    for param_id in requested:
+        declaration = parameter_model.declarations[param_id]
+        if not declaration.report_only or not declaration.model_expression:
+            raise ParameterizationError(
+                "Report extension accepts only model-owned report-only derivations",
+                param_id=param_id,
+            )
+        expression = _parse_expression(
+            declaration.model_expression,
+            definitions=parameter_model.definitions,
+            binder=parameterization.binder,
+            target_id=param_id,
+            model_owned=True,
+        )
+        dependencies = _dependencies(expression)
+        missing = set(dependencies) - active
+        if missing:
+            raise IncompleteParameterDependenciesError(
+                "Report-only derivation depends on the inactive parameter scope",
+                target_id=param_id,
+                param_ids=tuple(sorted(missing)),
+            )
+        constraints[param_id] = CompiledConstraint(
+            param_id,
+            expression,
+            dependencies,
+            "model",
+            declaration.model_expression,
+        )
+        active.add(param_id)
+
+    definition_order = {
+        definition.param_id: position
+        for position, definition in enumerate(parameter_model.definitions)
+    }
+    scope_ids = tuple(
+        definition.param_id
+        for definition in parameter_model.definitions
+        if definition.param_id in active
+    )
+    roles = tuple(
+        (
+            param_id,
+            ParameterRole.DERIVED
+            if param_id in requested
+            else parameterization.role(param_id),
+        )
+        for param_id in scope_ids
+    )
+    independent_ids = tuple(
+        param_id
+        for param_id, role in roles
+        if role in (ParameterRole.FIT, ParameterRole.FIX)
+    )
+    derived_ids = tuple(
+        param_id for param_id, role in roles if role is ParameterRole.DERIVED
+    )
+    evaluation_order = _topological_order(
+        derived_ids,
+        constraints,
+        definition_order,
+    )
+    program = ConstraintProgram(
+        parameter_model_identity=parameter_model.identity,
+        model_identity=parameter_model.model_identity,
+        definitions_identity=snapshot.definitions_identity,
+        configuration_identity=snapshot.configuration_identity,
+        function_binder_identity=parameterization.binder.identity,
+        scope_ids=scope_ids,
+        independent_ids=independent_ids,
+        derived_ids=derived_ids,
+        constraints=tuple(constraints[param_id] for param_id in derived_ids),
+        evaluation_order=evaluation_order,
+        relaxation_domains=parameterization.program.relaxation_domains,
+    )
+    return ActiveParameterization(
+        program,
+        parameterization.binder,
+        snapshot.occurrence_identity,
+        snapshot.revision,
+        roles,
     )
 
 
