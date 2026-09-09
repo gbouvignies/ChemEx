@@ -77,6 +77,8 @@ def test_approved_kinetic_family_domains_apply_only_to_independent_settings() ->
         "2st_binding",
         "3st_double_binding",
         "3st_binding_partner_2st",
+        "3st_binding_cs",
+        "3st_binding_if",
         "4st_binding_partner_2st",
         "4st_binding_3_bound_states",
     }
@@ -89,7 +91,11 @@ def test_approved_kinetic_family_domains_apply_only_to_independent_settings() ->
                 continue
             if local_name in direct_rates:
                 expected = (0.0, 1.0e6)
-            elif local_name in approved_equilibria:
+            elif model_name == "3st_binding_cs" and local_name == "keq_ab":
+                expected = (math.nextafter(0.0, 1.0), 1.0e6)
+            elif (
+                model_name == "3st_binding_if" and local_name == "keq_bc"
+            ) or local_name in approved_equilibria:
                 expected = expected_domains["keq"]
             elif (
                 model_name in oligomerization_models | strict_binding_models
@@ -231,10 +237,20 @@ def test_approved_standard_spin_family_domains(extension: str) -> None:
             "3st_binding_cs",
             "",
             {
-                "KAB": (0.0, 1.0e6),
-                "KBA": (0.0, 1.0e6),
+                "KEQ_AB": (math.nextafter(0.0, 1.0), 1.0e6),
+                "KEX_AB": (0.0, 1.0e6),
                 "KOFF_BC": (0.0, 1.0e6),
-                "KD_APP": (0.0, 1.0),
+                "KD_APP": (math.nextafter(0.0, 1.0), 1.0),
+            },
+        ),
+        (
+            "3st_binding_if",
+            "",
+            {
+                "KEQ_BC": (0.0, 1.0e6),
+                "KEX_BC": (0.0, 1.0e6),
+                "KOFF_AB": (0.0, 1.0e6),
+                "KD_APP": (math.nextafter(0.0, 1.0), 1.0),
             },
         ),
     ),

@@ -2277,6 +2277,9 @@ class ConstraintJacobianEvidence:
     source_capabilities: CompiledConstraintLinearizationCapabilities = field(
         repr=False, compare=False, metadata={"record": False}, kw_only=True
     )
+    source_values: Mapping[str, float] = field(
+        repr=False, compare=False, metadata={"record": False}, kw_only=True
+    )
     identity: str = field(init=False)
 
     def __post_init__(self) -> None:
@@ -2299,8 +2302,6 @@ class ConstraintJacobianEvidence:
             self.accepted_evaluation_identity
             != self.accepted_anchor.evaluation_result.identity
             or self.problem_identity != self.accepted_anchor.problem_identity
-            or self.parameterization_identity
-            != self.accepted_anchor.parameterization_identity
             or self.controlled_ids != self.accepted_anchor.controlled_ids
             or len(set(self.output_ids)) != len(self.output_ids)
             or len(self.output_units) != len(self.output_ids)
@@ -2331,6 +2332,7 @@ class ConstraintJacobianEvidence:
             self.source_capabilities,
             self.output_ids,
             None,
+            self.source_values,
         )
         if (
             failure is not None
@@ -2576,6 +2578,12 @@ class UncertaintyEvidence:
     source_capabilities: CompiledConstraintLinearizationCapabilities = field(
         repr=False, compare=False, metadata={"record": False}, kw_only=True
     )
+    source_constraint_parameterization: ActiveParameterization = field(
+        repr=False, compare=False, metadata={"record": False}, kw_only=True
+    )
+    source_constraint_values: Mapping[str, float] = field(
+        repr=False, compare=False, metadata={"record": False}, kw_only=True
+    )
     identity: str = field(init=False)
 
     def __post_init__(self) -> None:  # noqa: C901 - complete bundle integrity chain
@@ -2591,6 +2599,7 @@ class UncertaintyEvidence:
                 self.accepted_anchor.occurrence_identity,
                 self.source_problem.identity,
                 self.source_parameterization.identity,
+                self.source_constraint_parameterization.identity,
                 self.source_engine.plan.identity,
                 self.source_policy.identity,
                 self.requested_output_scope,
@@ -2603,6 +2612,10 @@ class UncertaintyEvidence:
             self.request_identity != expected_request
             or self.policy_identity != self.source_policy.identity
             or self.source_capabilities.output_scope != self.requested_output_scope
+            or self.source_capabilities.parameterization_identity
+            != self.source_constraint_parameterization.identity
+            or self.source_capabilities.constraint_program_identity
+            != self.source_constraint_parameterization.program.fingerprint
             or len(self.requested_output_units) != len(self.requested_output_scope)
             or len(self.requested_output_scales) != len(self.requested_output_scope)
         ):
@@ -6517,6 +6530,7 @@ def _constraint_rows(
     compiled_capabilities: CompiledConstraintLinearizationCapabilities,
     output_scope: tuple[str, ...],
     cancellation_probe: Callable[[], OperationTerminal | None] | None,
+    resolved_values: Mapping[str, float] | None = None,
 ) -> tuple[
     tuple[tuple[float, ...], ...] | None,
     tuple[tuple[str, ...], ...] | None,
@@ -6528,7 +6542,11 @@ def _constraint_rows(
         constraint.target_id: constraint
         for constraint in parameterization.program.constraints
     }
-    resolved = accepted.evaluation_result.resolved_values
+    resolved = (
+        accepted.evaluation_result.resolved_values
+        if resolved_values is None
+        else resolved_values
+    )
     rows: list[tuple[float, ...]] = []
     dependencies: list[tuple[str, ...]] = []
     diagnostics: dict[str, FunctionPartialDiagnostic] = {}
@@ -6626,6 +6644,7 @@ def _linearize_constraints(
     output_scales: tuple[float, ...],
     request_identity: str,
     cancellation_probe: Callable[[], OperationTerminal | None] | None,
+    constraint_values: Mapping[str, float],
 ) -> tuple[ConstraintJacobianEvidence | None, EvidenceFailure | None]:
     if not output_scope:
         return None, None
@@ -6644,6 +6663,7 @@ def _linearize_constraints(
         compiled_capabilities,
         output_scope,
         cancellation_probe,
+        constraint_values,
     )
     if (
         row_failure is not None
@@ -6684,6 +6704,7 @@ def _linearize_constraints(
             source_parameterization=parameterization,
             source_policy=policy,
             source_capabilities=compiled_capabilities,
+            source_values=constraint_values,
         ),
         None,
     )
@@ -7284,6 +7305,7 @@ def _derive_constraint_branch(  # noqa: C901 - ordered cancellation phase ledger
     covariance: CovarianceEvidence | None,
     resolved_environment_identity: str,
     cancellation_probe: Callable[[], OperationTerminal | None] | None,
+    constraint_values: Mapping[str, float],
 ) -> _ConstraintBranch:
     if not output_scope:
         return _ConstraintBranch((), (), None, None, None, None)
@@ -7317,6 +7339,7 @@ def _derive_constraint_branch(  # noqa: C901 - ordered cancellation phase ledger
             output_scales=output_scales,
             request_identity=constraint_request,
             cancellation_probe=cancellation_probe,
+            constraint_values=constraint_values,
         )
     except DerivationTermination as termination:
         constraint_terminal = termination.terminal
@@ -7518,6 +7541,8 @@ def derive_uncertainty_evidence(  # noqa: C901 - fail-closed phase orchestration
     compiled_constraint_linearization: (
         CompiledConstraintLinearizationCapabilities | None
     ) = None,
+    constraint_parameterization: ActiveParameterization | None = None,
+    constraint_values: Mapping[str, float] | None = None,
     cancellation_probe: Callable[[], OperationTerminal | None] | None = None,
     resolved_environment_identity: str,
 ) -> UncertaintyEvidence:
@@ -7532,9 +7557,19 @@ def derive_uncertainty_evidence(  # noqa: C901 - fail-closed phase orchestration
             "occurrence"
         )
     output_scope = tuple(constrained_scope)
+    output_parameterization = (
+        parameterization
+        if constraint_parameterization is None
+        else constraint_parameterization
+    )
+    output_values = (
+        accepted.evaluation_result.resolved_values
+        if constraint_values is None
+        else constraint_values
+    )
     compiled_capabilities = (
         compile_constraint_linearization_capabilities(
-            parameterization,
+            output_parameterization,
             (),
             (),
         )
@@ -7542,9 +7577,10 @@ def derive_uncertainty_evidence(  # noqa: C901 - fail-closed phase orchestration
         else compiled_constraint_linearization
     )
     if compiled_capabilities is None or (
-        compiled_capabilities.parameterization_identity != parameterization.identity
+        compiled_capabilities.parameterization_identity
+        != output_parameterization.identity
         or compiled_capabilities.constraint_program_identity
-        != parameterization.program.fingerprint
+        != output_parameterization.program.fingerprint
         or compiled_capabilities.output_scope != output_scope
     ):
         raise UncertaintyConstructionError(
@@ -7576,6 +7612,7 @@ def derive_uncertainty_evidence(  # noqa: C901 - fail-closed phase orchestration
             accepted.occurrence_identity,
             problem.identity,
             parameterization.identity,
+            output_parameterization.identity,
             engine.plan.identity,
             policy.identity,
             output_scope,
@@ -7625,6 +7662,8 @@ def derive_uncertainty_evidence(  # noqa: C901 - fail-closed phase orchestration
             source_engine=engine,
             source_policy=policy,
             source_capabilities=compiled_capabilities,
+            source_constraint_parameterization=output_parameterization,
+            source_constraint_values=output_values,
         )
 
     initial_terminal = _cancellation_terminal(cancellation_probe)
@@ -7716,7 +7755,7 @@ def derive_uncertainty_evidence(  # noqa: C901 - fail-closed phase orchestration
     constraint_branch = _derive_constraint_branch(
         accepted,
         problem=problem,
-        parameterization=parameterization,
+        parameterization=output_parameterization,
         policy=policy,
         compiled_capabilities=compiled_capabilities,
         request_identity=request_identity,
@@ -7726,6 +7765,7 @@ def derive_uncertainty_evidence(  # noqa: C901 - fail-closed phase orchestration
         covariance=covariance_branch.covariance,
         resolved_environment_identity=resolved_environment_identity,
         cancellation_probe=cancellation_probe,
+        constraint_values=output_values,
     )
 
     combined_operations = covariance_branch.operations + constraint_branch.operations

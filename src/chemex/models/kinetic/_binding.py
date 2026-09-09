@@ -24,10 +24,12 @@ class BindingEquilibrium:
     protein_free: float
     ligand_free: float
     bound_total: float
+    free_proteins: tuple[float, ...]
     free_ligands: tuple[float, ...]
     complexes: tuple[float, ...]
     populations: tuple[float, ...]
     log_populations: tuple[float, ...]
+    free_protein_log_fractions: tuple[float, ...]
     free_ligand_log_fractions: tuple[float, ...]
     complex_log_fractions: tuple[float, ...]
     edge_log_ratios: tuple[float, ...]
@@ -141,6 +143,15 @@ def log_equilibrium_ratio(ratio: float) -> float:
     return -math.inf if ratio == 0.0 else math.log(ratio)
 
 
+def report_only_positive_log_value(log_value: float) -> float:
+    """Return a positive report value or a non-finite typed-value sentinel."""
+    if math.isnan(log_value) or log_value < _LOG_MIN_POSITIVE_FLOAT:
+        return math.nan
+    if log_value > _LOG_MAX_FLOAT:
+        return math.inf
+    return math.exp(log_value)
+
+
 def _logsumexp(values: tuple[float, ...]) -> float:
     maximum = max(values)
     if maximum == -math.inf:
@@ -213,8 +224,15 @@ def _distribute(total: float, fractions: tuple[float, ...]) -> tuple[float, ...]
     correction = total - math.fsum(concentrations)
     largest = max(range(len(concentrations)), key=concentrations.__getitem__)
     concentrations[largest] += correction
+    # A subnormal macro pool may be representable even when none of its exact
+    # species shares are.  Preserve the pool mass in one concrete value while
+    # the accompanying log fractions retain the equilibrium composition.
+    correction_tolerance = max(
+        _BALANCE_TOLERANCE * total,
+        len(fractions) * MIN_POSITIVE_FLOAT,
+    )
     if (
-        abs(correction) > _BALANCE_TOLERANCE * total
+        abs(correction) > correction_tolerance
         or concentrations[largest] < 0.0
         or not math.isfinite(concentrations[largest])
     ):
@@ -319,6 +337,7 @@ def _validate_concentration_domain(equilibrium: BindingEquilibrium) -> None:
         equilibrium.protein_free,
         equilibrium.ligand_free,
         equilibrium.bound_total,
+        *equilibrium.free_proteins,
         *equilibrium.free_ligands,
         *equilibrium.complexes,
         *equilibrium.populations,
@@ -349,16 +368,25 @@ def _validate_mass_balance(
     ):
         msg = "Binding equilibrium violated ligand mass conservation"
         raise RuntimeError(msg)
-    if not math.isclose(
-        math.fsum(equilibrium.free_ligands),
-        equilibrium.ligand_free,
-        rel_tol=_BALANCE_TOLERANCE,
-        abs_tol=MIN_POSITIVE_FLOAT,
-    ) or not math.isclose(
-        math.fsum(equilibrium.complexes),
-        equilibrium.bound_total,
-        rel_tol=_BALANCE_TOLERANCE,
-        abs_tol=MIN_POSITIVE_FLOAT,
+    if (
+        not math.isclose(
+            math.fsum(equilibrium.free_proteins),
+            equilibrium.protein_free,
+            rel_tol=_BALANCE_TOLERANCE,
+            abs_tol=MIN_POSITIVE_FLOAT,
+        )
+        or not math.isclose(
+            math.fsum(equilibrium.free_ligands),
+            equilibrium.ligand_free,
+            rel_tol=_BALANCE_TOLERANCE,
+            abs_tol=MIN_POSITIVE_FLOAT,
+        )
+        or not math.isclose(
+            math.fsum(equilibrium.complexes),
+            equilibrium.bound_total,
+            rel_tol=_BALANCE_TOLERANCE,
+            abs_tol=MIN_POSITIVE_FLOAT,
+        )
     ):
         msg = "Binding equilibrium species do not conserve their pools"
         raise RuntimeError(msg)
@@ -396,7 +424,7 @@ def _validate_populations(
         msg = "Binding equilibrium populations do not match their log authority"
         raise RuntimeError(msg)
     log_p_total = math.log(p_total)
-    species = (equilibrium.protein_free, *equilibrium.complexes)
+    species = (*equilibrium.free_proteins, *equilibrium.complexes)
     for concentration, log_population in zip(
         species,
         equilibrium.log_populations,
@@ -452,20 +480,30 @@ def _validate_species_distribution(
 
 def _validate_equilibrium(
     equilibrium: BindingEquilibrium,
-    p_total: float,
-    l_total: float,
+    *,
+    protein_total: float,
+    ligand_total: float,
     log_protein_free: float,
     log_ligand_free: float,
     log_bound: float,
+    free_protein_log_weights: tuple[float, ...],
     free_ligand_log_weights: tuple[float, ...],
     complex_log_weights: tuple[float, ...],
+    free_protein_fractions: tuple[float, ...],
     free_ligand_fractions: tuple[float, ...],
     complex_fractions: tuple[float, ...],
 ) -> None:
     _validate_concentration_domain(equilibrium)
-    _validate_mass_balance(equilibrium, p_total, l_total)
-    _validate_populations(equilibrium, p_total)
-    if l_total > 0.0:
+    _validate_mass_balance(equilibrium, protein_total, ligand_total)
+    _validate_populations(equilibrium, protein_total)
+    _validate_species_distribution(
+        equilibrium.free_proteins,
+        equilibrium.protein_free,
+        free_protein_log_weights,
+        free_protein_fractions,
+        description="free-protein species",
+    )
+    if ligand_total > 0.0:
         log_residual = (
             log_protein_free + log_ligand_free - log_bound - equilibrium.log_apparent_kd
         )
@@ -500,54 +538,56 @@ def solve_binding_equilibrium(
     p_total: float,
     l_total: float,
     *,
+    free_protein_log_weights: tuple[float, ...] = (0.0,),
     free_ligand_log_weights: tuple[float, ...],
     complex_log_weights: tuple[float, ...],
     edge_log_ratios: tuple[float, ...] = (),
 ) -> BindingEquilibrium:
     """Solve one finite ligand pool and distribute its free and bound species."""
     validate_binding_totals(p_total, l_total)
+    _validate_log_weights(free_protein_log_weights, description="free-protein")
     _validate_log_weights(free_ligand_log_weights, description="free-ligand")
     _validate_log_weights(complex_log_weights, description="complex")
     if any(math.isnan(ratio) or ratio == math.inf for ratio in edge_log_ratios):
         msg = "Binding edge equilibrium ratios must be finite or exact-zero"
         raise ValueError(msg)
 
+    protein_fractions = _normalized_weights(free_protein_log_weights)
     free_fractions = _normalized_weights(free_ligand_log_weights)
     complex_fractions = _normalized_weights(complex_log_weights)
+    protein_log_fractions = _normalized_log_weights(free_protein_log_weights)
     free_log_fractions = _normalized_log_weights(free_ligand_log_weights)
     complex_log_fractions = _normalized_log_weights(complex_log_weights)
+    log_protein_weight = _logsumexp(free_protein_log_weights)
     log_free_weight = _logsumexp(free_ligand_log_weights)
     log_complex_weight = _logsumexp(complex_log_weights)
-    log_apparent_kd = log_free_weight - log_complex_weight
+    log_apparent_kd = log_protein_weight + log_free_weight - log_complex_weight
 
     if l_total == 0.0:
-        return BindingEquilibrium(
-            protein_free=p_total,
-            ligand_free=0.0,
-            bound_total=0.0,
-            free_ligands=tuple(0.0 for _ in free_fractions),
-            complexes=tuple(0.0 for _ in complex_fractions),
-            populations=(1.0, *(0.0 for _ in complex_fractions)),
-            log_populations=(0.0, *(-math.inf for _ in complex_fractions)),
-            free_ligand_log_fractions=free_log_fractions,
-            complex_log_fractions=complex_log_fractions,
-            edge_log_ratios=edge_log_ratios,
-            log_apparent_kd=log_apparent_kd,
-        )
-
-    (
-        protein_free,
-        ligand_free,
-        bound_total,
-        log_protein_free,
-        log_ligand_free,
-        log_bound,
-    ) = _finite_pool_totals(p_total, l_total, log_apparent_kd)
+        protein_free = p_total
+        ligand_free = bound_total = 0.0
+        log_protein_free = math.log(p_total)
+        log_ligand_free = log_bound = -math.inf
+    else:
+        (
+            protein_free,
+            ligand_free,
+            bound_total,
+            log_protein_free,
+            log_ligand_free,
+            log_bound,
+        ) = _finite_pool_totals(p_total, l_total, log_apparent_kd)
+    free_proteins = _distribute(protein_free, protein_fractions)
     free_ligands = _distribute(ligand_free, free_fractions)
     complexes = _distribute(bound_total, complex_fractions)
     log_p_total = math.log(p_total)
     raw_log_populations = (
-        log_protein_free - log_p_total,
+        *(
+            -math.inf
+            if log_weight == -math.inf
+            else log_protein_free + log_weight - log_protein_weight - log_p_total
+            for log_weight in free_protein_log_weights
+        ),
         *(
             -math.inf
             if log_weight == -math.inf
@@ -567,10 +607,12 @@ def solve_binding_equilibrium(
         protein_free=protein_free,
         ligand_free=ligand_free,
         bound_total=bound_total,
+        free_proteins=free_proteins,
         free_ligands=free_ligands,
         complexes=complexes,
         populations=populations,
         log_populations=log_populations,
+        free_protein_log_fractions=protein_log_fractions,
         free_ligand_log_fractions=free_log_fractions,
         complex_log_fractions=complex_log_fractions,
         edge_log_ratios=edge_log_ratios,
@@ -578,14 +620,16 @@ def solve_binding_equilibrium(
     )
     _validate_equilibrium(
         equilibrium,
-        p_total,
-        l_total,
-        log_protein_free,
-        log_ligand_free,
-        log_bound,
-        free_ligand_log_weights,
-        complex_log_weights,
-        free_fractions,
-        complex_fractions,
+        protein_total=p_total,
+        ligand_total=l_total,
+        log_protein_free=log_protein_free,
+        log_ligand_free=log_ligand_free,
+        log_bound=log_bound,
+        free_protein_log_weights=free_protein_log_weights,
+        free_ligand_log_weights=free_ligand_log_weights,
+        complex_log_weights=complex_log_weights,
+        free_protein_fractions=protein_fractions,
+        free_ligand_fractions=free_fractions,
+        complex_fractions=complex_fractions,
     )
     return equilibrium

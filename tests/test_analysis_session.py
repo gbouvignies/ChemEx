@@ -92,7 +92,11 @@ class StubParameterFactory:
         self.seal_definition_calls = 0
         self.seal_configuration_calls = 0
         self.native_sealing_succeeds = True
-        self.sealed_parameter_model = SimpleNamespace(declarations={}, definitions=())
+        self.sealed_parameter_model = SimpleNamespace(
+            model_name="2st",
+            declarations={},
+            definitions=(),
+        )
 
     def clear_cache(self) -> None:
         self.clear_calls += 1

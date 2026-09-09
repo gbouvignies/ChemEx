@@ -9,6 +9,7 @@ conclusions associated with one exact accepted deterministic fit.
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 
@@ -39,6 +40,7 @@ from chemex.optimize.uncertainty import (
 from chemex.parameters.parameterization import (
     ActiveParameterization,
     ParameterRole,
+    ReportableParameterSet,
 )
 from chemex.parameters.userfunctions import function_linearization_registry
 
@@ -108,6 +110,7 @@ class AcceptedDeterministicFitFacts:
     engine: EvaluationEngine = field(repr=False, compare=False)
     basis: DeterministicUncertaintyBasis
     resolved_environment_identity: str
+    reportable_parameters: ReportableParameterSet | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -316,6 +319,8 @@ class _ResolvedUncertaintyInputs:
     constrained_scope: tuple[str, ...]
     compiled_capabilities: CompiledConstraintLinearizationCapabilities
     unsupported_constrained_ids: tuple[str, ...]
+    constraint_parameterization: ActiveParameterization
+    constraint_values: Mapping[str, float]
 
     @property
     def parameter_ids(self) -> tuple[str, ...]:
@@ -381,7 +386,15 @@ def _resolve_inputs(
     facts: AcceptedDeterministicFitFacts,
 ) -> _ResolvedUncertaintyInputs:
     problem = facts.problem
-    parameterization = facts.parameterization
+    reportable = facts.reportable_parameters
+    parameterization = (
+        facts.parameterization if reportable is None else reportable.parameterization
+    )
+    constraint_values: Mapping[str, float] = (
+        facts.accepted.evaluation_result.resolved_values
+        if reportable is None
+        else reportable.values
+    )
     policy = UncertaintyPolicy(
         calibration_identity="native-product-local-covariance-numerics-v2",
         numerical_compatibility_requirement=(
@@ -455,6 +468,8 @@ def _resolve_inputs(
         constrained_scope,
         compiled_capabilities,
         tuple(unsupported),
+        parameterization,
+        constraint_values,
     )
 
 
@@ -655,6 +670,8 @@ def derive_deterministic_uncertainty(
                 (param_id, 1.0) for param_id in inputs.constrained_scope
             ),
             compiled_constraint_linearization=inputs.compiled_capabilities,
+            constraint_parameterization=inputs.constraint_parameterization,
+            constraint_values=inputs.constraint_values,
             resolved_environment_identity=facts.resolved_environment_identity,
         )
     except KeyboardInterrupt:

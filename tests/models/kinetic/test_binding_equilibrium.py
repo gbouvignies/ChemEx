@@ -192,6 +192,28 @@ def test_alternative_bound_modes_use_normalized_equilibrium_weights() -> None:
     )
 
 
+def test_free_protein_conformers_contribute_to_apparent_equilibrium() -> None:
+    equilibrium = solve_binding_equilibrium(
+        8.0e-4,
+        2.3e-3,
+        free_protein_log_weights=(0.0, math.log(2.5)),
+        free_ligand_log_weights=(0.0,),
+        complex_log_weights=(math.log(3.5 / 4.0e-4),),
+    )
+    free_a, free_b = equilibrium.free_proteins
+
+    assert free_b / free_a == pytest.approx(2.5, rel=2.0e-15)
+    assert equilibrium.log_apparent_kd == pytest.approx(math.log(4.0e-4))
+    assert equilibrium.populations == pytest.approx(
+        tuple(
+            concentration / 8.0e-4
+            for concentration in (*equilibrium.free_proteins, *equilibrium.complexes)
+        ),
+        rel=2.0e-15,
+        abs=0.0,
+    )
+
+
 @pytest.mark.parametrize(
     ("free_weights", "complex_weights"),
     (
@@ -293,9 +315,26 @@ def test_zero_ligand_preserves_the_unbound_protein_population() -> None:
     assert equilibrium.protein_free == 8.0e-4
     assert equilibrium.ligand_free == 0.0
     assert equilibrium.bound_total == 0.0
+    assert equilibrium.free_proteins == (8.0e-4,)
     assert equilibrium.free_ligands == (0.0,)
     assert equilibrium.complexes == (0.0,)
     assert equilibrium.populations == (1.0, 0.0)
+
+
+def test_zero_ligand_distributes_a_free_protein_conformational_equilibrium() -> None:
+    equilibrium = solve_binding_equilibrium(
+        8.0e-4,
+        0.0,
+        free_protein_log_weights=(0.0, math.log(3.0)),
+        free_ligand_log_weights=(0.0,),
+        complex_log_weights=(math.log(4.0 / 1.0e-3),),
+    )
+
+    assert equilibrium.free_proteins == pytest.approx((2.0e-4, 6.0e-4))
+    assert equilibrium.populations == pytest.approx((0.25, 0.75, 0.0))
+    assert equilibrium.log_populations == pytest.approx(
+        (math.log(0.25), math.log(0.75), -math.inf)
+    )
 
 
 @pytest.mark.parametrize("kd", (0.0, -1.0, math.inf, -math.inf, math.nan))

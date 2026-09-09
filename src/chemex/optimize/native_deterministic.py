@@ -521,6 +521,7 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
         if continuity_snapshot is not None and run_info is not None:
             run_info.publish_restart(continuity_snapshot)
         _materialize_evaluation(experiments, result)
+        reportable_parameters = session.resolve_reportable_parameters(parameterization)
         try:
             execute_post_fit(
                 experiments,
@@ -532,7 +533,7 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
                 parameter_model=parameter_model,
                 parameter_values=result.resolved_values,
                 parameterization=parameterization,
-                report_only_values=session.resolve_report_only_values(),
+                report_only_values=reportable_parameters.report_only_values,
             )
         except (Exception, KeyboardInterrupt) as error:  # noqa: BLE001
             _propagate_output_failure(error, path)
@@ -631,6 +632,7 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
     if accepted is None:
         raise RuntimeError("Committed native fit lacks its accepted result")
     result = accepted.evaluation_result
+    reportable_parameters = session.resolve_reportable_parameters(parameterization)
     uncertainty_facts = AcceptedDeterministicFitFacts(
         accepted,
         problem,
@@ -642,6 +644,7 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
             else ContinuousTrfBasis(decomposition.partition_proof)
         ),
         resolved_environment_identity,
+        reportable_parameters,
     )
     try:
         deterministic_uncertainty = derive_deterministic_uncertainty(uncertainty_facts)
@@ -692,7 +695,7 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
                 parameter_values=result.resolved_values,
                 parameterization=parameterization,
                 fitted_ids=problem.controlled_ids,
-                report_only_values=session.resolve_report_only_values(),
+                report_only_values=reportable_parameters.report_only_values,
             )
         except (Exception, KeyboardInterrupt) as error:  # noqa: BLE001
             if uncertainty_interrupted:
@@ -717,7 +720,7 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
             parameter_values=result.resolved_values,
             parameterization=parameterization,
             fitted_ids=problem.controlled_ids,
-            report_only_values=session.resolve_report_only_values(),
+            report_only_values=reportable_parameters.report_only_values,
         )
     except (Exception, KeyboardInterrupt) as error:  # noqa: BLE001
         if uncertainty_interrupted:

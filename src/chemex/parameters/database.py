@@ -14,6 +14,7 @@ from chemex.messages import (
     print_warning_negative_jch,
     print_warning_positive_jnh,
 )
+from chemex.models.kinetic._binding_migration import validate_legacy_binding_defaults
 from chemex.parameters.name import ParamName
 from chemex.parameters.setting import Parameters, ParamSetting
 from chemex.typing import Array
@@ -544,6 +545,7 @@ class ParameterStore:
 
         """
         self._ensure_configuration_open()
+        validate_legacy_binding_defaults(self.model.name, defaults)
         if self._defaults_applied:
             msg = "Parameter defaults have already been applied"
             raise RuntimeError(msg)
