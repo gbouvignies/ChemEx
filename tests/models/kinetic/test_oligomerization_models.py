@@ -10,6 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 from chemex.configuration.conditions import Conditions
+from chemex.configuration.methods import Method
 from chemex.configuration.parameters import DefaultSetting
 from chemex.models.factory import model_factory
 from chemex.models.kinetic import (
@@ -19,6 +20,9 @@ from chemex.models.kinetic import (
     settings_3st_monomer_dimer_trimer as dimer_trimer_model,
 )
 from chemex.nmr.basis import Basis
+from chemex.optimize.deterministic_uncertainty import (
+    compile_model_constraint_linearization_capabilities,
+)
 from chemex.parameters.name import ParamName
 from chemex.parameters.parameterization import ConstraintDomainError
 from chemex.parameters.sealed import InvalidConfigurationError
@@ -91,6 +95,47 @@ def _construct_and_resolve(
         name_map,
         local_ids,
         {name: resolved[param_id] for name, param_id in local_ids.items()},
+    )
+
+
+@pytest.mark.parametrize(
+    ("model_name", "population_names"),
+    (
+        ("2st_monomer_dimer", ("pa", "pb")),
+        ("2st_monomer_trimer", ("pa", "pb")),
+        ("2st_monomer_tetramer", ("pa", "pb")),
+        ("3st_monomer_dimer_trimer", ("pa", "pb", "pc")),
+        ("3st_monomer_dimer_tetramer", ("pa", "pb", "pc")),
+    ),
+)
+def test_oligomer_population_outputs_have_production_uncertainty_capabilities(
+    model_name: str,
+    population_names: tuple[str, ...],
+) -> None:
+    session, _name_map, local_ids = _prepare_model(model_name, 1.0e-3, {})
+    assert session.try_build_analysis_values(), repr(
+        session.parameter_factory.native_construction_error
+    )
+    output_ids = tuple(local_ids[name] for name in population_names)
+    parameterization = session.compile_parameterization(Method(), set(output_ids))
+
+    compiled = compile_model_constraint_linearization_capabilities(
+        parameterization,
+        output_ids,
+    )
+
+    assert compiled.output_scope == output_ids
+    population_capabilities = tuple(
+        capability
+        for capability in compiled.capabilities
+        if capability.component in population_names
+    )
+    assert {capability.component for capability in population_capabilities} == set(
+        population_names
+    )
+    assert all(
+        capability.normalized_population_components == population_names
+        for capability in population_capabilities
     )
 
 
@@ -687,14 +732,66 @@ def test_monomer_trimer_rejects_upward_rounded_subminimum_forward_rate() -> None
     assert "below binary64 representability" in str(error.__cause__)
 
 
-def test_zero_koff_retains_exact_zero_forward_rate_policy() -> None:
+@pytest.mark.parametrize(
+    ("model_name", "oligomer", "stoichiometry"),
+    (
+        ("2st_monomer_dimer", "dimer", 2.0),
+        ("2st_monomer_trimer", "trimer", 3.0),
+        ("2st_monomer_tetramer", "tetramer", 4.0),
+    ),
+)
+def test_direct_zero_koff_freezes_exchange_without_erasing_equilibrium_species(
+    model_name: str,
+    oligomer: str,
+    stoichiometry: float,
+) -> None:
+    p_total = 1.0e-3
     _, _, values = _construct_and_resolve(
-        "2st_monomer_dimer",
-        1e-3,
-        {"kd": math.nextafter(0.0, 1.0), "koff": 0.0},
+        model_name,
+        p_total,
+        {"kd": 1.0e-6, "koff": 0.0},
     )
 
     assert values["kab"] == 0.0
     assert values["kba"] == 0.0
-    assert values["pa"] == 1.0
-    assert values["pb"] == 0.0
+    assert values["pa"] == pytest.approx(values["c_monomer"] / p_total)
+    assert values["pb"] == pytest.approx(
+        stoichiometry * values[f"c_{oligomer}"] / p_total
+    )
+    assert values["pa"] > 0.0
+    assert values["pb"] > 0.0
+
+
+@pytest.mark.parametrize(
+    ("model_name", "higher", "higher_stoichiometry"),
+    (
+        ("3st_monomer_dimer_trimer", "trimer", 3.0),
+        ("3st_monomer_dimer_tetramer", "tetramer", 4.0),
+    ),
+)
+@pytest.mark.parametrize(
+    ("koff1", "koff2"),
+    ((0.0, 0.0), (0.0, 150.0), (90.0, 0.0), (90.0, 150.0)),
+)
+def test_sequential_populations_are_invariant_to_every_koff_disconnection(
+    model_name: str,
+    higher: str,
+    higher_stoichiometry: float,
+    koff1: float,
+    koff2: float,
+) -> None:
+    p_total = 1.0e-3
+    _, _, values = _construct_and_resolve(
+        model_name,
+        p_total,
+        {"kd1": 1.0e-6, "kd2": 2.0e-6, "koff1": koff1, "koff2": koff2},
+    )
+
+    assert values["pa"] == pytest.approx(values["c_monomer"] / p_total)
+    assert values["pb"] == pytest.approx(2.0 * values["c_dimer"] / p_total)
+    assert values["pc"] == pytest.approx(
+        higher_stoichiometry * values[f"c_{higher}"] / p_total
+    )
+    assert values["pa"] > 0.0
+    assert values["pb"] > 0.0
+    assert values["pc"] > 0.0

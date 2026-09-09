@@ -146,6 +146,7 @@ class ParameterDeclarationContribution:
     model_owned: bool = False
     requires_independent: bool = False
     fits_by_default: bool = False
+    report_only: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -163,6 +164,7 @@ class ParameterDeclaration:
     model_owned: bool = False
     requires_independent: bool = False
     fits_by_default: bool = False
+    report_only: bool = False
 
 
 def baseline_parameter_role(declaration: ParameterDeclaration) -> ParameterRole:
@@ -222,6 +224,7 @@ class SealedParameterDeclarations(Mapping[str, ParameterDeclaration]):
                         item.model_owned,
                         item.requires_independent,
                         item.fits_by_default,
+                        item.report_only,
                     )
                     for item in items
                 ),
@@ -267,6 +270,13 @@ def seal_parameter_declarations(
         supports_estimation = any(item.supports_estimation for item in contributed)
         requires_independent = any(item.requires_independent for item in contributed)
         fits_by_default = any(item.fits_by_default for item in contributed)
+        report_only_values = {item.report_only for item in contributed}
+        if len(report_only_values) > 1:
+            raise IncompatibleParameterizationInputError(
+                "Contributors disagree on report-only derivation semantics",
+                param_id=definition.param_id,
+            )
+        report_only = report_only_values.pop()
         expression = expressions[0] if expressions else ""
         model_owned = any(
             item.model_owned and item.model_expression.strip() == expression
@@ -280,6 +290,7 @@ def seal_parameter_declarations(
                 model_owned,
                 requires_independent,
                 fits_by_default,
+                report_only,
             )
         )
     return SealedParameterDeclarations(tuple(items))
@@ -1921,8 +1932,11 @@ def build_initial_analysis_values(
 ) -> Mapping[str, float]:
     """Natively fill missing model-derived revision-zero configuration values."""
     configuration = parameter_model.configuration
+    deferred_ids = deferred_derived_ids(parameter_model)
     missing_ids = tuple(
-        config.param_id for config in configuration if config.effective_value is None
+        config.param_id
+        for config in configuration
+        if config.effective_value is None and config.param_id not in deferred_ids
     )
     for param_id in missing_ids:
         if not parameter_model.declarations[param_id].model_expression:
@@ -1940,13 +1954,14 @@ def build_initial_analysis_values(
             (config.param_id, config.effective_value)
             for config in configuration
             if config.effective_value is not None
+            and config.param_id not in deferred_ids
         ),
     )
     parameterization = _compile_active_parameterization_from_rules(
         parameter_model,
         bootstrap_snapshot,
         (),
-        set(parameter_model.declarations),
+        set(parameter_model.declarations) - set(deferred_ids),
         initialize_missing=True,
     )
     resolved = parameterization.resolve(
@@ -1960,7 +1975,26 @@ def build_initial_analysis_values(
                 else config.effective_value
             )
             for config in configuration
+            if config.param_id not in deferred_ids
         }
+    )
+
+
+def deferred_derived_ids(
+    parameter_model: SealedParameterModel,
+) -> tuple[str, ...]:
+    """Keep public report-only derivations out of central materialization."""
+    return report_only_derived_ids(parameter_model)
+
+
+def report_only_derived_ids(
+    parameter_model: SealedParameterModel,
+) -> tuple[str, ...]:
+    """Return model-owned outputs resolved only when explicitly needed."""
+    return tuple(
+        declaration.param_id
+        for declaration in parameter_model.declarations.values()
+        if declaration.report_only
     )
 
 

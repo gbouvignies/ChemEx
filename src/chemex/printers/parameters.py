@@ -278,21 +278,27 @@ def classify_parameters(
     parameter_values: Mapping[str, float],
     parameterization: ActiveParameterization,
     fitted_ids: tuple[str, ...],
+    report_only_values: Mapping[str, float] | None = None,
 ) -> ClassifiedParameters:
+    optional_values = {} if report_only_values is None else report_only_values
+    included_ids = set(parameterization.scope_ids) | set(optional_values)
     parameters = {
         parameter_name_from_definition(definition): ReportParameter(
             definition.param_id,
             parameter_name_from_definition(definition),
-            parameter_values[definition.param_id],
+            optional_values[definition.param_id]
+            if definition.param_id in optional_values
+            else parameter_values[definition.param_id],
         )
         for definition in parameter_model.definitions
-        if definition.param_id in parameterization.scope_ids
+        if definition.param_id in included_ids
     }
     fitted_id_set = set(fitted_ids)
     constrained = {
         pname: param
         for pname, param in parameters.items()
-        if parameterization.role(param.param_id) is ParameterRole.DERIVED
+        if parameter_model.declarations[param.param_id].report_only
+        or parameterization.role(param.param_id) is ParameterRole.DERIVED
     }
     fitted = {
         pname: param
@@ -322,6 +328,7 @@ def write_parameters(
     parameterization: ActiveParameterization,
     fitted_ids: tuple[str, ...] = (),
     deterministic_uncertainty: DeterministicUncertainty | None = None,
+    report_only_values: Mapping[str, float] | None = None,
 ) -> None:
     """Write the model parameter values and their uncertainties to a file."""
     path_par = path / "Parameters"
@@ -331,6 +338,7 @@ def write_parameters(
         parameter_values,
         parameterization,
         fitted_ids,
+        report_only_values,
     )
     names = {
         definition.param_id: parameter_name_from_definition(definition)
@@ -340,6 +348,16 @@ def write_parameters(
         item.target_id: _replace_parameter_ids(item.expression_text, names)
         for item in parameterization.program.constraints
     }
+    constraint_expressions.update(
+        {
+            declaration.param_id: _replace_parameter_ids(
+                declaration.model_expression,
+                names,
+            )
+            for declaration in parameter_model.declarations.values()
+            if declaration.report_only
+        }
+    )
 
     write_file(
         classified_parameters.fitted,

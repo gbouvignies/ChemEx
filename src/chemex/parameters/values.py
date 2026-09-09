@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import math
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from numbers import Real
 from threading import RLock
@@ -154,6 +154,7 @@ class AnalysisValues:
         configuration: SealedConfiguration,
         *,
         _native_initial_values: Mapping[str, float] | None = None,
+        _deferred_derived_ids: Sequence[str] = (),
     ) -> None:
         """Initialize revision zero from immutable configured effective values."""
         with self._lock:
@@ -162,15 +163,25 @@ class AnalysisValues:
                 raise RuntimeError(msg)
 
             configured_ids = tuple(config.param_id for config in configuration)
-            if (
-                _native_initial_values is not None
-                and tuple(_native_initial_values) != configured_ids
+            deferred_ids = frozenset(_deferred_derived_ids)
+            if _native_initial_values is not None and tuple(
+                _native_initial_values
+            ) != tuple(
+                param_id for param_id in configured_ids if param_id not in deferred_ids
             ):
-                msg = "Native initial values do not exactly cover configuration IDs"
+                msg = (
+                    "Native initial values do not exactly cover materialized "
+                    "configuration IDs"
+                )
+                raise ValueError(msg)
+            if deferred_ids - set(configured_ids):
+                msg = "Deferred derived IDs are invalid for this configuration"
                 raise ValueError(msg)
 
             items: list[tuple[str, float]] = []
             for config in configuration:
+                if config.param_id in deferred_ids:
+                    continue
                 value = (
                     config.effective_value
                     if _native_initial_values is None

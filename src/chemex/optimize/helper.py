@@ -116,6 +116,7 @@ def _write_files(
     parameter_values: Mapping[str, float],
     parameterization: ActiveParameterization,
     fitted_ids: tuple[str, ...] = (),
+    report_only_values: Mapping[str, float] | None = None,
 ) -> None:
     """Write the results of the fit to output files."""
     print_writing_results(path)
@@ -127,6 +128,7 @@ def _write_files(
         parameterization=parameterization,
         fitted_ids=fitted_ids,
         deterministic_uncertainty=deterministic_uncertainty,
+        report_only_values=report_only_values,
     )
     experiments.write(path)
     uncertainty_interrupted = (
@@ -193,6 +195,7 @@ def _write_simulation_files(
     parameter_model: SealedParameterModel,
     parameter_values: Mapping[str, float],
     parameterization: ActiveParameterization,
+    report_only_values: Mapping[str, float] | None = None,
 ) -> None:
     """Write the results of the simulation to output files."""
     print_writing_results(path)
@@ -202,6 +205,7 @@ def _write_simulation_files(
         parameter_model=parameter_model,
         parameter_values=parameter_values,
         parameterization=parameterization,
+        report_only_values=report_only_values,
     )
     experiments.write(path)
 
@@ -237,6 +241,7 @@ def execute_post_fit(
     parameter_values: Mapping[str, float],
     parameterization: ActiveParameterization,
     fitted_ids: tuple[str, ...] = (),
+    report_only_values: Mapping[str, float] | None = None,
 ) -> None:
     _write_files(
         experiments,
@@ -249,6 +254,7 @@ def execute_post_fit(
         parameter_values=parameter_values,
         parameterization=parameterization,
         fitted_ids=fitted_ids,
+        report_only_values=report_only_values,
     )
     uncertainty_interrupted = (
         deterministic_uncertainty is not None
@@ -266,6 +272,7 @@ def execute_simulation(
     parameter_model: SealedParameterModel,
     parameterization: ActiveParameterization,
     plot: bool = False,
+    report_only_values: Mapping[str, float] | None = None,
 ) -> None:
     validate_relaxation_state(parameterization, parameter_values)
     experiments.prepare_for_simulation(parameter_values)
@@ -276,6 +283,7 @@ def execute_simulation(
             parameter_model=parameter_model,
             parameter_values=parameter_values,
             parameterization=parameterization,
+            report_only_values=report_only_values,
         )
         if plot:
             _write_simulation_plots(experiments, path)

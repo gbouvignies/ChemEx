@@ -129,6 +129,9 @@ class StubSession:
     def resolve_current_values(self, _required_ids: set[str]) -> dict[str, float]:
         return {}
 
+    def resolve_report_only_values(self) -> dict[str, float]:
+        return {"__REPORT_ONLY": 1.0}
+
     def compile_parameterization(
         self,
         _method: Method,
@@ -517,6 +520,7 @@ def test_run_uses_explicit_session_for_simulation_flow(
         parameter_model: object,
         parameterization: object,
         plot: bool = False,
+        report_only_values: object = None,
     ) -> None:
         recorded["simulation"] = (
             experiments_arg,
@@ -525,6 +529,7 @@ def test_run_uses_explicit_session_for_simulation_flow(
             parameter_model,
             parameterization,
             plot,
+            report_only_values,
         )
 
     monkeypatch.setattr(chemex_module, "build_experiments", fake_build_experiments)
@@ -544,6 +549,7 @@ def test_run_uses_explicit_session_for_simulation_flow(
     assert simulation[3] is session.parameter_factory.sealed_parameter_model
     assert isinstance(simulation[4], StubParameterization)
     assert simulation[5] is True
+    assert simulation[6] == {"__REPORT_ONLY": 1.0}
 
 
 def test_main_bootstraps_plugins_for_non_run_commands(

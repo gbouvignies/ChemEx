@@ -73,6 +73,13 @@ def test_approved_kinetic_family_domains_apply_only_to_independent_settings() ->
         "3st_monomer_dimer_trimer",
         "3st_monomer_dimer_tetramer",
     }
+    strict_binding_models = {
+        "2st_binding",
+        "3st_double_binding",
+        "3st_binding_partner_2st",
+        "4st_binding_partner_2st",
+        "4st_binding_3_bound_states",
+    }
 
     for model_name in sorted(model_factory.set):
         for local_name, setting in model_factory.create(
@@ -84,7 +91,10 @@ def test_approved_kinetic_family_domains_apply_only_to_independent_settings() ->
                 expected = (0.0, 1.0e6)
             elif local_name in approved_equilibria:
                 expected = expected_domains["keq"]
-            elif model_name in oligomerization_models and local_name.startswith("kd"):
+            elif (
+                model_name in oligomerization_models | strict_binding_models
+                and local_name.startswith("kd")
+            ):
                 expected = (math.nextafter(0.0, 1.0), 1.0)
             else:
                 family = next(

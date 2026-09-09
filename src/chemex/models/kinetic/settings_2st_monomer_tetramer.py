@@ -19,7 +19,11 @@ from chemex.models.kinetic._oligomerization import (
     validate_oligomerization_kd,
 )
 from chemex.parameters.setting import NameSetting, ParamLocalSetting
-from chemex.parameters.userfunctions import user_function_registry
+from chemex.parameters.userfunctions import (
+    function_linearization_registry,
+    population_linearizations,
+    user_function_registry,
+)
 from chemex.typing import Array
 
 NAME = "2st_monomer_tetramer"
@@ -68,6 +72,18 @@ def calculate_concentrations(p_total: float, kd: float) -> dict[str, float]:
     concentrations_start = (p_total, 0.0)
     results = root(calculate_residuals, concentrations_start, args=(p_total, kd))
     return {"monomer": results["x"][0], "tetramer": results["x"][1]}
+
+
+@lru_cache(maxsize=100)
+def calculate_populations(p_total: float, kd: float) -> dict[str, float]:
+    validate_oligomerization_kd(kd)
+    if p_total == 0.0:
+        return {"pa": 1.0, "pb": 0.0}
+    equilibrium = _calculate_equilibrium(p_total, kd)
+    return {
+        "pa": equilibrium.monomer_fraction,
+        "pb": 4.0 * equilibrium.oligomer_fractions[0],
+    }
 
 
 @lru_cache(maxsize=100)
@@ -126,11 +142,11 @@ def make_settings_2st_monomer_tetramer(
         ),
         "pa": ParamLocalSetting(
             name_setting=NameSetting("pa", "", TP),
-            expr="pop_2st({kab}, {kba})['pa']",
+            expr=f"populations({p_total}, {{kd}})['pa']",
         ),
         "pb": ParamLocalSetting(
             name_setting=NameSetting("pb", "", TP),
-            expr="pop_2st({kab}, {kba})['pb']",
+            expr=f"populations({p_total}, {{kd}})['pb']",
         ),
     }
 
@@ -139,7 +155,17 @@ def register() -> None:
     model_factory.register(name=NAME, setting_maker=make_settings_2st_monomer_tetramer)
     user_functions = {
         "concentrations": calculate_concentrations,
+        "populations": calculate_populations,
         "rates": calculate_rates,
         "pop_2st": pop_2st,
     }
     user_function_registry.register(name=NAME, user_functions=user_functions)
+    function_linearization_registry.register(
+        NAME,
+        population_linearizations(
+            (1.0e-3, 1.0e-3),
+            ("nonnegative", "positive"),
+            "pa",
+            "pb",
+        ),
+    )

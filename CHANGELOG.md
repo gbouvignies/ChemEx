@@ -32,6 +32,25 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   signature; the obsolete `DH_AC` and `DS_AC` arguments have been removed.
 
 ### Fixed
+- Category-A association models now use one equilibrium-composition authority
+  for reported populations and tagged detailed-balance rates. Exact-zero kinetic
+  scales therefore freeze exchange without erasing equilibrium species. Binding
+  equilibria now use a validated, cancellation-resistant finite-pool solution
+  instead of unchecked multidimensional roots; every finite positive binding
+  `KD` retains literal semantics without hidden floors, while exact zero is
+  rejected. `KD_EFF` in `4st_binding_3_bound_states` now reports the model's
+  actual apparent dissociation constant, `KD_APP`. Ordinary positive-domain
+  behavior is preserved except where the previous root was inaccurate. Binding
+  `KON` compatibility outputs are now evaluated only for reporting or explicit
+  requests, so a mathematically unrepresentable `KON` no longer blocks finite
+  tagged dynamics; representable values remain in parameter output, while an
+  unrepresentable report-only value is omitted. Positive directional exchange
+  rates that cannot be represented in binary64 are rejected instead of being
+  silently rounded to structural zero. Canonical association-population
+  constraints now carry deterministic propagated uncertainties.
+  `3st_binding_cs` and `3st_binding_if` retain their existing parameterizations
+  pending a separate equilibrium-authority pass; generic kinetic models are
+  unchanged.
 - Oligomerization models now retain literal semantics for every finite positive
   `KD`, including sub-`1e-32` values; the hidden `1e-32` effective-KD floor has
   been removed, so affected results can change materially. Exact `KD = 0` is now

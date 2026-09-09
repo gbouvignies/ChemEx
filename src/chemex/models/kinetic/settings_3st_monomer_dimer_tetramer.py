@@ -19,7 +19,11 @@ from chemex.models.kinetic._oligomerization import (
     validate_oligomerization_kd,
 )
 from chemex.parameters.setting import NameSetting, ParamLocalSetting
-from chemex.parameters.userfunctions import user_function_registry
+from chemex.parameters.userfunctions import (
+    function_linearization_registry,
+    population_linearizations,
+    user_function_registry,
+)
 from chemex.typing import Array
 
 NAME = "3st_monomer_dimer_tetramer"
@@ -87,6 +91,24 @@ def calculate_concentrations(
         "monomer": results["x"][0],
         "dimer": results["x"][1],
         "tetramer": results["x"][2],
+    }
+
+
+@lru_cache(maxsize=100)
+def calculate_populations(
+    p_total: float,
+    kd1: float,
+    kd2: float,
+) -> dict[str, float]:
+    validate_oligomerization_kd(kd1)
+    validate_oligomerization_kd(kd2)
+    if p_total == 0.0:
+        return {"pa": 1.0, "pb": 0.0, "pc": 0.0}
+    equilibrium = _calculate_equilibrium(p_total, kd1, kd2)
+    return {
+        "pa": equilibrium.monomer_fraction,
+        "pb": 2.0 * equilibrium.oligomer_fractions[0],
+        "pc": 4.0 * equilibrium.oligomer_fractions[1],
     }
 
 
@@ -179,15 +201,15 @@ def make_settings_3st_monomer_dimer_tetramer(
         ),
         "pa": ParamLocalSetting(
             name_setting=NameSetting("pa", "", TP),
-            expr="pop_3st({kab}, {kba}, 0.0, 0.0, {kbc}, {kcb})['pa']",
+            expr=f"populations({p_total}, {{kd1}}, {{kd2}})['pa']",
         ),
         "pb": ParamLocalSetting(
             name_setting=NameSetting("pb", "", TP),
-            expr="pop_3st({kab}, {kba}, 0.0, 0.0, {kbc}, {kcb})['pb']",
+            expr=f"populations({p_total}, {{kd1}}, {{kd2}})['pb']",
         ),
         "pc": ParamLocalSetting(
             name_setting=NameSetting("pc", "", TP),
-            expr="pop_3st({kab}, {kba}, 0.0, 0.0, {kbc}, {kcb})['pc']",
+            expr=f"populations({p_total}, {{kd1}}, {{kd2}})['pc']",
         ),
     }
 
@@ -199,7 +221,18 @@ def register() -> None:
     )
     user_functions = {
         "concentrations": calculate_concentrations,
+        "populations": calculate_populations,
         "rates": calculate_rates,
         "pop_3st": pop_3st,
     }
     user_function_registry.register(name=NAME, user_functions=user_functions)
+    function_linearization_registry.register(
+        NAME,
+        population_linearizations(
+            (1.0e-3, 1.0e-3, 1.0e-3),
+            ("nonnegative", "positive", "positive"),
+            "pa",
+            "pb",
+            "pc",
+        ),
+    )
