@@ -27,6 +27,21 @@ class NumericalFunctionLinearization:
     normalized_population_components: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True, slots=True)
+class AnalyticFunctionLinearization:
+    """Model-owned analytic derivatives for one scientific function component."""
+
+    function_id: str
+    component: str | None
+    implementation_identity: str
+    partials: tuple[Callable[..., float], ...]
+
+
+type FunctionLinearization = (
+    NumericalFunctionLinearization | AnalyticFunctionLinearization
+)
+
+
 def population_linearizations(
     argument_scales: tuple[float, ...],
     argument_domains: tuple[FunctionArgumentDomain, ...],
@@ -74,16 +89,24 @@ user_function_registry = Registry()
 class LinearizationRegistry:
     """Registry for explicitly approved model-owned function derivatives."""
 
-    _items: ClassVar[dict[str, tuple[NumericalFunctionLinearization, ...]]] = {}
+    _items: ClassVar[
+        dict[
+            str,
+            tuple[FunctionLinearization, ...],
+        ]
+    ] = {}
 
     def register(
         self,
         name: str,
-        capabilities: tuple[NumericalFunctionLinearization, ...],
+        capabilities: tuple[FunctionLinearization, ...],
     ) -> None:
         self._items[name] = capabilities
 
-    def get(self, name: str) -> tuple[NumericalFunctionLinearization, ...]:
+    def get(
+        self,
+        name: str,
+    ) -> tuple[FunctionLinearization, ...]:
         return self._items.get(name, ())
 
 

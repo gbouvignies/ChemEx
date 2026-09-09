@@ -22,6 +22,7 @@ from chemex.optimize.direct_trf import (
 from chemex.optimize.grouped_direct_trf import FitPartitionProof
 from chemex.optimize.uncertainty import (
     CompiledConstraintLinearizationCapabilities,
+    FunctionAnalyticPartialCapability,
     FunctionFiniteDifferenceCapability,
     MissingFunctionLinearizationCapability,
     OperationTerminal,
@@ -42,7 +43,11 @@ from chemex.parameters.parameterization import (
     ParameterRole,
     ReportableParameterSet,
 )
-from chemex.parameters.userfunctions import function_linearization_registry
+from chemex.parameters.userfunctions import (
+    AnalyticFunctionLinearization,
+    NumericalFunctionLinearization,
+    function_linearization_registry,
+)
 
 
 class InterpretationCompleteness(StrEnum):
@@ -74,21 +79,34 @@ class ProfiledGridBasis:
 type DeterministicUncertaintyBasis = ContinuousTrfBasis | ProfiledGridBasis
 
 
+def _compile_model_function_capability(
+    capability: NumericalFunctionLinearization | AnalyticFunctionLinearization,
+) -> FunctionFiniteDifferenceCapability | FunctionAnalyticPartialCapability:
+    if isinstance(capability, AnalyticFunctionLinearization):
+        return FunctionAnalyticPartialCapability(
+            function_id=capability.function_id,
+            component=capability.component,
+            implementation_identity=capability.implementation_identity,
+            partials=capability.partials,
+        )
+    return FunctionFiniteDifferenceCapability(
+        function_id=capability.function_id,
+        component=capability.component,
+        argument_scales=capability.argument_scales,
+        output_scale=capability.output_scale,
+        argument_domains=capability.argument_domains,
+        relative_steps=True,
+        normalized_population_components=capability.normalized_population_components,
+    )
+
+
 def compile_model_constraint_linearization_capabilities(
     parameterization: ActiveParameterization,
     output_scope: tuple[str, ...],
 ) -> CompiledConstraintLinearizationCapabilities:
     """Compile only the model-owned scientific-function derivative policies."""
     capabilities = tuple(
-        FunctionFiniteDifferenceCapability(
-            function_id=item.function_id,
-            component=item.component,
-            argument_scales=item.argument_scales,
-            output_scale=item.output_scale,
-            argument_domains=item.argument_domains,
-            relative_steps=True,
-            normalized_population_components=item.normalized_population_components,
-        )
+        _compile_model_function_capability(item)
         for item in function_linearization_registry.get(
             parameterization.binder.model_name
         )

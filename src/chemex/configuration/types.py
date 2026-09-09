@@ -10,9 +10,6 @@ from typing import Annotated
 
 from pydantic import AfterValidator, Field
 
-# Constants
-MAX_TEMPERATURE = 500.0  # Maximum physically reasonable temperature in Kelvin
-
 
 # Validators for common patterns
 def validate_positive(v: float) -> float:
@@ -35,14 +32,6 @@ def validate_probability(v: float) -> float:
     """Validate that a value is a valid probability [0, 1]."""
     if not 0.0 <= v <= 1.0:
         msg = f"Must be between 0 and 1, got {v}"
-        raise ValueError(msg)
-    return v
-
-
-def validate_temperature(v: float) -> float:
-    """Validate that a temperature is physically reasonable."""
-    if not 0.0 < v < MAX_TEMPERATURE:
-        msg = f"Temperature must be between 0 and {MAX_TEMPERATURE} K, got {v}"
         raise ValueError(msg)
     return v
 
@@ -109,17 +98,6 @@ PositiveFrequency = Annotated[
 ]
 """Positive frequency in Hz (> 0)."""
 
-Temperature = Annotated[
-    float,
-    Field(
-        gt=0.0,
-        lt=MAX_TEMPERATURE,
-        description=f"Temperature in Kelvin (0-{MAX_TEMPERATURE} K)",
-    ),
-    AfterValidator(validate_temperature),
-]
-f"""Temperature in Kelvin, physically reasonable range (0-{MAX_TEMPERATURE} K)."""
-
 RelaxationTime = Annotated[
     float,
     Field(
@@ -180,6 +158,5 @@ Population = Annotated[
 OptionalPulseWidth = PulseWidth | None
 OptionalFrequency = Frequency | None
 OptionalPositiveFrequency = PositiveFrequency | None
-OptionalTemperature = Temperature | None
 OptionalDelay = Delay | None
 OptionalB1Field = B1Field | None

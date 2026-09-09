@@ -108,8 +108,7 @@ class TestEyring4stIntegration:
 
                     # Check that the expression is properly formatted
                     expr = settings[rate_key].expr
-                    assert "kij_4st_eyring" in expr
-                    assert f"['k{i}{j}']" in expr
+                    assert "eyring_rate" in expr
                     assert "30.0" in expr  # Temperature should be embedded
 
     def test_population_generation(self):
@@ -122,9 +121,9 @@ class TestEyring4stIntegration:
             pop_key = f"p{state}"
             assert pop_key in settings
 
-            # Check that the expression uses the pop_4st function
+            # Populations come from the Eyring thermodynamic state authority.
             expr = settings[pop_key].expr
-            assert "pop_4st(" in expr
+            assert "pop_4st_eyring(" in expr
             assert f"['p{state}']" in expr
 
     def test_consistency_with_2st_eyring(self):
@@ -140,10 +139,10 @@ class TestEyring4stIntegration:
         assert "pa" in settings
         assert "pb" in settings
 
-        # Check that the rate expressions contain the relevant thermodynamic parameters
+        # A -> B uses the shared AB transition state; B -> A also uses state B.
         kab_expr = settings["kab"].expr
-        assert "dh_b" in kab_expr or "DH_B" in kab_expr
         assert "dh_ab" in kab_expr or "DH_AB" in kab_expr
+        assert "dh_b" in settings["kba"].expr
 
 
 if __name__ == "__main__":

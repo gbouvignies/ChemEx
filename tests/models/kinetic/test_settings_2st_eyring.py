@@ -6,7 +6,6 @@ from scipy import constants
 
 from chemex.configuration.conditions import Conditions
 from chemex.models.kinetic.settings_2st_eyring import (
-    MAX_RATE_CONSTANT,
     calculate_kij_2st_eyring,
     make_settings_2st_eyring,
 )
@@ -38,9 +37,6 @@ class TestCalculateKij2stEyring:
         for key, value in rates.items():
             assert value > 0, f"Rate {key} should be positive, got {value}"
             assert np.isfinite(value), f"Rate {key} should be finite, got {value}"
-            assert value <= MAX_RATE_CONSTANT, (
-                f"Rate {key} exceeds maximum, got {value}"
-            )
 
     def test_temperature_dependence(self, default_params):
         """Test that rate constants change appropriately with temperature."""
@@ -73,7 +69,6 @@ class TestCalculateKij2stEyring:
 
         ddg_ab = dh_ab - dh_a - T * (ds_ab - ds_a)
         expected_kab = kbt_h * np.exp(-ddg_ab / RT)
-        expected_kab = np.clip(expected_kab, 0.0, MAX_RATE_CONSTANT)
 
         assert np.isclose(rates["kab"], expected_kab, rtol=1e-10), (
             f"Calculated kab {rates['kab']:.2e} doesn't match expected {expected_kab:.2e}"
@@ -137,9 +132,6 @@ class TestCalculateKij2stEyring:
         for key, value in rates_low.items():
             assert value > 0, f"Rate {key} should be positive"
             assert np.isfinite(value), f"Rate {key} should be finite"
-            assert value <= MAX_RATE_CONSTANT, (
-                f"Rate {key} should be clipped at maximum"
-            )
 
     def test_caching(self, default_params):
         """Test that function caching works correctly."""
@@ -266,11 +258,12 @@ class TestPhysicalRealism:
                 f"at {temperatures[i - 1]}°C"
             )
 
-        # Check Arrhenius plot linearity (ln(k) vs 1/T)
-        ln_rates = [np.log(r) for r in rates_kab]
-        inv_temps = [
-            1 / constants.convert_temperature(t, "C", "K") for t in temperatures
+        # Eyring linearity is ln(k/T) versus 1/T.
+        kelvin = [constants.convert_temperature(t, "C", "K") for t in temperatures]
+        ln_rates = [
+            np.log(rate / temp) for rate, temp in zip(rates_kab, kelvin, strict=True)
         ]
+        inv_temps = [1 / temp for temp in kelvin]
 
         # Simple linear regression
         n = len(ln_rates)

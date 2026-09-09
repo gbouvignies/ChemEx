@@ -8,25 +8,33 @@ thermodynamic parameters.
 from __future__ import annotations
 
 from functools import lru_cache
-from itertools import permutations
-
-import numpy as np
-from scipy import constants
 
 from chemex.configuration.conditions import Conditions
 from chemex.models.constraints import pop_4st
 from chemex.models.factory import model_factory
+from chemex.models.kinetic._eyring import (
+    EYRING_RATE_PARTIALS,
+    ThermodynamicCoordinate,
+    calculate_directional_rate,
+    calculate_rate_component,
+    temperature_to_kelvin,
+    thermodynamic_population_partials,
+    thermodynamic_populations,
+)
 from chemex.parameters.setting import NameSetting, ParamLocalSetting
-from chemex.parameters.userfunctions import user_function_registry
-from chemex.typing import Array
+from chemex.parameters.userfunctions import (
+    AnalyticFunctionLinearization,
+    function_linearization_registry,
+    user_function_registry,
+)
 
 NAME = "4st_eyring"
 
 PL = ("p_total", "l_total")
 TPL = ("temperature", "p_total", "l_total")
 
-# Physical constants
-MAX_RATE_CONSTANT = 1e16  # Maximum rate constant (s⁻¹) for numerical stability
+REFERENCE_STATE = ThermodynamicCoordinate(enthalpy=0.0, entropy=0.0)
+EDGES = ("ab", "ac", "ad", "bc", "bd", "cd")
 
 
 @lru_cache(maxsize=100)
@@ -80,17 +88,6 @@ def calculate_kij_4st_eyring(
         Dictionary containing rate constants (s⁻¹) for all state transitions.
         Keys are formatted as 'kij' where i and j are states ('a', 'b', 'c', 'd').
 
-    Notes
-    -----
-    The rate constants are calculated using Eyring equation:
-    k_ij = (k_B*T/h) * exp(-ΔG‡_ij / RT)
-
-    Where ΔG‡_ij is the activation free energy for transition from state i to j:
-    ΔG‡_ij = ΔH‡_ij - T*ΔS‡_ij
-
-    Rate constants are clipped to [0, 1e16] s⁻¹ for numerical stability.
-
-
     Examples
     --------
     >>> rates = calculate_kij_4st_eyring(
@@ -102,80 +99,88 @@ def calculate_kij_4st_eyring(
     >>> print(f"k_ab = {rates['kab']:.2e} s⁻¹")
 
     """
-    kelvin = temperature + constants.zero_Celsius
-    kbt_h = constants.k * kelvin / constants.h
-    rt = constants.R * kelvin
+    states = {
+        "a": REFERENCE_STATE,
+        "b": ThermodynamicCoordinate(dh_b, ds_b),
+        "c": ThermodynamicCoordinate(dh_c, ds_c),
+        "d": ThermodynamicCoordinate(dh_d, ds_d),
+    }
+    transition_states = {
+        "ab": ThermodynamicCoordinate(dh_ab, ds_ab),
+        "ac": ThermodynamicCoordinate(dh_ac, ds_ac),
+        "ad": ThermodynamicCoordinate(dh_ad, ds_ad),
+        "bc": ThermodynamicCoordinate(dh_bc, ds_bc),
+        "bd": ThermodynamicCoordinate(dh_bd, ds_bd),
+        "cd": ThermodynamicCoordinate(dh_cd, ds_cd),
+    }
+    rates: dict[str, float] = {}
+    for edge, transition_state in transition_states.items():
+        for initial, final in (edge, edge[::-1]):
+            rates[f"k{initial}{final}"] = calculate_directional_rate(
+                states[initial],
+                transition_state,
+                temperature,
+            )
+    return rates
 
-    # Reference state A has zero enthalpy and entropy
-    dh_a = ds_a = 0.0
 
-    # Calculate activation free energies for all transitions
-    ddg_ij = np.array(
-        (
-            dh_ab - dh_a - kelvin * (ds_ab - ds_a),
-            dh_ac - dh_a - kelvin * (ds_ac - ds_a),
-            dh_ad - dh_a - kelvin * (ds_ad - ds_a),
-            dh_ab - dh_b - kelvin * (ds_ab - ds_b),
-            dh_bc - dh_b - kelvin * (ds_bc - ds_b),
-            dh_bd - dh_b - kelvin * (ds_bd - ds_b),
-            dh_ac - dh_c - kelvin * (ds_ac - ds_c),
-            dh_bc - dh_c - kelvin * (ds_bc - ds_c),
-            dh_cd - dh_c - kelvin * (ds_cd - ds_c),
-            dh_ad - dh_d - kelvin * (ds_ad - ds_d),
-            dh_bd - dh_d - kelvin * (ds_bd - ds_d),
-            dh_cd - dh_d - kelvin * (ds_cd - ds_d),
-        ),
+@lru_cache(maxsize=100)
+def calculate_populations_4st_eyring(
+    dh_b: float,
+    ds_b: float,
+    dh_c: float,
+    ds_c: float,
+    dh_d: float,
+    ds_d: float,
+    temperature: float,
+) -> dict[str, float]:
+    populations = thermodynamic_populations(
+        {
+            "a": REFERENCE_STATE,
+            "b": ThermodynamicCoordinate(dh_b, ds_b),
+            "c": ThermodynamicCoordinate(dh_c, ds_c),
+            "d": ThermodynamicCoordinate(dh_d, ds_d),
+        },
+        temperature,
     )
-
-    # Apply Eyring equation
-    kij_values: Array = kbt_h * np.exp(-ddg_ij / rt)
-
-    # Clip values for numerical stability
-    kij_values = np.clip(kij_values, 0.0, MAX_RATE_CONSTANT)
-
-    # Generate rate constant names in same order as permutations
-    kij_names = (f"k{i}{j}" for i, j in permutations("abcd", 2))
-
-    return dict(zip(kij_names, kij_values, strict=True))
+    return {f"p{state}": population for state, population in populations.items()}
 
 
 def create_kij_4st_eyring_settings(temperature: float) -> dict[str, ParamLocalSetting]:
-    return {
-        f"k{i}{j}": ParamLocalSetting(
-            name_setting=NameSetting(f"k{i}{j}", "", TPL),
-            min=0.0,
-            expr=(
-                f"kij_4st_eyring("
-                f"{{dh_b}}, {{ds_b}}, "
-                f"{{dh_c}}, {{ds_c}}, "
-                f"{{dh_d}}, {{ds_d}},"
-                f"{{dh_ab}}, {{ds_ab}}, "
-                f"{{dh_ac}}, {{ds_ac}}, "
-                f"{{dh_ad}}, {{ds_ad}}, "
-                f"{{dh_bc}}, {{ds_bc}}, "
-                f"{{dh_bd}}, {{ds_bd}}, "
-                f"{{dh_cd}}, {{ds_cd}},"
-                f" {temperature}"
-                f")['k{i}{j}']"
-            ),
-        )
-        for i, j in permutations("abcd", 2)
+    state_arguments = {
+        "a": ("0.0", "0.0"),
+        "b": ("{dh_b}", "{ds_b}"),
+        "c": ("{dh_c}", "{ds_c}"),
+        "d": ("{dh_d}", "{ds_d}"),
     }
+    settings: dict[str, ParamLocalSetting] = {}
+    for edge in EDGES:
+        for initial, final in (edge, edge[::-1]):
+            state_enthalpy, state_entropy = state_arguments[initial]
+            settings[f"k{initial}{final}"] = ParamLocalSetting(
+                name_setting=NameSetting(f"k{initial}{final}", "", TPL),
+                min=0.0,
+                expr=(
+                    f"eyring_rate({state_enthalpy},{state_entropy},"
+                    f"{{dh_{edge}}},{{ds_{edge}}},{temperature})['rate']"
+                ),
+            )
+    return settings
 
 
-def create_pop_4st_eyring_settings() -> dict[str, ParamLocalSetting]:
+def create_pop_4st_eyring_settings(
+    temperature: float,
+) -> dict[str, ParamLocalSetting]:
+    call = (
+        "pop_4st_eyring("
+        f"{{dh_b}},{{ds_b}},{{dh_c}},{{ds_c}},{{dh_d}},{{ds_d}},{temperature})"
+    )
     return {
         f"p{state}": ParamLocalSetting(
             name_setting=NameSetting(f"p{state}", "", TPL),
             min=0.0,
             max=1.0,
-            expr=f"pop_4st("
-            f"{{kab}},{{kba}},"
-            f"{{kac}},{{kca}},"
-            f"{{kad}},{{kda}},"
-            f"{{kbc}},{{kcb}},"
-            f"{{kbd}},{{kdb}},"
-            f"{{kcd}},{{kdc}})['p{state}']",
+            expr=f"{call}['p{state}']",
         )
         for state in "abcd"
     }
@@ -204,6 +209,7 @@ def make_settings_4st_eyring(conditions: Conditions) -> dict[str, ParamLocalSett
     if celsius is None:
         msg = "The 'temperature' is None"
         raise ValueError(msg)
+    temperature_to_kelvin(celsius)
     return {
         "dh_b": ParamLocalSetting(
             name_setting=NameSetting("dh_b", "", PL),
@@ -332,14 +338,38 @@ def make_settings_4st_eyring(conditions: Conditions) -> dict[str, ParamLocalSett
             vary=False,
         ),
         **create_kij_4st_eyring_settings(celsius),
-        **create_pop_4st_eyring_settings(),
+        **create_pop_4st_eyring_settings(celsius),
     }
 
 
 def register() -> None:
     model_factory.register(name=NAME, setting_maker=make_settings_4st_eyring)
     user_functions = {
+        "eyring_rate": calculate_rate_component,
         "kij_4st_eyring": calculate_kij_4st_eyring,
         "pop_4st": pop_4st,
+        "pop_4st_eyring": calculate_populations_4st_eyring,
     }
     user_function_registry.register(name=NAME, user_functions=user_functions)
+    components = ("pa", "pb", "pc", "pd")
+    population_partials = thermodynamic_population_partials(components)
+    function_linearization_registry.register(
+        NAME,
+        (
+            AnalyticFunctionLinearization(
+                "eyring_rate",
+                "rate",
+                "eyring-directional-rate-partials-v1",
+                EYRING_RATE_PARTIALS,
+            ),
+            *(
+                AnalyticFunctionLinearization(
+                    "pop_4st_eyring",
+                    component,
+                    "eyring-thermodynamic-population-partials-v1",
+                    population_partials[component],
+                )
+                for component in components
+            ),
+        ),
+    )
