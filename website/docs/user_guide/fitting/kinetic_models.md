@@ -156,28 +156,60 @@ using Eyring transition state theory. These models are particularly useful for
 studying exchange processes where thermodynamic parameters govern the
 temperature dependence of exchange rates.
 
-### Theoretical Background
+### Thermodynamic convention and temperature
 
-The Eyring equation relates the rate constant to the activation free energy:
+ChemEx input temperatures are in degrees Celsius. Eyring calculations convert
+them to Kelvin internally with `T = temperature + 273.15`. The public domain is
+every finite temperature strictly above -273.15 °C; absolute zero, lower
+temperatures, NaN, and infinities are rejected. There is no artificial upper
+temperature limit.
 
-```
-k_ij = (k_B * T / h) * exp(-ΔG‡_ij / RT)
-```
+State A is the thermodynamic reference, so `H_A = S_A = 0`. Every `DH_I` and
+`DS_I` parameter is the coordinate of state I relative to A. Likewise,
+`DH_IJ` and `DS_IJ` are the shared IJ transition-state coordinates relative to
+A, not separate forward activation parameters. Enthalpies use J mol⁻¹ and
+entropies use J mol⁻¹ K⁻¹.
 
-where:
-
-- `k_ij` is the rate constant for transition from state i to j (s⁻¹)
-- `k_B` is Boltzmann's constant (1.380649×10⁻²³ J/K)
-- `T` is temperature in Kelvin
-- `h` is Planck's constant (6.62607015×10⁻³⁴ J·s)
-- `ΔG‡_ij` is the activation free energy (J/mol)
-- `R` is the gas constant (8.314462618 J/mol/K)
-
-The activation free energy is calculated from enthalpic and entropic contributions:
+For the directional transition i → j, ChemEx therefore uses
 
 ```
-ΔG‡_ij = ΔH‡_ij - T * ΔS‡_ij
+Delta H double dagger (i -> j) = H_TS_ij - H_i
+Delta S double dagger (i -> j) = S_TS_ij - S_i
+
+log(k_ij) = log(k_B / h) + log(T)
+            + (S_TS_ij - S_i) / R
+            - (H_TS_ij - H_i) / (R * T)
 ```
+
+Here `T` is in Kelvin, `k_ij` is in s⁻¹, and the transmission coefficient is
+one. A shared transition state makes the forward/reverse pair obey
+
+```
+log(k_ij / k_ji) = -((H_j - H_i) - T * (S_j - S_i)) / (R * T)
+```
+
+The equilibrium populations are calculated directly from state coordinates,
+not from rate magnitudes:
+
+```
+log(w_i) = S_i / R - H_i / (R * T)
+p_i = w_i / sum(w)
+```
+
+The topology still selects the kinetic edges. This population authority ensures
+detailed balance for every present edge and thermodynamic cycle consistency in
+`4st_eyring`, even when all transition states are shifted to make kinetics much
+slower.
+
+Rates are evaluated in the log domain and are not clipped or saturated. If a
+mathematically positive rate lies below the minimum positive binary64 value or
+above the maximum finite binary64 value, parameter evaluation fails explicitly
+instead of producing zero, infinity, or a capped rate.
+
+Finite Eyring state coordinates likewise imply strictly positive populations.
+If a normalized state population lies below the minimum positive binary64 value,
+ChemEx rejects the evaluation instead of converting that state to structural
+zero.
 
 ### 2st_eyring Model Parameters
 
@@ -188,10 +220,10 @@ The `2st_eyring` model uses the following thermodynamic parameters:
 - `DH_B`: Enthalpy difference (J/mol) for state B relative to A
 - `DS_B`: Entropy difference (J/mol/K) for state B relative to A
 
-**Transition Barriers:**
+**Transition-state coordinates (relative to state A):**
 
-- `DH_AB`: Activation enthalpy (J/mol) for A → B transition
-- `DS_AB`: Activation entropy (J/mol/K) for A → B transition
+- `DH_AB`: Enthalpy coordinate (J/mol) of the shared AB transition state
+- `DS_AB`: Entropy coordinate (J/mol/K) of the shared AB transition state
 
 The model automatically calculates both forward (k_AB) and reverse (k_BA) rate constants from these parameters.
 
@@ -209,18 +241,18 @@ Both topologies use the following state parameters:
 - `DH_B`, `DH_C`: Enthalpy differences (J/mol) for states B, C
 - `DS_B`, `DS_C`: Entropy differences (J/mol/K) for states B, C
 
-**Linear Transition Barriers (`3st_eyring`, `3st_eyring_linear`):**
+**Linear transition-state coordinates (`3st_eyring`, `3st_eyring_linear`):**
 
-- `DH_AB`, `DH_BC`: Activation enthalpies (J/mol) for the AB and BC transitions
-- `DS_AB`, `DS_BC`: Activation entropies (J/mol/K) for the AB and BC transitions
+- `DH_AB`, `DH_BC`: Enthalpy coordinates (J/mol) of the AB and BC transition states
+- `DS_AB`, `DS_BC`: Entropy coordinates (J/mol/K) of the AB and BC transition states
 
 The linear models calculate k_AB, k_BA, k_BC, and k_CB. There is no direct A ↔ C
 pathway.
 
-**Fork Transition Barriers (`3st_eyring_fork`):**
+**Fork transition-state coordinates (`3st_eyring_fork`):**
 
-- `DH_AB`, `DH_AC`: Activation enthalpies (J/mol) for the AB and AC transitions
-- `DS_AB`, `DS_AC`: Activation entropies (J/mol/K) for the AB and AC transitions
+- `DH_AB`, `DH_AC`: Enthalpy coordinates (J/mol) of the AB and AC transition states
+- `DS_AB`, `DS_AC`: Entropy coordinates (J/mol/K) of the AB and AC transition states
 
 The fork model calculates k_AB, k_BA, k_AC, and k_CA. There is no direct B ↔ C
 pathway.
@@ -237,20 +269,40 @@ The `4st_eyring` model implements a full 4-state system:
 - `DH_B`, `DH_C`, `DH_D`: Enthalpy differences (J/mol) for states B, C, D
 - `DS_B`, `DS_C`, `DS_D`: Entropy differences (J/mol/K) for states B, C, D
 
-**Transition Barriers:**
+**Transition-state coordinates (relative to state A):**
 
-- `DH_AB`, `DH_AC`, `DH_AD`: Activation enthalpies (J/mol) for transitions from A
-- `DH_BC`, `DH_BD`, `DH_CD`: Activation enthalpies (J/mol) for transitions between B, C, D
-- `DS_AB`, `DS_AC`, `DS_AD`: Activation entropies (J/mol/K) for transitions from A
-- `DS_BC`, `DS_BD`, `DS_CD`: Activation entropies (J/mol/K) for transitions between B, C, D
+- `DH_AB`, `DH_AC`, `DH_AD`: Enthalpy coordinates (J/mol) of the AB, AC, and AD transition states
+- `DH_BC`, `DH_BD`, `DH_CD`: Enthalpy coordinates (J/mol) of the BC, BD, and CD transition states
+- `DS_AB`, `DS_AC`, `DS_AD`: Entropy coordinates (J/mol/K) of the AB, AC, and AD transition states
+- `DS_BC`, `DS_BD`, `DS_CD`: Entropy coordinates (J/mol/K) of the BC, BD, and CD transition states
 
 The model automatically calculates all 12 rate constants (k_AB, k_BA, k_AC, k_CA, k_AD, k_DA, k_BC, k_CB, k_BD, k_DB, k_CD, k_DC).
-
-:::note
-State A serves as the reference state with ΔH_A = ΔS_A = 0 for all Eyring models. Rate constants are automatically clipped to [0, 1×10¹⁶ s⁻¹] for numerical stability.
-:::
 
 All Eyring state and transition enthalpy parameters have default bounds of
 [-2×10⁵, 2×10⁵] J/mol. The corresponding entropy parameters have default
 bounds of [-5×10², 5×10²] J/mol/K. Explicit bounds in parameter files override
 these defaults.
+
+### Identifiability, uncertainty, and parameter scope
+
+At one temperature, varying both H and S for the same state or transition state
+is non-identifiable: the data determine the corresponding free-energy
+combination, not H and S separately. Different H/S pairs can therefore give the
+same rate or population, and deterministic uncertainty can correctly be
+unavailable because the covariance is rank deficient. Measurements at multiple
+temperatures can restore mathematical rank, but H/S correlation remains strong
+over a narrow temperature interval. Use a meaningful temperature span when H
+and S are both fitted.
+
+When the covariance is qualified, ChemEx propagates deterministic uncertainty
+to derived directional rates and to the coupled, normalized populations. Eyring
+models use the generic MCMC and resampling workflows; each proposal or replicate
+recalculates rates and populations through the same thermodynamic authority.
+
+The current ChemEx scoping contract shares Eyring H/S parameters across
+temperature, magnetic field, and spin system, but splits them when `p_total` or
+`l_total` changes. This concentration scoping is a compatibility contract, not
+a universal thermodynamic requirement. Derived rates and populations are scoped
+by temperature, `p_total`, and `l_total`; changing magnetic field alone does not
+create another chemical kinetic rate. Public parameter names, units, defaults,
+and TOML syntax are unchanged.

@@ -86,24 +86,18 @@ def test_compatibility_name_and_explicit_linear_name_have_same_model_behavior() 
         assert left.expr == right.expr
 
 
-@pytest.mark.parametrize(
-    ("model_name", "arguments"),
-    [
-        ("3st_eyring_linear", "{kab},{kba},0.0,0.0,{kbc},{kcb}"),
-        ("3st_eyring_fork", "{kab},{kba},{kac},{kca},0.0,0.0"),
-    ],
-)
-def test_population_constraints_encode_the_absent_edge_as_exact_zero(
+@pytest.mark.parametrize("model_name", ("3st_eyring_linear", "3st_eyring_fork"))
+def test_population_constraints_depend_only_on_state_coordinates(
     model_name: str,
-    arguments: str,
 ) -> None:
     register()
     settings = model_factory.create(model_name, Conditions(temperature=25.0))
 
     for population in ("pa", "pb", "pc"):
         expression = settings[population].expr
-        assert "pop_3st" in expression
-        assert arguments in expression
+        assert "pop_3st_eyring" in expression
+        assert "{dh_b},{ds_b},{dh_c},{ds_c},25.0" in expression
+        assert all(rate not in expression for rate in ("{kab}", "{kba}", "{kbc}"))
 
 
 def test_parameter_file_bounds_override_eyring_defaults() -> None:

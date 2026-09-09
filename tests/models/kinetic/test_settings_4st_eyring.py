@@ -6,7 +6,6 @@ from scipy import constants
 
 from chemex.configuration.conditions import Conditions
 from chemex.models.kinetic.settings_4st_eyring import (
-    MAX_RATE_CONSTANT,
     calculate_kij_4st_eyring,
     make_settings_4st_eyring,
 )
@@ -53,9 +52,6 @@ class TestCalculateKij4stEyring:
         for key, value in rates.items():
             assert value > 0, f"Rate {key} should be positive, got {value}"
             assert np.isfinite(value), f"Rate {key} should be finite, got {value}"
-            assert value <= MAX_RATE_CONSTANT, (
-                f"Rate {key} exceeds maximum, got {value}"
-            )
 
     def test_temperature_dependence(self, default_params):
         """Test that rate constants change appropriately with temperature."""
@@ -312,11 +308,12 @@ class TestPhysicalRealism:
                 f"Rate at {temperatures[i]}°C should be higher than at {temperatures[i - 1]}°C"
             )
 
-        # Check Arrhenius plot linearity (ln(k) vs 1/T should be approximately linear)
-        ln_rates = [np.log(r) for r in rates_kab]
-        inv_temps = [
-            1 / constants.convert_temperature(t, "C", "K") for t in temperatures
+        # Eyring linearity is ln(k/T) versus 1/T.
+        kelvin = [constants.convert_temperature(t, "C", "K") for t in temperatures]
+        ln_rates = [
+            np.log(rate / temp) for rate, temp in zip(rates_kab, kelvin, strict=True)
         ]
+        inv_temps = [1 / temp for temp in kelvin]
 
         # Simple linear regression
         n = len(ln_rates)

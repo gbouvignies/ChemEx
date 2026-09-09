@@ -10,7 +10,6 @@ from scipy import constants
 
 from chemex.configuration.conditions import Conditions
 from chemex.models.kinetic.settings_3st_eyring import (
-    MAX_RATE_CONSTANT,
     calculate_kij_3st_eyring_fork,
     calculate_kij_3st_eyring_linear,
     make_settings_3st_eyring_fork,
@@ -49,7 +48,7 @@ def test_calculators_return_only_active_finite_rates(
     rates = calculator(*arguments)
 
     assert rates.keys() == expected_rates
-    assert all(0.0 < rate <= MAX_RATE_CONSTANT for rate in rates.values())
+    assert all(rate > 0.0 for rate in rates.values())
     assert all(np.isfinite(rate) for rate in rates.values())
 
 
@@ -114,10 +113,13 @@ def test_temperature_dependence_is_preserved(
     "calculator",
     [calculate_kij_3st_eyring_linear, calculate_kij_3st_eyring_fork],
 )
-def test_rate_clipping_policy_is_preserved(calculator: RateCalculator) -> None:
+def test_rates_are_not_saturated_at_the_former_limit(
+    calculator: RateCalculator,
+) -> None:
     rates = calculator(0.0, 0.0, 0.0, 0.0, -2.0e5, 0.0, -2.0e5, 0.0, 25.0)
 
-    assert set(rates.values()) == {MAX_RATE_CONSTANT}
+    assert all(rate > 1.0e16 for rate in rates.values())
+    assert len(set(rates.values())) == 1
 
 
 def test_calculators_cache_repeated_inputs() -> None:

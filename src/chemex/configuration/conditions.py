@@ -14,6 +14,7 @@ from pydantic import (
 from pydantic_core.core_schema import ValidationInfo
 
 from chemex.configuration.utils import key_to_lower, to_lower
+from chemex.models.kinetic._eyring import temperature_to_kelvin
 from chemex.models.model import ModelSpec
 
 T = TypeVar("T")
@@ -52,7 +53,9 @@ class Conditions(BaseModel, frozen=True):
     def rounded(self) -> Self:
         """Return a new instance with rounded h_larmor_frq and temperature."""
         h_larmor_frq = round(self.h_larmor_frq, 1) if self.h_larmor_frq else None
-        temperature = round(self.temperature, 1) if self.temperature else None
+        temperature = (
+            round(self.temperature, 1) if self.temperature is not None else None
+        )
         return self.model_copy(
             update={"h_larmor_frq": h_larmor_frq, "temperature": temperature},
         )
@@ -151,9 +154,11 @@ class ConditionsWithValidations(Conditions, frozen=True):
             msg = 'To use the "hd" model, d2o must be provided'
             raise ValueError(msg)
 
-        if "eyring" in model_name and self.temperature is None:
-            msg = 'To use the "eyring" model, "temperature" must be provided'
-            raise ValueError(msg)
+        if "eyring" in model_name:
+            if self.temperature is None:
+                msg = 'To use the "eyring" model, "temperature" must be provided'
+                raise ValueError(msg)
+            temperature_to_kelvin(self.temperature)
 
         # Binding models require both concentrations to be present.
         are_not_both_set = self.p_total is None or self.l_total is None

@@ -4,14 +4,25 @@ from collections.abc import Callable
 from functools import lru_cache
 from typing import Literal
 
-import numpy as np
-from scipy import constants
-
 from chemex.configuration.conditions import Conditions
 from chemex.models.constraints import pop_3st
 from chemex.models.factory import model_factory
+from chemex.models.kinetic._eyring import (
+    EYRING_RATE_PARTIALS,
+    ThermodynamicCoordinate,
+    calculate_directional_rate,
+    calculate_rate_component,
+    temperature_to_kelvin,
+    thermodynamic_population_partials,
+    thermodynamic_populations,
+)
 from chemex.parameters.setting import NameSetting, ParamLocalSetting
-from chemex.parameters.userfunctions import user_function_registry
+from chemex.parameters.userfunctions import (
+    AnalyticFunctionLinearization,
+    FunctionLinearization,
+    function_linearization_registry,
+    user_function_registry,
+)
 
 NAME = "3st_eyring"
 LINEAR_NAME = "3st_eyring_linear"
@@ -20,11 +31,10 @@ FORK_NAME = "3st_eyring_fork"
 PL = ("p_total", "l_total")
 TPL = ("temperature", "p_total", "l_total")
 
-MAX_RATE_CONSTANT = 1e16
-
 Edge = Literal["ab", "ac", "bc"]
 LINEAR_EDGES: tuple[Edge, ...] = ("ab", "bc")
 FORK_EDGES: tuple[Edge, ...] = ("ab", "ac")
+REFERENCE_STATE = ThermodynamicCoordinate(enthalpy=0.0, entropy=0.0)
 
 
 def _calculate_kij_3st_eyring(
@@ -32,27 +42,21 @@ def _calculate_kij_3st_eyring(
     ds_b: float,
     dh_c: float,
     ds_c: float,
-    transition_terms: tuple[tuple[Edge, float, float], ...],
+    transition_states: dict[Edge, ThermodynamicCoordinate],
     temperature: float,
 ) -> dict[str, float]:
-    kelvin = temperature + constants.zero_Celsius
-    kbt_h = constants.k * kelvin / constants.h
-    rt = constants.R * kelvin
-    state_terms = {
-        "a": (0.0, 0.0),
-        "b": (dh_b, ds_b),
-        "c": (dh_c, ds_c),
+    states = {
+        "a": REFERENCE_STATE,
+        "b": ThermodynamicCoordinate(dh_b, ds_b),
+        "c": ThermodynamicCoordinate(dh_c, ds_c),
     }
     rates: dict[str, float] = {}
-    for edge, dh_transition, ds_transition in transition_terms:
+    for edge, transition_state in transition_states.items():
         for initial, final in (edge, edge[::-1]):
-            dh_initial, ds_initial = state_terms[initial]
-            activation_free_energy = (
-                dh_transition - dh_initial - kelvin * (ds_transition - ds_initial)
-            )
-            rate = kbt_h * np.exp(-activation_free_energy / rt)
-            rates[f"k{initial}{final}"] = float(
-                np.clip(rate, 0.0, MAX_RATE_CONSTANT),
+            rates[f"k{initial}{final}"] = calculate_directional_rate(
+                states[initial],
+                transition_state,
+                temperature,
             )
     return rates
 
@@ -70,12 +74,15 @@ def calculate_kij_3st_eyring_linear(
     temperature: float,
 ) -> dict[str, float]:
     return _calculate_kij_3st_eyring(
-        dh_b,
-        ds_b,
-        dh_c,
-        ds_c,
-        (("ab", dh_ab, ds_ab), ("bc", dh_bc, ds_bc)),
-        temperature,
+        dh_b=dh_b,
+        ds_b=ds_b,
+        dh_c=dh_c,
+        ds_c=ds_c,
+        transition_states={
+            "ab": ThermodynamicCoordinate(dh_ab, ds_ab),
+            "bc": ThermodynamicCoordinate(dh_bc, ds_bc),
+        },
+        temperature=temperature,
     )
 
 
@@ -96,13 +103,35 @@ def calculate_kij_3st_eyring_fork(
     temperature: float,
 ) -> dict[str, float]:
     return _calculate_kij_3st_eyring(
-        dh_b,
-        ds_b,
-        dh_c,
-        ds_c,
-        (("ab", dh_ab, ds_ab), ("ac", dh_ac, ds_ac)),
+        dh_b=dh_b,
+        ds_b=ds_b,
+        dh_c=dh_c,
+        ds_c=ds_c,
+        transition_states={
+            "ab": ThermodynamicCoordinate(dh_ab, ds_ab),
+            "ac": ThermodynamicCoordinate(dh_ac, ds_ac),
+        },
+        temperature=temperature,
+    )
+
+
+@lru_cache(maxsize=100)
+def calculate_populations_3st_eyring(
+    dh_b: float,
+    ds_b: float,
+    dh_c: float,
+    ds_c: float,
+    temperature: float,
+) -> dict[str, float]:
+    populations = thermodynamic_populations(
+        {
+            "a": REFERENCE_STATE,
+            "b": ThermodynamicCoordinate(dh_b, ds_b),
+            "c": ThermodynamicCoordinate(dh_c, ds_c),
+        },
         temperature,
     )
+    return {f"p{state}": population for state, population in populations.items()}
 
 
 def _thermodynamic_settings(edges: tuple[Edge, ...]) -> dict[str, ParamLocalSetting]:
@@ -153,34 +182,30 @@ def _thermodynamic_settings(edges: tuple[Edge, ...]) -> dict[str, ParamLocalSett
 
 def _rate_settings(
     edges: tuple[Edge, ...],
-    function_name: str,
     temperature: float,
 ) -> dict[str, ParamLocalSetting]:
-    arguments = ["{dh_b}", "{ds_b}", "{dh_c}", "{ds_c}"]
+    state_arguments = {
+        "a": ("0.0", "0.0"),
+        "b": ("{dh_b}", "{ds_b}"),
+        "c": ("{dh_c}", "{ds_c}"),
+    }
+    settings: dict[str, ParamLocalSetting] = {}
     for edge in edges:
-        arguments.extend((f"{{dh_{edge}}}", f"{{ds_{edge}}}"))
-    arguments.append(str(temperature))
-    call = f"{function_name}({','.join(arguments)})"
-    return {
-        f"k{initial}{final}": ParamLocalSetting(
-            name_setting=NameSetting(f"k{initial}{final}", "", TPL),
-            min=0.0,
-            expr=f"{call}['k{initial}{final}']",
-        )
-        for edge in edges
-        for initial, final in (edge, edge[::-1])
-    }
+        for initial, final in (edge, edge[::-1]):
+            state_enthalpy, state_entropy = state_arguments[initial]
+            settings[f"k{initial}{final}"] = ParamLocalSetting(
+                name_setting=NameSetting(f"k{initial}{final}", "", TPL),
+                min=0.0,
+                expr=(
+                    f"eyring_rate({state_enthalpy},{state_entropy},"
+                    f"{{dh_{edge}}},{{ds_{edge}}},{temperature})['rate']"
+                ),
+            )
+    return settings
 
 
-def _population_settings(edges: tuple[Edge, ...]) -> dict[str, ParamLocalSetting]:
-    active_rates = {
-        f"k{initial}{final}" for edge in edges for initial, final in (edge, edge[::-1])
-    }
-    arguments = [
-        f"{{{rate}}}" if rate in active_rates else "0.0"
-        for rate in ("kab", "kba", "kac", "kca", "kbc", "kcb")
-    ]
-    call = f"pop_3st({','.join(arguments)})"
+def _population_settings(temperature: float) -> dict[str, ParamLocalSetting]:
+    call = f"pop_3st_eyring({{dh_b}},{{ds_b}},{{dh_c}},{{ds_c}},{temperature})"
     return {
         f"p{state}": ParamLocalSetting(
             name_setting=NameSetting(f"p{state}", "", TPL),
@@ -195,23 +220,23 @@ def _population_settings(edges: tuple[Edge, ...]) -> dict[str, ParamLocalSetting
 def _make_settings_3st_eyring(
     conditions: Conditions,
     edges: tuple[Edge, ...],
-    function_name: str,
 ) -> dict[str, ParamLocalSetting]:
     celsius = conditions.temperature
     if celsius is None:
         msg = "The 'temperature' is None"
         raise ValueError(msg)
+    temperature_to_kelvin(celsius)
     return {
         **_thermodynamic_settings(edges),
-        **_rate_settings(edges, function_name, celsius),
-        **_population_settings(edges),
+        **_rate_settings(edges, celsius),
+        **_population_settings(celsius),
     }
 
 
 def make_settings_3st_eyring_linear(
     conditions: Conditions,
 ) -> dict[str, ParamLocalSetting]:
-    return _make_settings_3st_eyring(conditions, LINEAR_EDGES, "kij_3st_eyring")
+    return _make_settings_3st_eyring(conditions, LINEAR_EDGES)
 
 
 # Compatibility name: 3st_eyring retains the historical linear topology.
@@ -224,7 +249,6 @@ def make_settings_3st_eyring_fork(
     return _make_settings_3st_eyring(
         conditions,
         FORK_EDGES,
-        "kij_3st_eyring_fork",
     )
 
 
@@ -232,7 +256,34 @@ def _user_functions(
     rate_function: Callable[..., dict[str, float]],
     function_name: str,
 ) -> dict[str, object]:
-    return {function_name: rate_function, "pop_3st": pop_3st}
+    return {
+        "eyring_rate": calculate_rate_component,
+        function_name: rate_function,
+        "pop_3st": pop_3st,
+        "pop_3st_eyring": calculate_populations_3st_eyring,
+    }
+
+
+def _linearizations() -> tuple[FunctionLinearization, ...]:
+    components = ("pa", "pb", "pc")
+    population_partials = thermodynamic_population_partials(components)
+    return (
+        AnalyticFunctionLinearization(
+            "eyring_rate",
+            "rate",
+            "eyring-directional-rate-partials-v1",
+            EYRING_RATE_PARTIALS,
+        ),
+        *(
+            AnalyticFunctionLinearization(
+                "pop_3st_eyring",
+                component,
+                "eyring-thermodynamic-population-partials-v1",
+                population_partials[component],
+            )
+            for component in components
+        ),
+    )
 
 
 def register() -> None:
@@ -247,6 +298,8 @@ def register() -> None:
     )
     user_function_registry.register(name=NAME, user_functions=linear_functions)
     user_function_registry.register(name=LINEAR_NAME, user_functions=linear_functions)
+    function_linearization_registry.register(NAME, _linearizations())
+    function_linearization_registry.register(LINEAR_NAME, _linearizations())
     user_function_registry.register(
         name=FORK_NAME,
         user_functions=_user_functions(
@@ -254,3 +307,4 @@ def register() -> None:
             "kij_3st_eyring_fork",
         ),
     )
+    function_linearization_registry.register(FORK_NAME, _linearizations())

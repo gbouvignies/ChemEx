@@ -32,6 +32,20 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   signature; the obsolete `DH_AC` and `DS_AC` arguments have been removed.
 
 ### Fixed
+- Eyring models now use one log-domain transition-state authority without the
+  former `1e16 s^-1` rate saturation. Positive rates outside binary64
+  representability fail explicitly, while representable subnormal rates remain
+  valid. Equilibrium populations now come directly from thermodynamic state
+  coordinates for all two-, three-, and four-state Eyring models, preserving
+  detailed balance, cycle closure, and population invariance under uniform
+  kinetic slowdown. Mathematically positive state populations below binary64
+  representability now fail explicitly instead of becoming structural zero.
+  Invalid Celsius temperatures at or below absolute zero and non-finite
+  temperatures are rejected, exact 0 °C retains its condition identity, and
+  derived directional rates and normalized populations receive deterministic
+  propagated uncertainty when the fit covariance is qualified.
+  These are correctness fixes; public Eyring model and H/S parameter names,
+  units, defaults, scopes, and TOML syntax are unchanged.
 - `3st_binding_cs` and `3st_binding_if` now use equilibrium parameters and mass
   balances as the sole population authority, independently of tagged kinetic
   scales. This is a breaking independent-parameter change: conformational
