@@ -71,6 +71,7 @@ def _build_parameters(
             max=setting.max,
             vary=setting.vary,
             expr=expression,
+            report_only=setting.report_only,
         )
 
     return name_map, parameters
@@ -237,6 +238,7 @@ class ParameterFactory:
                 model_owned=param_id in model_owned_ids and bool(parameter.expr),
                 requires_independent=not bool(parameter.expr),
                 fits_by_default=param_id in default_fit_ids,
+                report_only=parameter.report_only,
             )
             target.setdefault(param_id, []).append(contribution)
 

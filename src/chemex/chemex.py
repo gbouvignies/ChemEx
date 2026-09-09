@@ -183,6 +183,7 @@ def run_sim(
             parameter_model=parameter_model,
             parameterization=parameterization,
             plot=plot,
+            report_only_values=session.resolve_report_only_values(),
         )
     except (Exception, KeyboardInterrupt) as error:
         mark_failure_stage(error, "simulation")

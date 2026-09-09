@@ -21,6 +21,7 @@ from chemex.optimize.direct_trf import (
 from chemex.optimize.grouped_direct_trf import FitPartitionProof
 from chemex.optimize.uncertainty import (
     CompiledConstraintLinearizationCapabilities,
+    FunctionFiniteDifferenceCapability,
     MissingFunctionLinearizationCapability,
     OperationTerminal,
     ParameterUnit,
@@ -39,6 +40,7 @@ from chemex.parameters.parameterization import (
     ActiveParameterization,
     ParameterRole,
 )
+from chemex.parameters.userfunctions import function_linearization_registry
 
 
 class InterpretationCompleteness(StrEnum):
@@ -68,6 +70,32 @@ class ProfiledGridBasis:
 
 
 type DeterministicUncertaintyBasis = ContinuousTrfBasis | ProfiledGridBasis
+
+
+def compile_model_constraint_linearization_capabilities(
+    parameterization: ActiveParameterization,
+    output_scope: tuple[str, ...],
+) -> CompiledConstraintLinearizationCapabilities:
+    """Compile only the model-owned scientific-function derivative policies."""
+    capabilities = tuple(
+        FunctionFiniteDifferenceCapability(
+            function_id=item.function_id,
+            component=item.component,
+            argument_scales=item.argument_scales,
+            output_scale=item.output_scale,
+            argument_domains=item.argument_domains,
+            relative_steps=True,
+            normalized_population_components=item.normalized_population_components,
+        )
+        for item in function_linearization_registry.get(
+            parameterization.binder.model_name
+        )
+    )
+    return compile_constraint_linearization_capabilities(
+        parameterization,
+        output_scope,
+        capabilities,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -409,20 +437,18 @@ def _resolve_inputs(
     unsupported: list[str] = []
     for param_id in propagation_candidates:
         try:
-            compile_constraint_linearization_capabilities(
+            compile_model_constraint_linearization_capabilities(
                 parameterization,
                 (param_id,),
-                (),
             )
         except MissingFunctionLinearizationCapability:
             unsupported.append(param_id)
         else:
             supported.append(param_id)
     constrained_scope = tuple(supported)
-    compiled_capabilities = compile_constraint_linearization_capabilities(
+    compiled_capabilities = compile_model_constraint_linearization_capabilities(
         parameterization,
         constrained_scope,
-        (),
     )
     return _ResolvedUncertaintyInputs(
         policy,

@@ -17,7 +17,7 @@ import inspect
 import json
 import math
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field, fields, is_dataclass
+from dataclasses import dataclass, field, fields, is_dataclass, replace
 from enum import StrEnum
 from itertools import pairwise
 from numbers import Real
@@ -60,8 +60,8 @@ from chemex.parameters.parameterization import (
 from chemex.typing import Array
 
 _SCHEMA_VERSION = 2
-_RESIDUAL_LINEARIZATION_VERSION = "accepted-residual-jacobian-v2"
-_CONSTRAINT_LINEARIZATION_VERSION = "constraint-forward-chain-v1"
+_RESIDUAL_LINEARIZATION_VERSION = "accepted-residual-jacobian-v3"
+_CONSTRAINT_LINEARIZATION_VERSION = "constraint-forward-chain-v2"
 _COVARIANCE_VERSION = "column-equilibrated-full-rank-svd-factor-gram-v5"
 _FACTOR_VERSION = "column-equilibrated-svd-factor-gram-v4"
 _REDUCTION_VERSION = "fixed-pairwise-binary64-v1"
@@ -337,6 +337,9 @@ class FunctionFiniteDifferenceCapability:
     component: str | None
     argument_scales: tuple[float, ...]
     output_scale: float
+    argument_domains: tuple[Literal["unbounded", "nonnegative", "positive"], ...] = ()
+    relative_steps: bool = False
+    normalized_population_components: tuple[str, ...] = ()
     identity: str = field(init=False)
 
     def __post_init__(self) -> None:
@@ -345,17 +348,39 @@ class FunctionFiniteDifferenceCapability:
             for index, value in enumerate(self.argument_scales)
         )
         output_scale = _finite(self.output_scale, name="function output scale")
+        domains = self.argument_domains or ("unbounded",) * len(scales)
+        population_components = tuple(self.normalized_population_components)
         if (
             not self.function_id
             or not scales
             or any(value <= 0.0 for value in scales)
             or output_scale <= 0.0
+            or len(domains) != len(scales)
+            or any(
+                domain not in {"unbounded", "nonnegative", "positive"}
+                for domain in domains
+            )
         ):
             raise UncertaintyConstructionError(
                 "Function finite-difference scales must be positive and explicit"
             )
+        if population_components and (
+            len(population_components) < 2
+            or len(set(population_components)) != len(population_components)
+            or self.component not in population_components
+        ):
+            raise UncertaintyConstructionError(
+                "Normalized population components must be distinct and include "
+                "the capability component"
+            )
         object.__setattr__(self, "argument_scales", scales)
         object.__setattr__(self, "output_scale", output_scale)
+        object.__setattr__(self, "argument_domains", tuple(domains))
+        object.__setattr__(
+            self,
+            "normalized_population_components",
+            population_components,
+        )
         object.__setattr__(
             self,
             "identity",
@@ -366,6 +391,9 @@ class FunctionFiniteDifferenceCapability:
                     self.component,
                     _vector_tokens(scales),
                     _float_token(output_scale),
+                    tuple(domains),
+                    self.relative_steps,
+                    population_components,
                     _CONSTRAINT_LINEARIZATION_VERSION,
                 ),
             ),
@@ -3930,6 +3958,28 @@ def _max_norm(values: Sequence[float]) -> float:
     return max((abs(value) for value in values), default=0.0)
 
 
+def _normalized_three_point_weights(
+    first_displacement: float,
+    second_displacement: float,
+) -> tuple[tuple[float, float, float], float]:
+    """Return derivative weights in a local dimensionless coordinate.
+
+    The displacements must be finite, nonzero, and distinct.  The returned scale
+    converts the derivative with respect to the normalized coordinate back to
+    the original parameter units.
+    """
+    coordinate_scale = max(abs(first_displacement), abs(second_displacement))
+    first_offset = first_displacement / coordinate_scale
+    second_offset = second_displacement / coordinate_scale
+
+    # Raw subnormal displacement products can underflow even when the derivative
+    # is representable.  Their normalized counterparts remain order one.
+    first_weight = -second_offset / (first_offset * (first_offset - second_offset))
+    center_weight = -(first_offset + second_offset) / (first_offset * second_offset)
+    second_weight = -first_offset / (second_offset * (second_offset - first_offset))
+    return (first_weight, center_weight, second_weight), coordinate_scale
+
+
 def _three_point_derivative(
     first: Sequence[float],
     center: Sequence[float],
@@ -3937,24 +3987,21 @@ def _three_point_derivative(
     first_displacement: float,
     second_displacement: float,
 ) -> tuple[float, ...]:
-    first_coefficient = -second_displacement / (
-        first_displacement * (first_displacement - second_displacement)
+    weights, coordinate_scale = _normalized_three_point_weights(
+        first_displacement,
+        second_displacement,
     )
-    center_coefficient = -(first_displacement + second_displacement) / (
-        first_displacement * second_displacement
-    )
-    second_coefficient = -first_displacement / (
-        second_displacement * (second_displacement - first_displacement)
-    )
+    first_weight, center_weight, second_weight = weights
     result = tuple(
         _finite(
             _pairwise_sum(
                 (
-                    first_coefficient * left,
-                    center_coefficient * middle,
-                    second_coefficient * right,
+                    first_weight * left,
+                    center_weight * middle,
+                    second_weight * right,
                 )
-            ),
+            )
+            / coordinate_scale,
             name="finite-difference derivative",
         )
         for left, middle, right in zip(first, center, second, strict=True)
@@ -4197,11 +4244,22 @@ def _assess_stencil(
         *(_max_norm(result) for result in results),
     )
     minimum_displacement = min(abs(item) for item in displacements)
+    # Form the ratio first so epsilon times a subnormal function scale cannot
+    # underflow when the final roundoff allowance is representable.
     roundoff = (
-        policy.roundoff_multiplier * _EPSILON * function_scale / minimum_displacement
+        policy.roundoff_multiplier * _EPSILON * (function_scale / minimum_displacement)
     )
     threshold = policy.relative_step_tolerance * derivative_scale + roundoff
-    return discrepancy, derivative_scale, roundoff, discrepancy <= threshold
+    reliability_quantities = (
+        discrepancy,
+        derivative_scale,
+        roundoff,
+        threshold,
+    )
+    reliable = all(math.isfinite(value) for value in reliability_quantities) and (
+        discrepancy <= threshold
+    )
+    return discrepancy, derivative_scale, roundoff, reliable
 
 
 def _linearize_residual_column(
@@ -5826,99 +5884,122 @@ def _scientific_function_partial(
     policy: UncertaintyPolicy,
 ) -> tuple[float, FunctionPartialDiagnostic]:
     center = arguments[argument_index]
-    nominal = _NOMINAL_STEP_FACTOR * capability.argument_scales[argument_index]
+    scale = capability.argument_scales[argument_index]
+    nominal = _NOMINAL_STEP_FACTOR * (
+        abs(center) if capability.relative_steps and center != 0.0 else scale
+    )
+    nominal = max(nominal, math.ulp(center))
+    domain = capability.argument_domains[argument_index]
+    lower = 0.0 if domain in {"nonnegative", "positive"} else -math.inf
+    orientations = _column_orientations(center, lower, math.inf)
     base = (_scientific_function_output(expression, function, arguments),)
     trajectory: list[object] = []
-    for attempt, step in enumerate(
-        _step_candidates(nominal, math.inf, policy),
-        start=1,
-    ):
-        trial_arguments: list[tuple[float, ...]] = []
-        displacements: list[float] = []
-        represented = {center}
-        for multiplier in (-2.0, -1.0, 1.0, 2.0):
-            updated = center + multiplier * step
-            if not math.isfinite(updated) or updated in represented:
-                break
-            represented.add(updated)
-            trial = list(arguments)
-            trial[argument_index] = updated
-            trial_arguments.append(tuple(trial))
-            displacements.append(updated - center)
-        if len(trial_arguments) != 4:
-            trajectory.append((_float_token(step), "not_distinct"))
-            continue
-        try:
-            results = tuple(
-                (_scientific_function_output(expression, function, trial),)
-                for trial in trial_arguments
+    attempt = 0
+    for orientation, maximum in orientations:
+        for step in _step_candidates(nominal, maximum, policy):
+            attempt += 1
+            multipliers = (
+                (-2.0, -1.0, 1.0, 2.0)
+                if orientation == "centered"
+                else (
+                    (1.0, 2.0, 4.0)
+                    if orientation == "one_sided_positive"
+                    else (-1.0, -2.0, -4.0)
+                )
             )
-        except (ArithmeticError, FloatingPointError, TypeError, ValueError):
-            trajectory.append((_float_token(step), "domain_failure"))
-            continue
-        fine, coarse = _stencil_estimates(
-            "centered",
-            results,
-            base,
-            displacements,
-        )
-        discrepancy, derivative_scale, roundoff, reliable = _assess_stencil(
-            fine,
-            coarse,
-            results,
-            base,
-            displacements,
-            policy,
-            capability.output_scale,
-        )
-        trajectory.append(
-            (
-                _float_token(step),
-                tuple(_float_token(item) for item in displacements),
-                _float_token(discrepancy),
-                _float_token(derivative_scale),
-                _float_token(roundoff),
-                reliable,
+            trial_arguments: list[tuple[float, ...]] = []
+            displacements: list[float] = []
+            represented = {center}
+            for multiplier in multipliers:
+                updated = center + multiplier * step
+                if (
+                    not math.isfinite(updated)
+                    or updated in represented
+                    or (domain == "positive" and updated <= 0.0)
+                    or (domain == "nonnegative" and updated < 0.0)
+                ):
+                    break
+                represented.add(updated)
+                trial = list(arguments)
+                trial[argument_index] = updated
+                trial_arguments.append(tuple(trial))
+                displacements.append(updated - center)
+            if len(trial_arguments) != len(multipliers):
+                trajectory.append(
+                    (orientation, _float_token(step), "not_distinct_or_outside_domain")
+                )
+                continue
+            try:
+                results = tuple(
+                    (_scientific_function_output(expression, function, trial),)
+                    for trial in trial_arguments
+                )
+            except (ArithmeticError, FloatingPointError, TypeError, ValueError):
+                trajectory.append((orientation, _float_token(step), "domain_failure"))
+                continue
+            fine, coarse = _stencil_estimates(
+                orientation,
+                results,
+                base,
+                displacements,
             )
-        )
-        if reliable:
-            fingerprint = _identity(
-                "scientific-function-partial-trajectory", trajectory
+            discrepancy, derivative_scale, roundoff, reliable = _assess_stencil(
+                fine,
+                coarse,
+                results,
+                base,
+                displacements,
+                policy,
+                capability.output_scale,
             )
-            return (
-                fine[0],
-                FunctionPartialDiagnostic(
-                    capability.identity,
-                    expression.function_id,
-                    expression.component,
-                    argument_index,
-                    "centered_two_scale_numerical",
+            trajectory.append(
+                (
+                    orientation,
+                    _float_token(step),
+                    tuple(_float_token(item) for item in displacements),
+                    _float_token(discrepancy),
+                    _float_token(derivative_scale),
+                    _float_token(roundoff),
+                    reliable,
+                )
+            )
+            if reliable:
+                fingerprint = _identity(
+                    "scientific-function-partial-trajectory", trajectory
+                )
+                return (
                     fine[0],
-                    coarse[0],
-                    tuple(displacements),
-                    discrepancy,
-                    derivative_scale,
-                    roundoff,
-                    attempt,
-                    fingerprint,
-                    (
-                        ClaimAssessment(
-                            "FUNCTION_PARTIAL_RELIABILITY",
-                            ClaimState.SATISFIED,
+                    FunctionPartialDiagnostic(
+                        capability.identity,
+                        expression.function_id,
+                        expression.component,
+                        argument_index,
+                        f"{orientation}_two_scale_numerical",
+                        fine[0],
+                        coarse[0],
+                        tuple(displacements),
+                        discrepancy,
+                        derivative_scale,
+                        roundoff,
+                        attempt,
+                        fingerprint,
+                        (
+                            ClaimAssessment(
+                                "FUNCTION_PARTIAL_RELIABILITY",
+                                ClaimState.SATISFIED,
+                            ),
                         ),
                     ),
-                ),
-            )
+                )
     fingerprint = _identity("scientific-function-partial-trajectory", trajectory)
     if trajectory and all(
-        isinstance(item, tuple) and len(item) == 2 and item[1] == "not_distinct"
+        isinstance(item, tuple) and item[-1] == "not_distinct_or_outside_domain"
         for item in trajectory
     ):
         category = "function_partial_representation_loss"
     elif trajectory and all(
         isinstance(item, tuple)
-        and len(item) == 2
-        and item[1] in {"not_distinct", "domain_failure"}
+        and item[-1] in {"not_distinct_or_outside_domain", "domain_failure"}
         for item in trajectory
     ):
         category = "function_partial_active_domain_failure"
@@ -5934,6 +6015,169 @@ def _scientific_function_partial(
             "exhausted_declared_larger_step_extent",
         ),
     )
+
+
+def _normalization_complement_diagnostic(
+    expression: FunctionExpression,
+    capability: FunctionFiniteDifferenceCapability,
+    argument_index: int,
+    dependent_component: str,
+    independent_components: tuple[str, ...],
+    estimate: float,
+    source_diagnostics: tuple[FunctionPartialDiagnostic, ...],
+) -> FunctionPartialDiagnostic:
+    """Record the numerical evidence behind one normalization complement."""
+    companion_estimates = tuple(
+        diagnostic.companion_estimate for diagnostic in source_diagnostics
+    )
+    if any(value is None for value in companion_estimates):
+        raise UncertaintyConstructionError(
+            "Numerical population partial lacks its companion estimate"
+        )
+    companion_estimate = _finite(
+        -math.fsum(value for value in companion_estimates if value is not None),
+        name="normalized population complement companion derivative",
+    )
+    discrepancy = abs(estimate - companion_estimate)
+    derivative_scale = max(
+        abs(estimate),
+        *(diagnostic.derivative_scale for diagnostic in source_diagnostics),
+    )
+    roundoff_allowance = _finite(
+        math.fsum(diagnostic.roundoff_allowance for diagnostic in source_diagnostics),
+        name="normalized population complement roundoff allowance",
+    )
+    represented_displacements = tuple(
+        sorted(
+            {
+                displacement
+                for diagnostic in source_diagnostics
+                for displacement in diagnostic.represented_displacements
+            }
+        )
+    )
+    trajectory_fingerprint = _identity(
+        "normalized-population-partial-trajectory",
+        (
+            capability.identity,
+            dependent_component,
+            argument_index,
+            tuple(diagnostic.identity for diagnostic in source_diagnostics),
+        ),
+    )
+    return FunctionPartialDiagnostic(
+        capability.identity,
+        expression.function_id,
+        dependent_component,
+        argument_index,
+        "normalized_population_complement",
+        estimate,
+        companion_estimate,
+        represented_displacements,
+        discrepancy,
+        derivative_scale,
+        roundoff_allowance,
+        sum(diagnostic.attempt_count for diagnostic in source_diagnostics),
+        trajectory_fingerprint,
+        (
+            ClaimAssessment(
+                "FUNCTION_PARTIAL_RELIABILITY",
+                ClaimState.SATISFIED,
+            ),
+            ClaimAssessment(
+                "NORMALIZED_POPULATION_GRADIENT",
+                ClaimState.SATISFIED,
+                (
+                    f"d{dependent_component} = -sum("
+                    + ", ".join(f"d{component}" for component in independent_components)
+                    + ")"
+                ),
+            ),
+        ),
+    )
+
+
+def _normalized_population_partial(
+    expression: FunctionExpression,
+    function: Callable[..., object],
+    arguments: tuple[float, ...],
+    argument_index: int,
+    capability: FunctionFiniteDifferenceCapability,
+    policy: UncertaintyPolicy,
+) -> tuple[float, FunctionPartialDiagnostic]:
+    """Differentiate one component of a model-owned normalized population vector.
+
+    The largest population is reconstructed from the other gradients because its
+    scalar value is the component most likely to round to exactly one.  Central
+    population values continue to come directly from the scientific function.
+    """
+    components = capability.normalized_population_components
+    requested_component = expression.component
+    if requested_component not in components:
+        raise UncertaintyConstructionError(
+            "Normalized population capability does not include its output component"
+        )
+    component_expressions = {
+        component: FunctionExpression(
+            expression.function_id,
+            expression.arguments,
+            component,
+        )
+        for component in components
+    }
+    component_capabilities = {
+        component: replace(capability, component=component) for component in components
+    }
+    population_values = {
+        component: _scientific_function_output(
+            component_expression,
+            function,
+            arguments,
+        )
+        for component, component_expression in component_expressions.items()
+    }
+    dependent_component = max(components, key=population_values.__getitem__)
+    if requested_component != dependent_component:
+        return _scientific_function_partial(
+            expression,
+            function,
+            arguments,
+            argument_index,
+            component_capabilities[requested_component],
+            policy,
+        )
+
+    independent_components = tuple(
+        component for component in components if component != dependent_component
+    )
+    independent_partials = tuple(
+        _scientific_function_partial(
+            component_expressions[component],
+            function,
+            arguments,
+            argument_index,
+            component_capabilities[component],
+            policy,
+        )
+        for component in independent_components
+    )
+    estimate = _finite(
+        -math.fsum(partial for partial, _diagnostic in independent_partials),
+        name="normalized population complement derivative",
+    )
+    source_diagnostics = tuple(
+        diagnostic for _partial, diagnostic in independent_partials
+    )
+    diagnostic = _normalization_complement_diagnostic(
+        expression,
+        capability,
+        argument_index,
+        dependent_component,
+        independent_components,
+        estimate,
+        source_diagnostics,
+    )
+    return estimate, diagnostic
 
 
 def _analytic_function_partials(
@@ -6031,8 +6275,18 @@ def _differentiate_function(
                 f"Scientific function {expression.function_id!r} capability has the "
                 "wrong arity"
             )
-        partial_results = tuple(
-            _scientific_function_partial(
+        active_indices = tuple(
+            index
+            for index, argument in enumerate(arguments)
+            if any(component != 0.0 for component in argument.gradient)
+        )
+        partial_function = (
+            _normalized_population_partial
+            if capability.normalized_population_components
+            else _scientific_function_partial
+        )
+        partial_results = {
+            index: partial_function(
                 expression,
                 function,
                 argument_values,
@@ -6040,10 +6294,13 @@ def _differentiate_function(
                 capability,
                 policy,
             )
+            for index in active_indices
+        }
+        partials = tuple(
+            partial_results[index][0] if index in partial_results else 0.0
             for index in range(len(arguments))
         )
-        partials = tuple(item[0] for item in partial_results)
-        diagnostics = tuple(item[1] for item in partial_results)
+        diagnostics = tuple(partial_results[index][1] for index in active_indices)
     else:
         partials, diagnostics = _analytic_function_partials(
             expression,

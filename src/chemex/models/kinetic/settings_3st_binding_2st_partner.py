@@ -2,38 +2,50 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-import numpy as np
-from scipy.optimize import root
-
 from chemex.configuration.conditions import Conditions
 from chemex.models.constraints import pop_3st
 from chemex.models.factory import model_factory
+from chemex.models.kinetic._binding import (
+    MIN_POSITIVE_FLOAT,
+    BindingEquilibrium,
+    detailed_balance_rate,
+    log_binding_weight,
+    log_equilibrium_ratio,
+    solve_binding_equilibrium,
+    split_exchange_rate,
+)
 from chemex.parameters.setting import NameSetting, ParamLocalSetting
-from chemex.parameters.userfunctions import user_function_registry
-from chemex.typing import Array
+from chemex.parameters.userfunctions import (
+    function_linearization_registry,
+    population_linearizations,
+    user_function_registry,
+)
 
 NAME = "3st_binding_partner_2st"
 
 TPL = ("temperature", "p_total", "l_total")
 
 
-def calculate_residuals(
-    concentrations: Array,
+@lru_cache(maxsize=100)
+def _calculate_equilibrium(
     p_total: float,
     l_total: float,
     kd1: float,
     kd2: float,
     keq: float,
-) -> Array:
-    p, l1, l2, pl1, pl2 = concentrations
-    return np.array(
-        [
-            l_total - (l1 + l2 + pl1 + pl2),
-            p_total - (p + pl1 + pl2),
-            kd1 * pl1 - p * l1,
-            kd2 * pl2 - p * l2,
-            keq * l1 - l2,
-        ],
+) -> BindingEquilibrium:
+    log_keq = log_equilibrium_ratio(keq)
+    log_pl1 = log_binding_weight(kd1)
+    log_pl2 = log_keq + log_binding_weight(kd2)
+    return solve_binding_equilibrium(
+        p_total,
+        l_total,
+        free_ligand_log_weights=(0.0, log_keq),
+        complex_log_weights=(
+            log_pl1,
+            log_pl2,
+        ),
+        edge_log_ratios=(log_pl2 - log_pl1,),
     )
 
 
@@ -45,13 +57,60 @@ def calculate_concentrations(
     kd2: float,
     keq: float,
 ) -> dict[str, float]:
-    concentrations_start = (p_total, l_total / 2, l_total / 2, 0.0, 0.0)
-    results = root(
-        calculate_residuals,
-        concentrations_start,
-        args=(p_total, l_total, kd1, kd2, keq),
+    equilibrium = _calculate_equilibrium(p_total, l_total, kd1, kd2, keq)
+    l1, l2 = equilibrium.free_ligands
+    pl1, pl2 = equilibrium.complexes
+    return {
+        "p": equilibrium.protein_free,
+        "l1": l1,
+        "l2": l2,
+        "pl1": pl1,
+        "pl2": pl2,
+    }
+
+
+@lru_cache(maxsize=100)
+def calculate_populations(
+    p_total: float,
+    l_total: float,
+    kd1: float,
+    kd2: float,
+    keq: float,
+) -> dict[str, float]:
+    pa, pb, pc = _calculate_equilibrium(
+        p_total,
+        l_total,
+        kd1,
+        kd2,
+        keq,
+    ).populations
+    return {"pa": pa, "pb": pb, "pc": pc}
+
+
+@lru_cache(maxsize=100)
+def calculate_rates(
+    p_total: float,
+    l_total: float,
+    kd1: float,
+    kd2: float,
+    keq: float,
+    koff_ab: float,
+    koff_ac: float,
+    kex_bc: float,
+) -> dict[str, float]:
+    equilibrium = _calculate_equilibrium(p_total, l_total, kd1, kd2, keq)
+    log_pa, log_pb, log_pc = equilibrium.log_populations
+    kbc, kcb = split_exchange_rate(
+        kex_bc,
+        0.0,
+        equilibrium.edge_log_ratios[0],
     )
-    return dict(zip(("p", "l1", "l2", "pl1", "pl2"), results["x"], strict=True))
+    return {
+        "kab": detailed_balance_rate(koff_ab, log_pa, log_pb),
+        "kac": detailed_balance_rate(koff_ac, log_pa, log_pc),
+        "kbc": kbc,
+        "kcb": kcb,
+    }
 
 
 def make_settings_3st_binding_partner_2st(
@@ -65,6 +124,10 @@ def make_settings_3st_binding_partner_2st(
     if l_total is None:
         msg = f"'l_total' must be specified to use the '{NAME}' model"
         raise ValueError(msg)
+    rates = (
+        f"rates({p_total},{l_total},{{kd_ab}},{{kd_ac}},{{keq}},"
+        "{koff_ab},{koff_ac},{kex_bc})"
+    )
     return {
         "koff_ab": ParamLocalSetting(
             name_setting=NameSetting("koff_ab", "", ("temperature",)),
@@ -76,7 +139,7 @@ def make_settings_3st_binding_partner_2st(
         "kd_ab": ParamLocalSetting(
             name_setting=NameSetting("kd_ab", "", ("temperature",)),
             value=1e-3,
-            min=0.0,
+            min=MIN_POSITIVE_FLOAT,
             max=1.0,
             vary=True,
         ),
@@ -90,7 +153,7 @@ def make_settings_3st_binding_partner_2st(
         "kd_ac": ParamLocalSetting(
             name_setting=NameSetting("kd_ac", "", ("temperature",)),
             value=1e-3,
-            min=0.0,
+            min=MIN_POSITIVE_FLOAT,
             max=1.0,
             vary=True,
         ),
@@ -110,11 +173,13 @@ def make_settings_3st_binding_partner_2st(
         ),
         "kon_ab": ParamLocalSetting(
             name_setting=NameSetting("kon_ab", "", ("temperature",)),
-            expr="{koff_ab} / max({kd_ab}, 1e-100)",
+            expr="{koff_ab} / {kd_ab}",
+            report_only=True,
         ),
         "kon_ac": ParamLocalSetting(
             name_setting=NameSetting("kon_ac", "", ("temperature",)),
-            expr="{koff_ac} / max({kd_ac}, 1e-100)",
+            expr="{koff_ac} / {kd_ac}",
+            report_only=True,
         ),
         "l1_free": ParamLocalSetting(
             name_setting=NameSetting("l1_free", "", TPL),
@@ -134,7 +199,7 @@ def make_settings_3st_binding_partner_2st(
         ),
         "kab": ParamLocalSetting(
             name_setting=NameSetting("kab", "", TPL),
-            expr="{kon_ab} * {l1_free}",
+            expr=f"{rates}['kab']",
         ),
         "kba": ParamLocalSetting(
             name_setting=NameSetting("kba", "", TPL),
@@ -142,7 +207,7 @@ def make_settings_3st_binding_partner_2st(
         ),
         "kac": ParamLocalSetting(
             name_setting=NameSetting("kac", "", TPL),
-            expr="{kon_ac} * {l2_free}",
+            expr=f"{rates}['kac']",
         ),
         "kca": ParamLocalSetting(
             name_setting=NameSetting("kca", "", TPL),
@@ -150,23 +215,23 @@ def make_settings_3st_binding_partner_2st(
         ),
         "kbc": ParamLocalSetting(
             name_setting=NameSetting("kbc", "", TPL),
-            expr="{kex_bc} * {pl2} / max({pl1} + {pl2}, 1e-100)",
+            expr=f"{rates}['kbc']",
         ),
         "kcb": ParamLocalSetting(
             name_setting=NameSetting("kcb", "", TPL),
-            expr="{kex_bc} * {pl1} / max({pl1} + {pl2}, 1e-100)",
+            expr=f"{rates}['kcb']",
         ),
         "pa": ParamLocalSetting(
             name_setting=NameSetting("pa", "", TPL),
-            expr="pop_3st({kab},{kba},{kac},{kca},{kbc},{kcb})['pa']",
+            expr=f"populations({p_total},{l_total},{{kd_ab}},{{kd_ac}},{{keq}})['pa']",
         ),
         "pb": ParamLocalSetting(
             name_setting=NameSetting("pb", "", TPL),
-            expr="pop_3st({kab},{kba},{kac},{kca},{kbc},{kcb})['pb']",
+            expr=f"populations({p_total},{l_total},{{kd_ab}},{{kd_ac}},{{keq}})['pb']",
         ),
         "pc": ParamLocalSetting(
             name_setting=NameSetting("pc", "", TPL),
-            expr="pop_3st({kab},{kba},{kac},{kca},{kbc},{kcb})['pc']",
+            expr=f"populations({p_total},{l_total},{{kd_ab}},{{kd_ac}},{{keq}})['pc']",
         ),
     }
 
@@ -178,6 +243,24 @@ def register() -> None:
     )
     user_functions = {
         "calc_conc": calculate_concentrations,
+        "populations": calculate_populations,
+        "rates": calculate_rates,
         "pop_3st": pop_3st,
     }
     user_function_registry.register(name=NAME, user_functions=user_functions)
+    function_linearization_registry.register(
+        NAME,
+        population_linearizations(
+            (1.0e-3, 1.0e-3, 1.0e-3, 1.0e-3, 1.0),
+            (
+                "nonnegative",
+                "nonnegative",
+                "positive",
+                "positive",
+                "nonnegative",
+            ),
+            "pa",
+            "pb",
+            "pc",
+        ),
+    )

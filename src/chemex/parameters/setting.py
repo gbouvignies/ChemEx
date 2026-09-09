@@ -69,6 +69,7 @@ class ParamLocalSetting:
         vary: bool = False,
         expr: str = "",
         supports_estimation: bool = False,
+        report_only: bool = False,
     ) -> None:
         self.__expr: ExpressionSetting = ExpressionSetting(_RE_NAMES)
         self.name_setting = name_setting
@@ -77,6 +78,7 @@ class ParamLocalSetting:
         self.max = max
         self.vary = vary
         self.supports_estimation = supports_estimation
+        self.report_only = report_only
         self.expr = expr
 
     @property
@@ -103,6 +105,7 @@ class ParamSetting:
         vary: bool = False,
         expr: str = "",
         brute_step: float | None = None,
+        report_only: bool = False,
     ) -> None:
         self.__expr: ExpressionSetting = ExpressionSetting(_RE_IDS)
         self.param_name = param_name
@@ -113,6 +116,7 @@ class ParamSetting:
         self.vary = vary
         self.expr = expr
         self.brute_step = brute_step
+        self.report_only = report_only
 
     @property
     def expr(self) -> str:

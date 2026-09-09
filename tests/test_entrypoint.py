@@ -29,6 +29,9 @@ PARAMETERS = EXAMPLE / "Parameters/parameters.toml"
 OLIGOMERIZATION_EXAMPLE = ROOT / "examples/Experiments/CPMG_15N_IP"
 OLIGOMERIZATION_DATA = OLIGOMERIZATION_EXAMPLE / "Data/500MHz"
 OLIGOMERIZATION_PARAMETERS = OLIGOMERIZATION_EXAMPLE / "Parameters/parameters.toml"
+BINDING_EXAMPLE = ROOT / "examples/Combinations/2stBinding"
+BINDING_DATA = BINDING_EXAMPLE / "Data/CEST_10Hz_10P_1"
+BINDING_PARAMETERS = BINDING_EXAMPLE / "Parameters/params.toml"
 
 
 def _entry_commands() -> tuple[tuple[str, ...], ...]:
@@ -271,6 +274,59 @@ path = "{OLIGOMERIZATION_DATA.as_posix()}"
     assert "Parameter configuration is invalid" in completed.stderr
     assert str(zero_kd) in completed.stderr
     assert "KD must be finite and strictly positive" in completed.stderr
+    assert "unexpected internal error" not in combined
+    assert TRACEBACK_HEADER not in combined
+
+
+@pytest.mark.parametrize("command", _entry_commands())
+def test_cli_reports_zero_binding_protein_total_as_parameter_error(
+    command: tuple[str, ...],
+    tmp_path: Path,
+) -> None:
+    experiment = tmp_path / "binding.toml"
+    experiment.write_text(
+        f"""
+[experiment]
+name = "cest_15n"
+time_t1 = 0.4
+carrier = 121.32188326
+b1_frq = 10.4
+
+[conditions]
+h_larmor_frq = 800.0
+p_total = 0.0
+l_total = 55.2e-6
+
+[data]
+path = "{BINDING_DATA.as_posix()}"
+error = "scatter"
+
+[data.profiles]
+480N = "480N-HN.out"
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    completed = _run(
+        command,
+        "simulate",
+        "-e",
+        str(experiment),
+        "-p",
+        str(BINDING_PARAMETERS),
+        "-o",
+        str(tmp_path / "output"),
+        "-d",
+        "2st_binding",
+        "--plot",
+        "nothing",
+    )
+
+    combined = completed.stdout + completed.stderr
+    assert completed.returncode == 1
+    assert "Parameter configuration is invalid" in completed.stderr
+    assert str(BINDING_PARAMETERS) in completed.stderr
+    assert "P_total must be finite and strictly positive" in completed.stderr
     assert "unexpected internal error" not in combined
     assert TRACEBACK_HEADER not in combined
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from types import MappingProxyType
 from typing import Protocol
 
 from chemex.configuration.method_plan import MethodPlan, RoleAction
@@ -16,9 +17,12 @@ from chemex.parameters.database import (
 from chemex.parameters.factory import ParameterFactory
 from chemex.parameters.parameterization import (
     ActiveParameterization,
+    NonFiniteParameterValueError,
     build_initial_analysis_values,
     compile_active_parameterization,
     compile_active_parameterization_from_actions,
+    deferred_derived_ids,
+    report_only_derived_ids,
 )
 from chemex.parameters.values import AnalysisValues
 from chemex.runtime.execution import ExecutionSettings
@@ -97,13 +101,17 @@ class AnalysisSession:
                     self.model.spec.identity,
                     model_free_configuration,
                     _native_initial_values=model_free_initial_values,
+                    _deferred_derived_ids=deferred_derived_ids(
+                        model_free_parameter_model
+                    ),
                 )
                 model_free_snapshot = model_free_values.snapshot()
                 model_free_parameterization = compile_active_parameterization(
                     model_free_parameter_model,
                     model_free_snapshot,
                     Method(),
-                    set(model_free_parameter_model.declarations),
+                    set(model_free_parameter_model.declarations)
+                    - set(report_only_derived_ids(model_free_parameter_model)),
                 )
                 resolved_model_free_values = model_free_parameterization.resolve(
                     model_free_parameterization.frame_from_snapshot(model_free_snapshot)
@@ -131,6 +139,7 @@ class AnalysisSession:
                 model_identity,
                 configuration,
                 _native_initial_values=initial_values,
+                _deferred_derived_ids=deferred_derived_ids(parameter_model),
             )
         except Exception as error:  # noqa: BLE001 - checkpoint-1 isolation boundary
             self.parameter_factory.disable_native_candidate(error)
@@ -192,6 +201,29 @@ class AnalysisSession:
         parameterization = self.compile_parameterization(Method(), required_ids)
         frame = parameterization.frame_from_snapshot(self.analysis_values.snapshot())
         return parameterization.resolve(frame)
+
+    def resolve_report_only_values(self) -> Mapping[str, float]:
+        """Resolve representable report-only outputs without blocking analysis."""
+        parameter_model = self.parameter_factory.sealed_parameter_model
+        if parameter_model is None:
+            raise RuntimeError("Native parameter model is unavailable")
+        snapshot = self.analysis_values.snapshot()
+        values: dict[str, float] = {}
+        for param_id in report_only_derived_ids(parameter_model):
+            try:
+                parameterization = compile_active_parameterization(
+                    parameter_model,
+                    snapshot,
+                    Method(),
+                    {param_id},
+                )
+                resolved = parameterization.resolve(
+                    parameterization.frame_from_snapshot(snapshot)
+                )
+            except NonFiniteParameterValueError:
+                continue
+            values[param_id] = resolved[param_id]
+        return MappingProxyType(values)
 
 
 def ensure_plugins_registered() -> None:

@@ -532,6 +532,7 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
                 parameter_model=parameter_model,
                 parameter_values=result.resolved_values,
                 parameterization=parameterization,
+                report_only_values=session.resolve_report_only_values(),
             )
         except (Exception, KeyboardInterrupt) as error:  # noqa: BLE001
             _propagate_output_failure(error, path)
@@ -691,6 +692,7 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
                 parameter_values=result.resolved_values,
                 parameterization=parameterization,
                 fitted_ids=problem.controlled_ids,
+                report_only_values=session.resolve_report_only_values(),
             )
         except (Exception, KeyboardInterrupt) as error:  # noqa: BLE001
             if uncertainty_interrupted:
@@ -715,6 +717,7 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
             parameter_values=result.resolved_values,
             parameterization=parameterization,
             fitted_ids=problem.controlled_ids,
+            report_only_values=session.resolve_report_only_values(),
         )
     except (Exception, KeyboardInterrupt) as error:  # noqa: BLE001
         if uncertainty_interrupted:

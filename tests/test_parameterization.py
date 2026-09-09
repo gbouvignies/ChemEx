@@ -61,6 +61,7 @@ from chemex.parameters.parameterization import (
     SealedParameterDeclarations,
     SealedParameterModel,
     UnsupportedConstraintExpressionError,
+    build_initial_analysis_values,
     compile_active_parameterization,
     compile_active_parameterization_from_actions,
     seal_parameter_declarations,
@@ -1960,6 +1961,62 @@ def test_non_finite_derived_value_has_its_own_failure_category() -> None:
 
     assert raised.value.code == "non_finite"
     assert raised.value.context["param_id"] == "__B"
+
+
+def test_required_expression_keeps_report_only_derived_intermediate() -> None:
+    declarations = (
+        ParameterDeclaration("__A", False),
+        ParameterDeclaration(
+            "__REPORT",
+            False,
+            "__A * 2.0",
+            model_owned=True,
+            report_only=True,
+        ),
+        ParameterDeclaration(
+            "__REQUIRED",
+            False,
+            "__REPORT + 1.0",
+            model_owned=True,
+        ),
+    )
+    parameter_model, snapshot = _native_fixture(
+        declarations,
+        values={"__A": 2.0, "__REPORT": -1.0, "__REQUIRED": -1.0},
+    )
+
+    parameterization = compile_active_parameterization(
+        parameter_model,
+        snapshot,
+        Method(),
+        {"__REQUIRED"},
+    )
+    resolved = parameterization.resolve(parameterization.frame_from_snapshot(snapshot))
+
+    assert "__REPORT" in parameterization.scope_ids
+    assert resolved["__REPORT"] == 4.0
+    assert resolved["__REQUIRED"] == 5.0
+
+
+def test_non_report_only_non_finite_model_derivation_still_fails_eagerly() -> None:
+    declarations = (
+        ParameterDeclaration("__A", False),
+        ParameterDeclaration(
+            "__DERIVED",
+            False,
+            "__A * __A",
+            model_owned=True,
+        ),
+    )
+    parameter_model, _snapshot = _native_fixture(
+        declarations,
+        values={"__A": 1.0e308, "__DERIVED": 1.0},
+    )
+
+    with pytest.raises(NonFiniteParameterValueError) as raised:
+        build_initial_analysis_values(parameter_model)
+
+    assert raised.value.context["param_id"] == "__DERIVED"
 
 
 def test_unknown_model_dependency_is_incomplete_dependency_failure() -> None:

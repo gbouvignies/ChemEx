@@ -10,6 +10,9 @@ from __future__ import annotations
 import dataclasses
 import json
 import math
+import sys
+from collections.abc import Callable
+from decimal import Decimal, localcontext
 from pathlib import Path
 from typing import cast
 from unittest.mock import patch
@@ -28,6 +31,18 @@ from chemex.evaluation.native import (
     EvaluationResult,
 )
 from chemex.experiments.builder import build_experiments
+from chemex.models.kinetic.settings_2st_binding import (
+    calculate_populations as calculate_binding_populations,
+)
+from chemex.models.kinetic.settings_2st_monomer_dimer import (
+    calculate_populations as calculate_dimer_populations,
+)
+from chemex.models.kinetic.settings_3st_double_binding import (
+    calculate_populations as calculate_double_binding_populations,
+)
+from chemex.models.kinetic.settings_4st_binding_3_bound_states import (
+    calculate_populations as calculate_four_state_binding_populations,
+)
 from chemex.optimize import uncertainty as uncertainty_module
 from chemex.optimize.deterministic_uncertainty import (
     AcceptedDeterministicFitFacts,
@@ -71,6 +86,7 @@ from chemex.parameters.parameterization import (
     ReferenceExpression,
 )
 from chemex.parameters.spin_system import SpinSystem
+from chemex.parameters.userfunctions import FunctionArgumentDomain
 from chemex.printers.parameters import uncertainty_unavailable_reason
 from chemex.runtime import AnalysisSession
 from chemex.typing import Array
@@ -126,6 +142,88 @@ def _analytic_pa_kab_alternative(kab: float, kba: float) -> float:
 
 def _analytic_pa_kba(kab: float, kba: float) -> float:
     return kab / (kab + kba) ** 2
+
+
+def _nonnegative_identity(value: float) -> float:
+    return value
+
+
+def _decimal_forward_derivative(
+    function: Callable[[Decimal], Decimal],
+    center: float,
+) -> float:
+    """Return an independent high-precision one-sided three-point derivative."""
+    with localcontext() as context:
+        context.prec = 800
+        center_decimal = Decimal.from_float(center)
+        step = Decimal.from_float(math.ulp(center))
+        first = center_decimal + step
+        second = center_decimal + 2 * step
+        first_displacement = first - center_decimal
+        second_displacement = second - center_decimal
+        first_weight = -second_displacement / (
+            first_displacement * (first_displacement - second_displacement)
+        )
+        center_weight = -(first_displacement + second_displacement) / (
+            first_displacement * second_displacement
+        )
+        second_weight = -first_displacement / (
+            second_displacement * (second_displacement - first_displacement)
+        )
+        derivative = (
+            first_weight * function(first)
+            + center_weight * function(center_decimal)
+            + second_weight * function(second)
+        )
+    return float(derivative)
+
+
+def _normalized_population_capability(
+    argument_scales: tuple[float, ...],
+    argument_domains: tuple[FunctionArgumentDomain, ...],
+    components: tuple[str, ...],
+) -> FunctionFiniteDifferenceCapability:
+    return FunctionFiniteDifferenceCapability(
+        function_id="populations",
+        component=components[0],
+        argument_scales=argument_scales,
+        output_scale=math.nextafter(0.0, 1.0),
+        argument_domains=argument_domains,
+        relative_steps=True,
+        normalized_population_components=components,
+    )
+
+
+def _coupled_population_partials(
+    function: Callable[..., object],
+    arguments: tuple[float, ...],
+    argument_index: int,
+    capability: FunctionFiniteDifferenceCapability,
+) -> tuple[tuple[float, ...], tuple[uncertainty_module.FunctionPartialDiagnostic, ...]]:
+    components = capability.normalized_population_components
+    results = tuple(
+        uncertainty_module._normalized_population_partial(
+            FunctionExpression("populations", (), component),
+            function,
+            arguments,
+            argument_index,
+            dataclasses.replace(capability, component=component),
+            _qualification_policy("__INPUT"),
+        )
+        for component in components
+    )
+    return (
+        tuple(derivative for derivative, _diagnostic in results),
+        tuple(diagnostic for _derivative, diagnostic in results),
+    )
+
+
+def _assert_normalized_population_gradient(derivatives: tuple[float, ...]) -> None:
+    assert all(math.isfinite(value) for value in derivatives)
+    assert math.fsum(derivatives) == pytest.approx(
+        0.0,
+        abs=4.0 * math.ulp(max(map(abs, derivatives))),
+    )
 
 
 def _accepted_relaxation_fit(
@@ -1432,6 +1530,363 @@ def test_scientific_constraint_requires_and_uses_declared_numerical_capability()
     assert all(
         item.method == "versioned_analytic_partial"
         for item in analytic_evidence.constraint_jacobian.function_partial_diagnostics
+    )
+
+
+def test_scientific_function_capability_uses_one_sided_stencil_at_zero_domain() -> None:
+    capability = FunctionFiniteDifferenceCapability(
+        function_id="nonnegative_identity",
+        component=None,
+        argument_scales=(1.0,),
+        output_scale=1.0,
+        argument_domains=("nonnegative",),
+        relative_steps=True,
+    )
+
+    derivative, diagnostic = uncertainty_module._scientific_function_partial(
+        FunctionExpression("nonnegative_identity", (), None),
+        _nonnegative_identity,
+        (0.0,),
+        0,
+        capability,
+        _qualification_policy("__X"),
+    )
+
+    assert derivative == pytest.approx(1.0, rel=1.0e-12)
+    assert diagnostic.method == "one_sided_positive_two_scale_numerical"
+    assert all(
+        displacement > 0.0 for displacement in diagnostic.represented_displacements
+    )
+
+
+@pytest.mark.parametrize(
+    "center",
+    (
+        1.0e-6,
+        sys.float_info.min,
+        math.nextafter(0.0, 1.0),
+        math.nextafter(math.nextafter(0.0, 1.0), math.inf),
+    ),
+    ids=("ordinary", "minimum-normal", "minimum-subnormal", "above-boundary"),
+)
+def test_positive_domain_scientific_partial_handles_subnormal_scales(
+    center: float,
+) -> None:
+    capability = FunctionFiniteDifferenceCapability(
+        function_id="positive_identity",
+        component=None,
+        argument_scales=(1.0,),
+        output_scale=math.nextafter(0.0, 1.0),
+        argument_domains=("positive",),
+        relative_steps=True,
+    )
+
+    derivative, diagnostic = uncertainty_module._scientific_function_partial(
+        FunctionExpression("positive_identity", (), None),
+        _nonnegative_identity,
+        (center,),
+        0,
+        capability,
+        _qualification_policy("__KD"),
+    )
+
+    assert math.isfinite(derivative)
+    # Subnormal stencil points carry quantized displacements, so the derivative
+    # is qualified to a tighter-than-nanounit relative error, not exact rounding.
+    assert derivative == pytest.approx(1.0, rel=1.0e-9, abs=0.0)
+    assert all(
+        center + displacement > 0.0
+        for displacement in diagnostic.represented_displacements
+    )
+
+
+def test_subnormal_three_point_stencil_has_finite_normalized_weights() -> None:
+    minimum = math.nextafter(0.0, 1.0)
+
+    weights, coordinate_scale = uncertainty_module._normalized_three_point_weights(
+        minimum,
+        2.0 * minimum,
+    )
+
+    assert coordinate_scale == 2.0 * minimum
+    assert all(math.isfinite(weight) for weight in weights)
+
+
+def test_shared_three_point_arithmetic_has_residual_provenance() -> None:
+    assert (
+        uncertainty_module._RESIDUAL_LINEARIZATION_VERSION
+        == "accepted-residual-jacobian-v3"
+    )
+
+
+@pytest.mark.parametrize(
+    "kd",
+    (sys.float_info.min, math.nextafter(0.0, 1.0)),
+    ids=("minimum-normal", "minimum-subnormal"),
+)
+def test_extreme_binding_population_uncertainty_partial_matches_decimal_difference(
+    kd: float,
+) -> None:
+    p_total = 1.0e-3
+    l_total = 2.0e-3
+    capability = FunctionFiniteDifferenceCapability(
+        function_id="populations",
+        component="pa",
+        argument_scales=(1.0e-3, 1.0e-3, 1.0e-3),
+        output_scale=math.nextafter(0.0, 1.0),
+        argument_domains=("nonnegative", "nonnegative", "positive"),
+        relative_steps=True,
+    )
+
+    derivative, _diagnostic = uncertainty_module._scientific_function_partial(
+        FunctionExpression("populations", (), "pa"),
+        calculate_binding_populations,
+        (p_total, l_total, kd),
+        2,
+        capability,
+        _qualification_policy("__KD"),
+    )
+
+    protein = Decimal.from_float(p_total)
+    ligand = Decimal.from_float(l_total)
+
+    def decimal_population(kd: Decimal) -> Decimal:
+        total = protein + ligand + kd
+        discriminant = (total * total - Decimal(4) * protein * ligand).sqrt()
+        bound = Decimal(2) * protein * ligand / (total + discriminant)
+        return (protein - bound) / protein
+
+    expected = _decimal_forward_derivative(decimal_population, kd)
+    assert math.isfinite(derivative)
+    assert derivative == pytest.approx(expected, rel=5.0e-9, abs=0.0)
+
+
+@pytest.mark.parametrize(
+    "kd",
+    (
+        sys.float_info.min,
+        math.nextafter(0.0, 1.0),
+        math.nextafter(math.nextafter(0.0, 1.0), math.inf),
+    ),
+    ids=("minimum-normal", "minimum-subnormal", "subnormal-successor"),
+)
+def test_simple_binding_population_gradient_uses_normalization_at_kd_boundary(
+    kd: float,
+) -> None:
+    capability = _normalized_population_capability(
+        (1.0e-3, 1.0e-3, 1.0e-3),
+        ("nonnegative", "nonnegative", "positive"),
+        ("pa", "pb"),
+    )
+
+    derivatives, diagnostics = _coupled_population_partials(
+        calculate_binding_populations,
+        (1.0e-3, 2.0e-3, kd),
+        2,
+        capability,
+    )
+
+    dpa_dkd, dpb_dkd = derivatives
+    _assert_normalized_population_gradient(derivatives)
+    assert dpa_dkd == pytest.approx(1.0e3, rel=2.0e-7, abs=0.0)
+    assert dpb_dkd == pytest.approx(-dpa_dkd, rel=2.0e-15, abs=0.0)
+    assert {item.component: item.method for item in diagnostics}["pb"] == (
+        "normalized_population_complement"
+    )
+
+
+def test_three_state_binding_population_gradient_sums_to_zero_at_boundary() -> None:
+    capability = _normalized_population_capability(
+        (1.0e-3, 1.0e-3, 1.0e-3, 1.0e-3),
+        ("nonnegative", "nonnegative", "positive", "positive"),
+        ("pa", "pb", "pc"),
+    )
+
+    derivatives, diagnostics = _coupled_population_partials(
+        calculate_double_binding_populations,
+        (1.0e-3, 2.0e-3, math.nextafter(0.0, 1.0), 1.0e-6),
+        2,
+        capability,
+    )
+
+    _assert_normalized_population_gradient(derivatives)
+    complement = next(
+        item
+        for item in diagnostics
+        if item.method == "normalized_population_complement"
+    )
+    assert complement.component == "pb"
+    assert derivatives[1] != 0.0
+
+
+def test_four_state_binding_population_gradient_sums_to_zero_at_boundary() -> None:
+    capability = _normalized_population_capability(
+        (1.0e-3, 1.0e-3, 1.0e-3, 1.0, 1.0),
+        ("nonnegative", "nonnegative", "positive", "nonnegative", "nonnegative"),
+        ("pa", "pb", "pc", "pd"),
+    )
+
+    derivatives, diagnostics = _coupled_population_partials(
+        calculate_four_state_binding_populations,
+        (1.0e-3, 2.0e-3, sys.float_info.min, 0.0, 1.0),
+        3,
+        capability,
+    )
+
+    _assert_normalized_population_gradient(derivatives)
+    complement = next(
+        item
+        for item in diagnostics
+        if item.method == "normalized_population_complement"
+    )
+    assert complement.component == "pb"
+    assert derivatives[1] != 0.0
+
+
+def test_coupled_population_partial_matches_scalar_partial_in_ordinary_domain() -> None:
+    arguments = (1.0e-3, 2.0e-3, 2.0e-6)
+    coupled_capability = _normalized_population_capability(
+        (1.0e-3, 1.0e-3, 1.0e-3),
+        ("nonnegative", "nonnegative", "positive"),
+        ("pa", "pb"),
+    )
+    scalar_capability = dataclasses.replace(
+        coupled_capability,
+        component="pb",
+        output_scale=1.0,
+        normalized_population_components=(),
+    )
+
+    derivatives, _diagnostics = _coupled_population_partials(
+        calculate_binding_populations,
+        arguments,
+        2,
+        coupled_capability,
+    )
+    scalar_dpb, _diagnostic = uncertainty_module._scientific_function_partial(
+        FunctionExpression("populations", (), "pb"),
+        calculate_binding_populations,
+        arguments,
+        2,
+        scalar_capability,
+        _qualification_policy("__KD"),
+    )
+
+    protein = Decimal.from_float(arguments[0])
+    ligand = Decimal.from_float(arguments[1])
+
+    def decimal_population(kd: Decimal) -> Decimal:
+        total = protein + ligand + kd
+        discriminant = (total * total - Decimal(4) * protein * ligand).sqrt()
+        bound = Decimal(2) * protein * ligand / (total + discriminant)
+        return (protein - bound) / protein
+
+    independent_dpa = _decimal_forward_derivative(decimal_population, arguments[2])
+    assert derivatives[0] == pytest.approx(independent_dpa, rel=5.0e-9, abs=0.0)
+    assert derivatives[1] == pytest.approx(-independent_dpa, rel=5.0e-9, abs=0.0)
+    assert derivatives[1] == pytest.approx(scalar_dpb, rel=2.0e-6, abs=0.0)
+
+
+def test_nonfinite_roundoff_allowance_cannot_certify_scalar_population_plateau() -> (
+    None
+):
+    capability = FunctionFiniteDifferenceCapability(
+        function_id="populations",
+        component="pb",
+        argument_scales=(1.0e-3, 1.0e-3, 1.0e-3),
+        output_scale=1.0,
+        argument_domains=("nonnegative", "nonnegative", "positive"),
+        relative_steps=True,
+    )
+
+    with pytest.raises(
+        uncertainty_module.FunctionPartialFailure,
+        match="No reliable numerical partial",
+    ):
+        uncertainty_module._scientific_function_partial(
+            FunctionExpression("populations", (), "pb"),
+            calculate_binding_populations,
+            (1.0e-3, 2.0e-3, math.nextafter(0.0, 1.0)),
+            2,
+            capability,
+            _qualification_policy("__KD"),
+        )
+
+
+def test_boundary_gradient_invariant_rejects_zeroed_dependent_component() -> None:
+    capability = _normalized_population_capability(
+        (1.0e-3, 1.0e-3, 1.0e-3),
+        ("nonnegative", "nonnegative", "positive"),
+        ("pa", "pb"),
+    )
+    derivatives, _diagnostics = _coupled_population_partials(
+        calculate_binding_populations,
+        (1.0e-3, 2.0e-3, math.nextafter(0.0, 1.0)),
+        2,
+        capability,
+    )
+    forced_zero_dependent = (derivatives[0], 0.0)
+
+    with pytest.raises(AssertionError):
+        _assert_normalized_population_gradient(forced_zero_dependent)
+
+
+def test_subnormal_oligomer_partial_fails_closed_when_stencil_is_unresolved() -> None:
+    minimum = math.nextafter(0.0, 1.0)
+    p_total = 1.0e308
+    capability = FunctionFiniteDifferenceCapability(
+        function_id="populations",
+        component="pa",
+        argument_scales=(1.0e-3, 1.0e-3),
+        output_scale=math.nextafter(0.0, 1.0),
+        argument_domains=("nonnegative", "positive"),
+        relative_steps=True,
+    )
+
+    protein = Decimal.from_float(p_total)
+
+    def decimal_population(kd: Decimal) -> Decimal:
+        return Decimal(2) / (Decimal(1) + (Decimal(1) + 8 * protein / kd).sqrt())
+
+    expected = _decimal_forward_derivative(decimal_population, minimum)
+    assert math.isfinite(expected) and expected != 0.0
+    with pytest.raises(
+        uncertainty_module.FunctionPartialFailure,
+        match="No reliable numerical partial",
+    ):
+        uncertainty_module._scientific_function_partial(
+            FunctionExpression("populations", (), "pa"),
+            calculate_dimer_populations,
+            (p_total, minimum),
+            1,
+            capability,
+            _qualification_policy("__KD"),
+        )
+
+
+def test_zero_ligand_population_uncertainty_uses_nonnegative_stencil() -> None:
+    capability = FunctionFiniteDifferenceCapability(
+        function_id="populations",
+        component="pb",
+        argument_scales=(1.0e-3, 1.0e-3, 1.0e-3),
+        output_scale=math.nextafter(0.0, 1.0),
+        argument_domains=("nonnegative", "nonnegative", "positive"),
+        relative_steps=True,
+    )
+
+    derivative, diagnostic = uncertainty_module._scientific_function_partial(
+        FunctionExpression("populations", (), "pb"),
+        calculate_binding_populations,
+        (1.0e-3, 0.0, 1.0e-6),
+        1,
+        capability,
+        _qualification_policy("__L_TOTAL"),
+    )
+
+    assert math.isfinite(derivative)
+    assert diagnostic.method == "one_sided_positive_two_scale_numerical"
+    assert all(
+        displacement >= 0.0 for displacement in diagnostic.represented_displacements
     )
 
 
