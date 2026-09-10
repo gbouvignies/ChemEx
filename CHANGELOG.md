@@ -7,6 +7,8 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
 
 ## [Unreleased]
 
+## [2026.09.1] - 2026-09-10
+
 ### Added
 - Added explicit `3st_eyring_linear` (A ↔ B ↔ C) and `3st_eyring_fork`
   (B ↔ A ↔ C) temperature-dependent kinetic models. The existing
@@ -16,6 +18,8 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   A-B-C-… chains, generic `_fork` models are A-centered stars, and unsuffixed
   generic models are complete graphs. The historical `3st_triangle` name
   remains an exact compatibility name for complete `3st`.
+- Added first and staged CPMG tutorials and a ¹⁵N CEST tutorial, with corrected,
+  validated, copyable experiment configurations.
 
 ### Changed
 - **Breaking generic N-state default:** bare `4st`, `5st`, and `6st` now fit
@@ -28,6 +32,9 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   but not old fit/fix roles, so the explicit Method action is also required when
   continuing those fits. Omitted historical defaults carry no reliable version
   signal and receive the new complete-model policy.
+- Documentation now leads with uv/PyPI installation and `@latest` interpreter
+  selection, and provides canonical exchange-state, scaling, uncertainty,
+  residual, and fit-statistics guidance, together with improved site metadata.
 - ChemEx now presents known failures and user interruptions once at the CLI
   boundary, reports verified diagnostic paths when available, and exits with
   status 130 for Ctrl-C. Unexpected internal exceptions remain concise and
@@ -104,7 +111,7 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   rates that cannot be represented in binary64 are rejected instead of being
   silently rounded to structural zero. Canonical association-population
   constraints now carry deterministic propagated uncertainties. Generic kinetic
-  models are unchanged.
+  models are unchanged by these association/binding corrections.
 - Oligomerization models now retain literal semantics for every finite positive
   `KD`, including sub-`1e-32` values; the hidden `1e-32` effective-KD floor has
   been removed, so affected results can change materially. Exact `KD = 0` is now
@@ -126,8 +133,8 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
 - Oligomerization concentration solving now uses the unique bracketed physical
   solution for supported positive inputs, preventing silent failed or inaccurate
   HYBR roots and negative algebraic branches. Strongly associated cases affected
-  by those failures can change numerically; kinetic equations, historical KD
-  semantics, and exact-zero semantics are unchanged.
+  by those failures can change numerically; kinetic equations and positive-`KD`
+  semantics are otherwise unchanged.
 - Corrected direct monomer-trimer and monomer-tetramer tagged association rates
   to quadratic and cubic monomer-concentration dependence, restoring dimensional
   consistency and agreement between NMR stationary and chemical monomer-equivalent
