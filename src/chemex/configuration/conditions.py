@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from collections.abc import Hashable
 from functools import total_ordering
 from typing import Annotated, Literal, Self, TypeVar
@@ -148,7 +149,8 @@ class ConditionsWithValidations(Conditions, frozen=True):
     @model_validator(mode="after")
     def validate_model_requirements(self, info: ValidationInfo) -> Self:
         """Validate model-specific required condition fields."""
-        model_name = _model_from_context(info).name
+        model = _model_from_context(info)
+        model_name = model.name
 
         if "hd" in model_name and self.d2o is None:
             msg = 'To use the "hd" model, d2o must be provided'
@@ -159,6 +161,16 @@ class ConditionsWithValidations(Conditions, frozen=True):
                 msg = 'To use the "eyring" model, "temperature" must be provided'
                 raise ValueError(msg)
             temperature_to_kelvin(self.temperature)
+        elif model.temp_coef:
+            if self.temperature is None:
+                msg = 'To use the ".tc" model extension, "temperature" must be provided'
+                raise ValueError(msg)
+            if not math.isfinite(self.temperature) or self.temperature <= -273.15:
+                msg = (
+                    ".tc temperature must be finite and above absolute zero "
+                    "(-273.15 degrees Celsius)"
+                )
+                raise ValueError(msg)
 
         # Binding models require both concentrations to be present.
         are_not_both_set = self.p_total is None or self.l_total is None

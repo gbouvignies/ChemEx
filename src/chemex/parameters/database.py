@@ -1,5 +1,6 @@
 """Index, configure, and expose ChemEx analysis parameters."""
 
+import math
 import re
 from collections import Counter, defaultdict
 from collections.abc import Hashable, Iterable, Mapping, Sequence
@@ -41,6 +42,22 @@ class GridExpressionError(ChemExError, ValueError):
         self.detail = detail
 
 
+class TemperatureReferenceConfigurationError(ChemExError, ValueError):
+    """The protected ``TREF`` model constant is configured incorrectly."""
+
+    def __init__(self, explanation: str) -> None:
+        super().__init__(explanation)
+        self.explanation = explanation
+
+
+class ObsoleteTemperatureShiftParameterError(ChemExError, ValueError):
+    """An obsolete ``.tc`` coefficient name was supplied."""
+
+    def __init__(self, explanation: str) -> None:
+        super().__init__(explanation)
+        self.explanation = explanation
+
+
 class ModelReader(Protocol):
     @property
     def name(self) -> str: ...
@@ -49,7 +66,67 @@ class ModelReader(Protocol):
     def model_free(self) -> bool: ...
 
     @property
+    def temp_coef(self) -> bool: ...
+
+    @property
     def identity(self) -> str: ...
+
+
+def _has_scope(param_name: ParamName) -> bool:
+    return bool(param_name.spin_system) or any(
+        value not in (None, ()) for value in param_name.conditions.model_dump().values()
+    )
+
+
+def _validate_tref_defaults(defaults: DefaultListType) -> None:
+    tref_settings = [setting for name, setting in defaults if name.name == "TREF"]
+    tref_names = [name for name, _setting in defaults if name.name == "TREF"]
+    if any(_has_scope(name) for name in tref_names):
+        raise TemperatureReferenceConfigurationError(
+            "TREF must be defined once as the unqualified [GLOBAL] model constant; "
+            "remove all nucleus, residue, and condition qualifiers."
+        )
+    if any(
+        setting.min is not None
+        or setting.max is not None
+        or setting.brute_step is not None
+        for setting in tref_settings
+    ):
+        raise TemperatureReferenceConfigurationError(
+            "TREF is a protected non-optimizable model constant. Specify only its "
+            "scalar value in [GLOBAL]; bounds and grid steps are not allowed."
+        )
+    if any(
+        not math.isfinite(setting.value) or setting.value <= -273.15
+        for setting in tref_settings
+    ):
+        raise TemperatureReferenceConfigurationError(
+            "TREF must be finite and greater than -273.15 degrees Celsius."
+        )
+    values = {setting.value for setting in tref_settings}
+    if len(values) > 1:
+        rendered = ", ".join(str(value) for value in sorted(values))
+        raise TemperatureReferenceConfigurationError(
+            f"Conflicting explicit TREF values were provided ({rendered}). "
+            "Use one shared [GLOBAL] TREF value across all parameter files."
+        )
+
+
+def _validate_obsolete_temperature_shift_defaults(defaults: DefaultListType) -> None:
+    obsolete = sorted(
+        {
+            name.name
+            for name, _setting in defaults
+            if re.fullmatch(r"DW[PM]_A[A-Z]", name.name)
+        }
+    )
+    if obsolete:
+        names = ", ".join(obsolete)
+        raise ObsoleteTemperatureShiftParameterError(
+            f"Obsolete .tc parameter names were provided: {names}. Replace DWP_AX "
+            "and DWM_AX with the canonical coefficients using "
+            "DW0_AX = DWP_AX + TREF * DWM_AX and DW1_AX = DWM_AX."
+        )
 
 
 class ParameterIndex:
@@ -546,6 +623,9 @@ class ParameterStore:
         """
         self._ensure_configuration_open()
         validate_legacy_binding_defaults(self.model.name, defaults)
+        if self.model.temp_coef:
+            _validate_tref_defaults(defaults)
+            _validate_obsolete_temperature_shift_defaults(defaults)
         if self._defaults_applied:
             msg = "Parameter defaults have already been applied"
             raise RuntimeError(msg)

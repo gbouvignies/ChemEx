@@ -7,6 +7,18 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
 
 ## [Unreleased]
 
+### Fixed
+- Completed and documented the previously released `.tc` chemical-shift model.
+  Both `CS_A` and `DW_AX` now use independent, reference-centered linear
+  polynomials with canonical coefficients `CS0_A`/`CS1_A` and
+  `DW0_AX`/`DW1_AX`. A protected global `TREF` constant defaults to 25 °C.
+  This intentionally replaces the published `DWP_AX`/`DWM_AX` interface without
+  aliases or automatic migration; existing `.tc` parameter and Method files
+  must be rewritten with the canonical names. Outputs contain only canonical
+  names. Existing `.tc` fits can change because state-A shifts now have a slope
+  and because the coefficient coordinate system is centered at `TREF`; models
+  without `.tc` are unchanged.
+
 ## [2026.09.1] - 2026-09-10
 
 ### Added

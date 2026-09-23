@@ -4,6 +4,11 @@ sidebar_position: 5
 
 # Parameter Files
 
+Temperature-dependent chemical-shift models use a protected global `TREF` and
+order-indexed coefficients. See
+[Temperature-dependent chemical shifts](temperature_dependent_shifts.md) for the
+canonical parameter-file format and the breaking change from `DWP`/`DWM`.
+
 ## Overview
 
 Parameter names use stable state labels and directional conventions. Before

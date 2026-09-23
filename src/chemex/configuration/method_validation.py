@@ -38,6 +38,9 @@ from chemex.parameters.parameterization import (
 )
 from chemex.parameters.sealed import ParamDefinition
 from chemex.parameters.spin_system import SpinSystem
+from chemex.parameters.temperature_shifts import (
+    canonical_control_guidance,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -279,8 +282,40 @@ def _reject_protected(
         param_id for param_id in matches if model.declarations[param_id].model_owned
     )
     if protected:
+        guidance = tuple(
+            dict.fromkeys(
+                advice
+                for param_id in protected
+                if (
+                    advice := canonical_control_guidance(
+                        model.definitions[param_id].name
+                    )
+                )
+                is not None
+            )
+        )
+        suffix = f"; {'; '.join(guidance)}" if guidance else ""
         raise MethodFormatError(
-            f"{operation} cannot override model-owned parameters {protected}", source
+            f"{operation} cannot override model-owned parameters {protected}{suffix}",
+            source,
+        )
+
+
+def _reject_protected_constants(
+    matches: tuple[str, ...],
+    model: SealedParameterModel,
+    source: SourceRef,
+    operation: str,
+) -> None:
+    protected = tuple(
+        param_id
+        for param_id in matches
+        if model.declarations[param_id].model_owned
+        and not model.declarations[param_id].model_expression
+    )
+    if protected:
+        raise MethodFormatError(
+            f"{operation} cannot use protected model constants {protected}", source
         )
 
 
@@ -343,6 +378,18 @@ def _apply_actions(
                         for reference in _references(constraint.expression)
                     )
                 )
+                for reference in _references(constraint.expression):
+                    reference_matches = _matches(
+                        reference,
+                        model,
+                        _source(reference, constraint.source),
+                    )
+                    _reject_protected_constants(
+                        reference_matches,
+                        model,
+                        _source(reference, constraint.source),
+                        "Constraint reference",
+                    )
                 roles[param_id] = ParameterRole.DERIVED
                 constraints[param_id] = _ResolvedConstraint(constraint, dependencies)
 
@@ -399,6 +446,7 @@ def _validate_grid(
 ) -> None:
     for axis in search.axes:
         matches = _matches(axis.selector, model, axis.source)
+        _reject_protected(matches, model, axis.source, "GRID")
         if not any(roles[param_id] is ParameterRole.FIT for param_id in matches):
             raise MethodFormatError(
                 "GRID target is not a final independent FIT coordinate",
@@ -514,6 +562,7 @@ def resolve_de_coordinates(
     resolved: list[ResolvedDeCoordinate] = []
     for coordinate in search.coordinates:
         matches = _matches(coordinate.selector, model, coordinate.source)
+        _reject_protected(matches, model, coordinate.source, "DE")
         if len(matches) != 1:
             raise MethodFormatError(
                 "Each DE entry must resolve to exactly one final independent "

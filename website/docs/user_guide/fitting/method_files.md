@@ -48,6 +48,11 @@ multi-step methods.
 - `FIX` holds matching user-controlled parameters at their current values.
 - `CONSTRAIN` derives each target from its equation.
 
+For `.tc` models, Method actions target the independent `CS0`/`CS1` and
+`DW0`/`DW1` coefficients. `TREF` and the temperature-specific derived shifts
+are protected; see [Temperature-dependent chemical
+shifts](temperature_dependent_shifts.md).
+
 ```toml
 FORMAT_VERSION = 2
 
