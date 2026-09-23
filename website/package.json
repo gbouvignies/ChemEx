@@ -28,9 +28,9 @@
   "devDependencies": {
     "@docusaurus/module-type-aliases": "^3.10.1",
     "@docusaurus/types": "^3.10.1",
-    "eslint": "^10.8.0",
+    "eslint": "^10.11.0",
     "eslint-plugin-react": "^7.37.5",
-    "prettier": "^3.9.6"
+    "prettier": "^3.9.8"
   },
   "browserslist": {
     "production": [
