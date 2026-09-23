@@ -27,6 +27,31 @@ def test_eyring_model_requires_temperature() -> None:
         )
 
 
+def test_temperature_coefficient_model_requires_temperature() -> None:
+    with pytest.raises(
+        ValidationError,
+        match='To use the ".tc" model extension, "temperature" must be provided',
+    ):
+        ConditionsWithValidations.model_validate(
+            {},
+            context={"model": ModelSpec(name="2st", temp_coef=True)},
+        )
+
+
+@pytest.mark.parametrize(
+    "temperature",
+    (-273.15, -273.15000000000003, float("nan"), float("inf"), float("-inf")),
+)
+def test_temperature_coefficient_model_rejects_unphysical_temperature(
+    temperature: float,
+) -> None:
+    with pytest.raises(ValidationError, match=".tc temperature must be finite"):
+        ConditionsWithValidations.model_validate(
+            {"temperature": temperature},
+            context={"model": ModelSpec(name="2st", temp_coef=True)},
+        )
+
+
 @pytest.mark.parametrize(
     "temperature",
     (-273.15, -273.15000000000003, float("nan"), float("inf"), float("-inf")),

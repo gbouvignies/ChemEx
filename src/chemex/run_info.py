@@ -228,6 +228,9 @@ def _parameter_values(
     parameter_model: SealedParameterModel,
     snapshot: AnalysisValuesSnapshot,
 ) -> str:
+    declaration = parameter_model.declarations[param_id]
+    if declaration.model_owned and not declaration.model_expression:
+        return repr(float(snapshot[param_id]))
     configuration = parameter_model.configuration[param_id]
     values = (
         snapshot[param_id],
@@ -248,14 +251,16 @@ def serialize_parameter_file(
         [
             "# Original invocation start used by ChemEx.",
             "# This file reproduces the original start; it is not the latest fitted state.",
-            "# Each array is [value, minimum, maximum].",
+            "# Independent coordinates use [value, minimum, maximum].",
+            "# Protected model constants are scalars.",
             "",
         ]
         if state_kind == "original"
         else [
             "# Latest committed continuation state reached by this invocation.",
             "# Use this ordinary parameter file with: chemex fit ... -p restart.toml ...",
-            "# Each array is [value, minimum, maximum].",
+            "# Independent coordinates use [value, minimum, maximum].",
+            "# Protected model constants are scalars.",
             "",
         ]
     )

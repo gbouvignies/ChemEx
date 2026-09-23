@@ -53,6 +53,9 @@ from chemex.parameters.sealed import (
     SealedDefinitions,
 )
 from chemex.parameters.spin_system import SpinSystem
+from chemex.parameters.temperature_shifts import (
+    canonical_control_guidance,
+)
 from chemex.parameters.userfunctions import user_function_registry
 from chemex.parameters.values import AnalysisValuesSnapshot
 
@@ -1088,10 +1091,19 @@ def _validate_public_expression_syntax(text: str) -> None:
 def _build_rules(
     method: Method, definitions: SealedDefinitions
 ) -> tuple[_RoleRule, ...]:
+    def reject_protected_constant_reference(selector: str) -> None:
+        if ParamName.from_section(selector).name == "TREF":
+            raise ModelDerivationOverrideError(
+                "Method constraint cannot reference a protected model constant",
+                selector=selector,
+            )
+
     rules: list[_RoleRule] = []
     ordinal = 0
     for text in method.constraints:
         selector, expression = _split_constraint(text)
+        for _start, _end, reference in _scan_selectors(expression):
+            reject_protected_constant_reference(reference)
         _validate_public_expression_syntax(expression)
         rules.append(
             _RoleRule(
@@ -1212,18 +1224,29 @@ def _role_for(
 
 def _validate_model_derivation_authority(
     rules: Sequence[_RoleRule],
-    declarations: SealedParameterDeclarations,
+    parameter_model: SealedParameterModel,
 ) -> None:
+    declarations = parameter_model.declarations
     for rule in rules:
         derived_matches = tuple(
-            param_id
-            for param_id in rule.matches
-            if declarations[param_id].model_expression
-            and declarations[param_id].model_owned
+            param_id for param_id in rule.matches if declarations[param_id].model_owned
         )
         if derived_matches:
+            guidance = tuple(
+                dict.fromkeys(
+                    advice
+                    for param_id in derived_matches
+                    if (
+                        advice := canonical_control_guidance(
+                            parameter_model.definitions[param_id].name
+                        )
+                    )
+                    is not None
+                )
+            )
+            suffix = f"; {'; '.join(guidance)}" if guidance else ""
             raise ModelDerivationOverrideError(
-                "Method rule cannot override a model-owned derivation",
+                f"Method rule cannot override a model-owned derivation{suffix}",
                 selector=rule.selector,
                 role=rule.role.value,
                 ordinal=rule.ordinal,
@@ -1844,7 +1867,7 @@ def _compile_active_parameterization_from_rules(
     )
 
     definitions = parameter_model.definitions
-    _validate_model_derivation_authority(rules, parameter_model.declarations)
+    _validate_model_derivation_authority(rules, parameter_model)
     binder = ScientificFunctionBinder.for_model(parameter_model.model_name)
     definition_order = {
         definition.param_id: position for position, definition in enumerate(definitions)

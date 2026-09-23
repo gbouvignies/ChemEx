@@ -49,6 +49,19 @@ For any kinetic model, you can add the `.rs` suffix to make the kinetic paramete
 For any kinetic model, you can add the `.mf` suffix to create a model that fits model-free parameters directly (e.g., `TAUC_A`, `S2_A`), rather than individual relaxation parameters (e.g., `R1_A`, `R2_A`). For an example, see `CEST_15N_TR/` under `Examples/Experiments/`.
 :::
 
+## Linear chemical-shift temperature coefficients
+
+For any kinetic model, add `.tc` to use reference-centered linear temperature
+polynomials for both the state-A chemical shift and every A-to-X chemical-shift
+difference. The coefficients are `CS0_A`, `CS1_A`, `DW0_AX`, and `DW1_AX`, and
+the analysis-wide reference temperature is the protected `[GLOBAL]` constant
+`TREF` (25 °C by default). Every `.tc` Experiment must provide `temperature` in
+degrees Celsius.
+
+See [Temperature-dependent chemical shifts](temperature_dependent_shifts.md) for
+the equations, parameter roles, multistate and Eyring composition, fitting
+limitations, and output behavior.
+
 ## Generic N-state models
 
 The generic family supports three through six states. Its public model name is

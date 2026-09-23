@@ -207,7 +207,13 @@ def test_approved_standard_spin_family_domains(extension: str) -> None:
         (
             "2st.tc",
             "",
-            {"CS_A": (-100.0, 300.0), "DWM_AB": (-1.0, 1.0)},
+            {
+                "CS_A": (-100.0, 300.0),
+                "CS0_A": (-100.0, 300.0),
+                "CS1_A": (-1.0, 1.0),
+                "DW0_AB": (-100.0, 100.0),
+                "DW1_AB": (-1.0, 1.0),
+            },
         ),
         (
             "2st",

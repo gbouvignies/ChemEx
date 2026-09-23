@@ -70,6 +70,7 @@ class ParamLocalSetting:
         expr: str = "",
         supports_estimation: bool = False,
         report_only: bool = False,
+        model_owned: bool = False,
     ) -> None:
         self.__expr: ExpressionSetting = ExpressionSetting(_RE_NAMES)
         self.name_setting = name_setting
@@ -79,6 +80,7 @@ class ParamLocalSetting:
         self.vary = vary
         self.supports_estimation = supports_estimation
         self.report_only = report_only
+        self.model_owned = model_owned
         self.expr = expr
 
     @property

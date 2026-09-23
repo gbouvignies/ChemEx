@@ -7,6 +7,18 @@ from chemex.nmr.basis import Basis
 from chemex.nmr.constants import J_COUPLINGS
 from chemex.nmr.rates import get_model_free_expressions
 from chemex.parameters.setting import LocalSettings, NameSetting, ParamLocalSetting
+from chemex.parameters.temperature_shifts import (
+    add_reference_shift_polynomial,
+    add_shift_difference_polynomial,
+)
+
+
+def _temperature_required_by_tc(conditions: Conditions) -> float:
+    temperature = conditions.temperature
+    if temperature is None:
+        msg = "The .tc model requires an experimental temperature"
+        raise ValueError(msg)
+    return temperature
 
 
 def _update_expr_for_proton_exchange(
@@ -23,48 +35,6 @@ def _update_expr_for_proton_exchange(
         expr = f"{{r2_i_{state}}} + {{r1a_is_{state}}} - {{r1_i_{state}}}"
         settings[f"r2a_i_{state}"].expr = expr
         settings[f"r1a_is_{state}"].expr = ""
-
-
-def _add_temp_coef_param_settings(
-    settings: dict[str, ParamLocalSetting],
-    state: str,
-    conditions: Conditions,
-) -> None:
-    settings[f"dwm_i_a{state}"] = ParamLocalSetting(
-        name_setting=NameSetting(f"dwm_a{state}", "i"),
-        value=0.0,
-        min=-1.0,
-        max=1.0,
-        vary=True,
-    )
-    settings[f"dwp_i_a{state}"] = ParamLocalSetting(
-        name_setting=NameSetting(f"dwp_a{state}", "i"),
-        value=0.0,
-        min=-100.0,
-        max=100.0,
-        vary=True,
-    )
-    settings[f"dwm_s_a{state}"] = ParamLocalSetting(
-        name_setting=NameSetting(f"dwm_a{state}", "s"),
-        value=0.0,
-        min=-1.0,
-        max=1.0,
-        vary=True,
-    )
-    settings[f"dwp_s_a{state}"] = ParamLocalSetting(
-        name_setting=NameSetting(f"dwp_a{state}", "s"),
-        value=0.0,
-        min=-100.0,
-        max=100.0,
-        vary=True,
-    )
-    temp = conditions.temperature
-    setting_dw_i = settings[f"dw_i_a{state}"]
-    setting_dw_i.vary = False
-    setting_dw_i.expr = f"{{dwp_i_a{state}}} + {temp} * {{dwm_i_a{state}}}"
-    setting_dw_s = settings[f"dw_s_a{state}"]
-    setting_dw_s.vary = False
-    setting_dw_s.expr = f"{{dwp_s_a{state}}} + {temp} * {{dwm_s_a{state}}}"
 
 
 def _add_dw_param_settings(
@@ -93,7 +63,13 @@ def _add_dw_param_settings(
     settings[f"cs_s_{state}"].supports_estimation = False
 
     if basis.model.temp_coef:
-        _add_temp_coef_param_settings(settings, state, conditions)
+        settings[f"cs_i_{state}"].model_owned = True
+        settings[f"cs_s_{state}"].model_owned = True
+        add_shift_difference_polynomial(
+            settings,
+            state=state,
+            temperature=_temperature_required_by_tc(conditions),
+        )
 
 
 def _set_equal_to_a(settings: dict[str, ParamLocalSetting]) -> None:
@@ -107,7 +83,7 @@ def _declare_independent_estimation_capabilities(
     settings: dict[str, ParamLocalSetting],
 ) -> None:
     for setting in settings.values():
-        if not setting.expr:
+        if not setting.expr and not setting.model_owned:
             setting.supports_estimation = True
 
 
@@ -307,6 +283,12 @@ def create_base_param_settings(
 
     _update_expr_for_proton_exchange(settings, state, basis)
     _declare_independent_estimation_capabilities(settings)
+
+    if state == "a" and basis.model.temp_coef:
+        add_reference_shift_polynomial(
+            settings,
+            temperature=_temperature_required_by_tc(conditions),
+        )
 
     if state != "a":
         _set_equal_to_a(settings)

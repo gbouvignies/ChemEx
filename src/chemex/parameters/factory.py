@@ -33,15 +33,27 @@ ConfigConditionsType = ExperimentConfiguration[Any, Conditions, Any]
 def _set_to_fit(
     parameters: Parameters,
     name_map: dict[str, str],
+    settings: LocalSettings,
     fitted: list[str],
 ) -> None:
+    def enable(local_name: str, visited: set[str]) -> None:
+        if local_name in visited:
+            return
+        visited.add(local_name)
+        setting = settings[local_name]
+        if setting.model_owned:
+            for dependency in setting.dependencies:
+                enable(dependency, visited)
+            return
+        param_id = name_map[local_name]
+        parameters[param_id].vary = True
+        parameters[param_id].expr = ""
+
     pool = set(name_map)
     for fitted_name in fitted:
         selection = {name for name in pool if name.startswith(fitted_name)}
         for name in selection:
-            param_id = name_map[name]
-            parameters[param_id].vary = True
-            parameters[param_id].expr = ""
+            enable(name, set())
         pool -= selection
 
 
@@ -235,7 +247,7 @@ class ParameterFactory:
                 supports_estimation=param_id in supports_estimation_ids,
                 model_expression=parameter.expr,
                 contributor=contributor,
-                model_owned=param_id in model_owned_ids and bool(parameter.expr),
+                model_owned=param_id in model_owned_ids,
                 requires_independent=not bool(parameter.expr),
                 fits_by_default=param_id in default_fit_ids,
                 report_only=parameter.report_only,
@@ -278,8 +290,18 @@ class ParameterFactory:
         )
         if contributor is not None:
             construction_context = f"{contributor}; {construction_context}"
-        _set_to_fit(parameters, name_map, config.to_be_fitted.rates)
-        _set_to_fit(parameters_mf, name_map_mf, config.to_be_fitted.model_free)
+        _set_to_fit(
+            parameters,
+            name_map,
+            settings,
+            config.to_be_fitted.rates,
+        )
+        _set_to_fit(
+            parameters_mf,
+            name_map_mf,
+            settings_mf,
+            config.to_be_fitted.model_free,
+        )
         default_fit_ids = {
             param_id for param_id, parameter in parameters.items() if parameter.vary
         }
@@ -308,6 +330,15 @@ class ParameterFactory:
                 native_name_map[name]
                 for name in kinetic_names
                 if name in native_name_map
+                and native_parameters[native_name_map[name]].expr
+            ) | frozenset(
+                native_name_map[name]
+                for name, setting in (
+                    settings_mf.items()
+                    if self.parameter_store.model.model_free
+                    else settings.items()
+                )
+                if setting.model_owned
             )
             try:
                 self._collect_definitions(
@@ -336,7 +367,11 @@ class ParameterFactory:
                     model_free_owned_ids = frozenset(
                         name_map_mf[name]
                         for name in kinetic_names
-                        if name in name_map_mf
+                        if name in name_map_mf and parameters_mf[name_map_mf[name]].expr
+                    ) | frozenset(
+                        name_map_mf[name]
+                        for name, setting in settings_mf.items()
+                        if setting.model_owned
                     )
                     self._collect_definitions(
                         parameters_mf,
