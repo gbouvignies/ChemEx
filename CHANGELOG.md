@@ -7,17 +7,27 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
 
 ## [Unreleased]
 
+## [2026.09.2] - 2026-09-23
+
+### Added
+- Completed the `.tc` temperature-dependent chemical-shift parameter interface:
+  `CS0_A`/`CS1_A` describe the state-A shift and `DW0_AX`/`DW1_AX` describe
+  each A-to-X shift difference. Order-0 coefficients are values at the protected
+  global `TREF` (25 °C by default); order-1 coefficients are in ppm/°C.
+
+### Changed
+- **Breaking `.tc` parameter interface:** `DW0_AX`/`DW1_AX` replace the
+  published `DWP_AX`/`DWM_AX` names without aliases or automatic migration.
+  Rewrite existing `.tc` parameter and Method files; for the same physical
+  line, use `DW0_AX = DWP_AX + TREF × DWM_AX` and `DW1_AX = DWM_AX`.
+  Review bounds and constraints when changing the reference temperature.
+  Parameter output and restart files use only the canonical coefficient names.
+
 ### Fixed
-- Completed and documented the previously released `.tc` chemical-shift model.
-  Both `CS_A` and `DW_AX` now use independent, reference-centered linear
-  polynomials with canonical coefficients `CS0_A`/`CS1_A` and
-  `DW0_AX`/`DW1_AX`. A protected global `TREF` constant defaults to 25 °C.
-  This intentionally replaces the published `DWP_AX`/`DWM_AX` interface without
-  aliases or automatic migration; existing `.tc` parameter and Method files
-  must be rewritten with the canonical names. Outputs contain only canonical
-  names. Existing `.tc` fits can change because state-A shifts now have a slope
-  and because the coefficient coordinate system is centered at `TREF`; models
-  without `.tc` are unchanged.
+- Corrected `.tc` shift evaluation so both `CS_A` and `DW_AX` have independent,
+  reference-centered linear temperature dependence. Existing `.tc` fit results
+  can change because state-A shifts now have a slope and the coefficient
+  coordinates are centered at `TREF`. Models without `.tc` are unchanged.
 
 ## [2026.09.1] - 2026-09-10
 

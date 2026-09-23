@@ -77,7 +77,7 @@ uv tool upgrade chemex
 To install a specific release:
 
 ```shell
-uv tool install "chemex==2026.09.1"
+uv tool install "chemex==2026.09.2"
 ```
 
 ### Alternative: pip
