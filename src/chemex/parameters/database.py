@@ -50,6 +50,14 @@ class TemperatureReferenceConfigurationError(ChemExError, ValueError):
         self.explanation = explanation
 
 
+class ObsoleteTemperatureShiftParameterError(ChemExError, ValueError):
+    """An obsolete ``.tc`` coefficient name was supplied."""
+
+    def __init__(self, explanation: str) -> None:
+        super().__init__(explanation)
+        self.explanation = explanation
+
+
 class ModelReader(Protocol):
     @property
     def name(self) -> str: ...
@@ -88,11 +96,36 @@ def _validate_tref_defaults(defaults: DefaultListType) -> None:
             "TREF is a protected non-optimizable model constant. Specify only its "
             "scalar value in [GLOBAL]; bounds and grid steps are not allowed."
         )
-    if tref_settings and (
-        not math.isfinite(tref_settings[-1].value) or tref_settings[-1].value <= -273.15
+    if any(
+        not math.isfinite(setting.value) or setting.value <= -273.15
+        for setting in tref_settings
     ):
         raise TemperatureReferenceConfigurationError(
             "TREF must be finite and greater than -273.15 degrees Celsius."
+        )
+    values = {setting.value for setting in tref_settings}
+    if len(values) > 1:
+        rendered = ", ".join(str(value) for value in sorted(values))
+        raise TemperatureReferenceConfigurationError(
+            f"Conflicting explicit TREF values were provided ({rendered}). "
+            "Use one shared [GLOBAL] TREF value across all parameter files."
+        )
+
+
+def _validate_obsolete_temperature_shift_defaults(defaults: DefaultListType) -> None:
+    obsolete = sorted(
+        {
+            name.name
+            for name, _setting in defaults
+            if re.fullmatch(r"DW[PM]_A[A-Z]", name.name)
+        }
+    )
+    if obsolete:
+        names = ", ".join(obsolete)
+        raise ObsoleteTemperatureShiftParameterError(
+            f"Obsolete .tc parameter names were provided: {names}. Replace DWP_AX "
+            "and DWM_AX with the canonical coefficients using "
+            "DW0_AX = DWP_AX + TREF * DWM_AX and DW1_AX = DWM_AX."
         )
 
 
@@ -592,6 +625,7 @@ class ParameterStore:
         validate_legacy_binding_defaults(self.model.name, defaults)
         if self.model.temp_coef:
             _validate_tref_defaults(defaults)
+            _validate_obsolete_temperature_shift_defaults(defaults)
         if self._defaults_applied:
             msg = "Parameter defaults have already been applied"
             raise RuntimeError(msg)

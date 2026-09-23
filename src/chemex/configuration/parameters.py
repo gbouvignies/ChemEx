@@ -11,7 +11,7 @@ from pydantic import AfterValidator, BeforeValidator, RootModel, ValidationError
 from chemex.configuration.utils import ensure_list
 from chemex.exceptions import ChemExError
 from chemex.parameters.name import ParamName
-from chemex.toml import read_toml_multi
+from chemex.toml import read_toml, read_toml_multi
 
 
 def rename_section(section_name: str) -> str:
@@ -63,6 +63,29 @@ def build_default_list(params_config: ParamsConfigModel) -> DefaultListType:
     return defaults
 
 
+def _explicit_global_tref_defaults(filenames: tuple[Path, ...]) -> DefaultListType:
+    """Retain repeated explicit TREF values for model-aware validation."""
+    defaults: DefaultListType = []
+    for filename in filenames:
+        config = read_toml(filename)
+        for section, values in config.items():
+            if section.lower() != "global" or not isinstance(values, dict):
+                continue
+            for name, value in values.items():
+                if name.lower() != "tref":
+                    continue
+                try:
+                    tref_config = ParamsConfigModel.model_validate(
+                        {"global": {"tref": value}}
+                    )
+                except ValidationError:
+                    # The effective merged configuration remains authoritative for
+                    # schema errors and preserves existing non-.tc behavior.
+                    continue
+                defaults.extend(build_default_list(tref_config))
+    return defaults
+
+
 def read_defaults(filenames: Iterable[Path]) -> DefaultListType:
     sources = tuple(filenames)
     config = read_toml_multi(sources)
@@ -75,4 +98,8 @@ def read_defaults(filenames: Iterable[Path]) -> DefaultListType:
         if location:
             explanation = f"{location}: {explanation}"
         raise ParameterConfigurationError(sources, explanation) from error
-    return build_default_list(param_config)
+    defaults = build_default_list(param_config)
+    explicit_tref_defaults = _explicit_global_tref_defaults(sources)
+    if len(explicit_tref_defaults) > 1:
+        defaults.extend(explicit_tref_defaults)
+    return defaults

@@ -14,7 +14,7 @@ import pytest
 from chemex.configuration.conditions import Conditions
 from chemex.configuration.method_plan import MethodFormatError
 from chemex.configuration.methods import Method, read_method_plan
-from chemex.configuration.parameters import DefaultSetting
+from chemex.configuration.parameters import DefaultSetting, read_defaults
 from chemex.containers.data import Data
 from chemex.experiments.catalog.cest_15n import Cest15NConfig
 from chemex.experiments.catalog.cest_15n import (
@@ -30,7 +30,10 @@ from chemex.experiments.catalog.shift_15n_sq import (
 )
 from chemex.nmr.basis import Basis
 from chemex.nmr.spectrometer import Spectrometer
-from chemex.parameters.database import TemperatureReferenceConfigurationError
+from chemex.parameters.database import (
+    ObsoleteTemperatureShiftParameterError,
+    TemperatureReferenceConfigurationError,
+)
 from chemex.parameters.name import ParamName
 from chemex.parameters.parameterization import (
     ModelDerivationOverrideError,
@@ -376,6 +379,65 @@ def test_tref_configuration_must_be_unscoped_scalar() -> None:
         )
     with pytest.raises(TemperatureReferenceConfigurationError, match="greater"):
         session.parameters.set_defaults(_defaults(TREF=-273.15))
+
+
+def test_conflicting_explicit_tref_values_from_multiple_files_are_rejected(
+    tmp_path: Path,
+) -> None:
+    parameter_files = []
+    for index, value in enumerate((20.0, 30.0), start=1):
+        path = tmp_path / f"parameters-{index}.toml"
+        path.write_text(f"[GLOBAL]\nTREF = {value}\n", encoding="utf-8")
+        parameter_files.append(path)
+
+    with pytest.raises(TemperatureReferenceConfigurationError, match="Conflicting"):
+        _build_shift_session((25.0,), read_defaults(parameter_files))
+
+
+def test_identical_explicit_tref_values_from_multiple_files_are_accepted(
+    tmp_path: Path,
+) -> None:
+    parameter_files = []
+    for index in (1, 2):
+        path = tmp_path / f"parameters-{index}.toml"
+        path.write_text("[GLOBAL]\nTREF = 20.0\n", encoding="utf-8")
+        parameter_files.append(path)
+
+    _, parameter_ids, resolved = _build_shift_session(
+        (30.0,),
+        read_defaults(parameter_files) + _defaults(CS0_A=8.0, CS1_A=0.1),
+    )
+    assert resolved[parameter_ids[30.0]["cs_i_a"]] == pytest.approx(9.0)
+
+
+@pytest.mark.parametrize(
+    "obsolete_name",
+    (
+        ParamName("DWP_AB"),
+        ParamName(
+            "DWM_AB",
+            SpinSystem.from_name("G23N"),
+            Conditions(temperature=15.0, h_larmor_frq=800.0),
+        ),
+    ),
+)
+def test_obsolete_temperature_shift_parameters_are_rejected(
+    obsolete_name: ParamName,
+) -> None:
+    defaults = [(obsolete_name, DefaultSetting(0.1))]
+    with pytest.raises(
+        ObsoleteTemperatureShiftParameterError,
+        match=r"DW0_AX = DWP_AX \+ TREF \* DWM_AX and DW1_AX = DWM_AX",
+    ):
+        _build_shift_session((25.0,), defaults)
+
+
+def test_canonical_temperature_shift_parameters_are_accepted() -> None:
+    _, parameter_ids, resolved = _build_shift_session(
+        (30.0,),
+        _defaults(TREF=20.0, DW0_AB=2.0, DW1_AB=0.1),
+    )
+    assert _resolved_lines(parameter_ids, resolved)[0, 1] == pytest.approx(3.0)
 
 
 def test_canonical_temperature_coefficients_support_constraints_and_grid(
