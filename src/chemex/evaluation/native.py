@@ -1253,26 +1253,6 @@ class _CachedProfile:
     normalization_factor: float
 
 
-@dataclass(frozen=True, slots=True)
-class _LocalParameterProjection(Mapping[str, float]):
-    """The only resolved values a native profile calculation can observe."""
-
-    _items: tuple[tuple[str, float], ...]
-    _values: Mapping[str, float] = field(init=False, repr=False, compare=False)
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "_values", dict(self._items))
-
-    def __iter__(self) -> Iterator[str]:
-        return iter(self._values)
-
-    def __len__(self) -> int:
-        return len(self._values)
-
-    def __getitem__(self, key: str) -> float:
-        return self._values[key]
-
-
 @dataclass(slots=True)
 class _NativeKernelCapability:
     """Private adapter that exposes only local values and copied metadata."""
@@ -1821,12 +1801,10 @@ class BoundEvaluator:
     ) -> Array | EvaluationFailure:
         """Run and validate the narrow unscaled profile kernel."""
         try:
-            local = _LocalParameterProjection(
-                tuple(
-                    (local_name, resolved[param_id])
-                    for local_name, param_id in descriptor.local_inputs
-                )
-            )
+            local = {
+                local_name: resolved[param_id]
+                for local_name, param_id in descriptor.local_inputs
+            }
         except KeyError as error:
             return self._failure(
                 "projection",

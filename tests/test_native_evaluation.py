@@ -1492,3 +1492,38 @@ def test_projection_and_result_assembly_failures_are_typed() -> None:
         outcome = evaluator.evaluate(_evaluation_frame(session, parameterization))
     assert isinstance(outcome, EvaluationFailure)
     assert (outcome.stage, outcome.validity) == ("result", "IMPLEMENTATION_FAILURE")
+
+
+def test_local_projection_passes_only_profile_inputs_and_types_missing_values() -> None:
+    session, experiments = _shipped_dcest()
+    parameterization = session.compile_parameterization(Method(), experiments.param_ids)
+    evaluator = EvaluationEngine.from_experiments(
+        experiments, parameterization
+    ).new_evaluator()
+    descriptor = evaluator.plan.profiles[0]
+    profile = evaluator._workspace.profile_workspaces[0].profile
+    resolved = dict(session.resolve_current_values(experiments.param_ids))
+    resolved["unrelated"] = 1.0
+    observed: list[tuple[str, float]] = []
+
+    def capture(_self: object, local: dict[str, float]) -> Array:
+        observed.extend(local.items())
+        return np.zeros(descriptor.observation_count, dtype=np.float64)
+
+    with patch.object(type(profile), "calculate", capture):
+        result = evaluator._calculate_unscaled(descriptor, profile, resolved)
+
+    assert isinstance(result, np.ndarray)
+    assert observed == [
+        (local_name, resolved[param_id])
+        for local_name, param_id in descriptor.local_inputs
+    ]
+
+    del resolved[descriptor.local_inputs[0][1]]
+    failure = evaluator._calculate_unscaled(descriptor, profile, resolved)
+    assert isinstance(failure, EvaluationFailure)
+    assert (failure.stage, failure.category, failure.validity) == (
+        "projection",
+        "missing_local_parameter",
+        "INVALID_PLAN_OR_BINDING",
+    )
