@@ -298,6 +298,40 @@ def _native_dataset(
     )
 
 
+def _native_resampling_plan(
+    experiments: Experiments,
+    fit: NativeDeterministicFit,
+    method: _ResamplingMethod,
+    root_seed: int,
+) -> ResamplingPlan:
+    dataset = _native_dataset(experiments, fit)
+    width = max(6, len(str(method.iterations)))
+    return ResamplingPlan.for_accepted(
+        fit.accepted,
+        dataset=dataset,
+        source_problem=fit.problem,
+        parameterization=fit.parameterization,
+        source_engine=fit.engine,
+        scheme=ResamplingScheme(method.statistic_name),
+        replicate_count=method.iterations,
+        replicate_structural_identities=tuple(
+            f"production-replicate-{index:0{width}d}"
+            for index in range(method.iterations)
+        ),
+        replicate_component_identities=tuple(
+            (f"production-direct-trf-{index:0{width}d}",)
+            for index in range(method.iterations)
+        ),
+        root_seed=root_seed,
+        output_scope=fit.problem.commit_scope,
+        output_units=("native",) * len(fit.problem.commit_scope),
+        minimum_successful_count=method.iterations,
+        strategy_settings=(
+            ("objective_request_budget", str(fit.objective_request_budget)),
+        ),
+    )
+
+
 def _write_native_failures(path: Path, outcomes: Sequence[ReplicateOutcome]) -> bool:
     failed = tuple(outcome for outcome in outcomes if outcome.failure is not None)
     if not failed:
@@ -412,6 +446,56 @@ def _clear_native_statistics_artifacts(path: Path) -> None:
         (path / name).unlink(missing_ok=True)
 
 
+def _preserve_interrupted_resampling_artifacts(
+    statistic_path: Path,
+    operation: ResamplingOperation,
+    accepted: AcceptedFitResult,
+    parameter_names: tuple[str, ...],
+    outcomes: Sequence[ReplicateOutcome],
+    error: BaseException,
+    *,
+    samples_published: bool,
+    failures_published: bool,
+    diagnostics_published: bool,
+) -> tuple[bool, bool]:
+    if not samples_published:
+        try:
+            diagnostic_samples = derive_resampling_diagnostic_samples(
+                operation,
+                accepted,
+            )
+            _write_native_samples(statistic_path, parameter_names, diagnostic_samples)
+            samples_published = True
+        except OSError as publication_error:
+            raise _resampling_publication_error(
+                "publish interrupted resampling samples",
+                statistic_path / "samples.tsv",
+                publication_error,
+                failures_published=failures_published,
+                diagnostics_published=diagnostics_published,
+                interrupted=True,
+            ) from publication_error
+        except (Exception, KeyboardInterrupt):  # noqa: BLE001
+            error.add_note("ChemEx could not publish interrupted resampling samples.")
+            remove_paths_best_effort((statistic_path / "samples.tsv",), error)
+    if not failures_published:
+        try:
+            failures_published = _write_native_failures(statistic_path, outcomes)
+        except OSError as publication_error:
+            raise _resampling_publication_error(
+                "publish interrupted resampling failures",
+                statistic_path / "failures.tsv",
+                publication_error,
+                samples_published=samples_published,
+                diagnostics_published=diagnostics_published,
+                interrupted=True,
+            ) from publication_error
+        except (Exception, KeyboardInterrupt):  # noqa: BLE001
+            error.add_note("ChemEx could not publish interrupted resampling failures.")
+            remove_paths_best_effort((statistic_path / "failures.tsv",), error)
+    return samples_published, failures_published
+
+
 def _run_native_resampling_method(  # noqa: C901 - closed execution/publication lifecycle
     experiments: Experiments,
     path: Path,
@@ -445,35 +529,7 @@ def _run_native_resampling_method(  # noqa: C901 - closed execution/publication 
             error,
         ) from error
     try:
-        dataset = _native_dataset(experiments, fit)
-        width = max(6, len(str(method.iterations)))
-        plan = ResamplingPlan.for_accepted(
-            fit.accepted,
-            dataset=dataset,
-            source_problem=fit.problem,
-            parameterization=fit.parameterization,
-            source_engine=fit.engine,
-            scheme=ResamplingScheme(method.statistic_name),
-            replicate_count=method.iterations,
-            replicate_structural_identities=tuple(
-                f"production-replicate-{index:0{width}d}"
-                for index in range(method.iterations)
-            ),
-            replicate_component_identities=tuple(
-                (f"production-direct-trf-{index:0{width}d}",)
-                for index in range(method.iterations)
-            ),
-            root_seed=root_seed,
-            output_scope=fit.problem.commit_scope,
-            output_units=("native",) * len(fit.problem.commit_scope),
-            minimum_successful_count=method.iterations,
-            strategy_settings=(
-                (
-                    "objective_request_budget",
-                    str(fit.objective_request_budget),
-                ),
-            ),
-        )
+        plan = _native_resampling_plan(experiments, fit, method, root_seed)
         operation = execute_resampling_evidence(
             fit.accepted,
             plan,
@@ -655,58 +711,20 @@ def _run_native_resampling_method(  # noqa: C901 - closed execution/publication 
             else "failed"
         )
         disposition_source = evidence if result is None else result
-        if terminal == "interrupted" and not samples_published:
-            try:
-                diagnostic_samples = derive_resampling_diagnostic_samples(
+        if terminal == "interrupted":
+            samples_published, failures_published = (
+                _preserve_interrupted_resampling_artifacts(
+                    statistic_path,
                     operation,
                     fit.accepted,
-                )
-                _write_native_samples(
-                    statistic_path,
                     parameter_names,
-                    diagnostic_samples,
-                )
-                samples_published = True
-            except OSError as publication_error:
-                raise _resampling_publication_error(
-                    "publish interrupted resampling samples",
-                    statistic_path / "samples.tsv",
-                    publication_error,
+                    evidence.outcomes,
+                    error,
+                    samples_published=samples_published,
                     failures_published=failures_published,
                     diagnostics_published=diagnostics_published,
-                    interrupted=True,
-                ) from publication_error
-            except (Exception, KeyboardInterrupt):  # noqa: BLE001
-                error.add_note(
-                    "ChemEx could not publish interrupted resampling samples."
                 )
-                remove_paths_best_effort(
-                    (statistic_path / "samples.tsv",),
-                    error,
-                )
-        if terminal == "interrupted" and not failures_published:
-            try:
-                failures_published = _write_native_failures(
-                    statistic_path,
-                    evidence.outcomes,
-                )
-            except OSError as publication_error:
-                raise _resampling_publication_error(
-                    "publish interrupted resampling failures",
-                    statistic_path / "failures.tsv",
-                    publication_error,
-                    samples_published=samples_published,
-                    diagnostics_published=diagnostics_published,
-                    interrupted=True,
-                ) from publication_error
-            except (Exception, KeyboardInterrupt):  # noqa: BLE001
-                error.add_note(
-                    "ChemEx could not publish interrupted resampling failures."
-                )
-                remove_paths_best_effort(
-                    (statistic_path / "failures.tsv",),
-                    error,
-                )
+            )
         try:
             _write_native_state_diagnostics(
                 statistic_path,
