@@ -1,284 +1,39 @@
-# ChemEx Performance Benchmark Suite
+# ChemEx benchmarks
 
-This directory contains comprehensive benchmarking tools for analyzing and improving ChemEx performance.
+These exploratory benchmarks measure three current ChemEx workloads. They are not scientific acceptance tests or CI performance gates. Run them from the repository root after `uv sync --locked`.
 
-## Overview
+Set native thread counts **before** starting Python so NumPy and SciPy see the same settings in every run:
 
-The benchmark suite is organized into three levels:
-
-1. **Quick Benchmarks** (`benchmark_framework.py`) - Fast matrix operation tests
-2. **Bottleneck Benchmarks** (`benchmark_bottlenecks.py`) - Specific performance bottleneck profiling
-3. **End-to-End Benchmarks** (`benchmark_endtoend.py`) - Complete workflow tests with real data
-
-## Quick Start
-
-### Install ChemEx in Development Mode
-
-```bash
-cd /home/user/ChemEx
-pip install -e .
+```sh
+export OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1
+export VECLIB_MAXIMUM_THREADS=1 NUMEXPR_NUM_THREADS=1
+export MPLCONFIGDIR="${TMPDIR:-/tmp}/chemex-benchmark-mpl"
+export XDG_CACHE_HOME="${TMPDIR:-/tmp}/chemex-benchmark-cache"
+export UV_CACHE_DIR="${TMPDIR:-/tmp}/chemex-benchmark-uv-cache"
 ```
 
-### Run All Benchmarks
+| Command | Input and measurement |
+| --- | --- |
+| `uv run --no-sync python benchmarks/run_benchmarks.py cpmg-residual --runs 5` | `CPMG_15N_IP_0013`, 600 MHz, L3N, 2st: native residual evaluation. Reports a cold evaluation with a fresh evaluator and a second cached evaluation; excludes experiment construction. |
+| `uv run --no-sync python benchmarks/run_benchmarks.py dcest-residual --runs 5` | `DCEST_15N_HD_EXCH`, 3 Hz, 1N, 2st_hd: the same native residual measurements. |
+| `uv run --no-sync python benchmarks/run_benchmarks.py cpmg-fit --runs 3 --timeout 180` | `CPMG_15N_IP_0013`, 600 MHz, L3N, 2st: complete CLI fit in a child process, with plotting disabled, one worker, and one native thread. Wall time includes Python startup, fitting, uncertainty, and output. Each run uses a fresh temporary output directory and must publish a complete outcome. |
 
-```bash
-cd benchmarks
-python run_benchmarks.py --all
-```
+The runner checks that both its own process and the fit subprocess import `src/chemex` from this checkout. It prints input paths, model, spin system, timing medians, runtime versions, source path, Git revision, SHA-256 fingerprints of the source Python tree and runner, platform, CPU count, and thread environment. The fingerprints identify the measured code even with uncommitted edits or stale installed distribution metadata; the runner fails if the source or runner changes during a measurement. Residual workloads also print the result length and a SHA-256 fingerprint to help detect an unintended workload change. Compare timings only with the same inputs, thread settings, cache state, Python and library versions, and machine. Use more repetitions when investigating small differences; the short commands above are primarily for baseline and smoke measurements.
 
-### Run Specific Benchmark Suites
+## Initial local measurements
 
-```bash
-# Quick matrix operations only (~30 seconds)
-python run_benchmarks.py --quick
+These are exploratory measurements from **2026-09-24** at revision `16f1bc697d98ab362301d5035c759ca2ce04d43b` on macOS arm64 (18 logical CPUs), Python 3.13.13, NumPy 2.5.1, and SciPy 1.18.0. All five native thread variables in the commands above were set to 1; Matplotlib and XDG caches were in writable temporary directories. The imported `chemex` source was this checkout, version 2026.09.2 in `pyproject.toml`; the existing environment's installed distribution metadata reported 2026.9.1. This mismatch is recorded, not treated as a numerical difference.
 
-# Bottleneck analysis (~2-3 minutes)
-python run_benchmarks.py --bottlenecks
+| Workload | Repeats | Median cold | Median cached | Median full fit |
+| --- | ---: | ---: | ---: | ---: |
+| CPMG residual, 1 profile / 29 residuals | 5 | 0.926 ms | 0.0118 ms | — |
+| D-CEST residual, 1 profile / 42 residuals | 5 | 3.567 ms | 0.0125 ms | — |
+| CPMG fit, 1 profile | 3 | — | — | 1.094 s |
 
-# End-to-end workflows (~5-10 minutes)
-python run_benchmarks.py --e2e
+These numbers establish that the retained commands measure working scientific paths. They are not performance thresholds or evidence of a speedup.
 
-# Retained-Jacobian covariance gate for the shipped 96-profile CPMG fit
-python run_benchmarks.py --uncertainty-large-fit
-```
+The retired `benchmark_large_native_uncertainty.py` attempted a 96-profile CPMG fit with phase timings and a numerical acceptance record. Its instrumentation imports removed optimization modules, so it cannot validate the current implementation. The retained single-profile fit does not replace a full-size covariance or uncertainty performance measurement. Add a focused workload only if that path needs a future performance investigation; use the existing uncertainty tests for current correctness checks.
 
-### Save Results to File
+## Historical results
 
-```bash
-python run_benchmarks.py --all --save baseline_results.txt
-```
-
-## Benchmark Components
-
-### 1. Quick Benchmarks (`benchmark_framework.py`)
-
-Fast tests of core matrix operations:
-- Eigenvalue decomposition (`np.linalg.eig` vs `np.linalg.eigh`)
-- Matrix inversion
-- Matrix power operations
-- Repeated matrix multiplication
-
-**Purpose**: Quickly validate that optimization library changes don't break basic operations.
-
-**Runtime**: ~30 seconds
-
-### 2. Bottleneck Benchmarks (`benchmark_bottlenecks.py`)
-
-Profiles the specific bottlenecks identified in the analysis:
-
-1. **Bottleneck #1**: Eigenvalue decomposition in `calculate_propagators()`
-   - Located in: `src/chemex/nmr/spectrometer.py:54`
-   - Impact: HIGH - Called thousands of times during fitting
-   - Test: Realistic Liouvillian sizes (8x8 to 24x24)
-
-2. **Bottleneck #3**: CPMG `matrix_power` operations
-   - Located in: `src/chemex/experiments/catalog/cpmg_*.py`
-   - Impact: HIGH - Called for each CPMG cycle count
-   - Test: Various ncyc values (5, 10, 20, 50, 100)
-
-3. **Bottleneck #5**: Liouvillian construction with `sum()`
-   - Located in: `src/chemex/nmr/liouvillian.py:87`
-   - Impact: MEDIUM - Uses Python sum() instead of vectorized ops
-   - Test: Realistic basis matrices
-
-**Purpose**: Quantify the impact of each bottleneck and validate optimizations.
-
-**Runtime**: ~2-3 minutes
-
-### 3. End-to-End Benchmarks (`benchmark_endtoend.py`)
-
-Complete workflow tests using real example data:
-
-- **CPMG 15N IP Fitting**: Standard CPMG relaxation dispersion analysis
-- **CEST 15N TR Fitting**: CEST profile fitting with model-free analysis
-- **Simulation**: Fast forward simulation without optimization
-
-**Purpose**: Measure real-world performance on typical user workflows.
-
-**Runtime**: ~5-10 minutes (depends on convergence)
-
-### 4. Large native uncertainty benchmark (`benchmark_large_native_uncertainty.py`)
-
-Runs `CPMG_15N_IP_0013` with plotting disabled and records component TRF, root
-materialization/composition, covariance, and output phases separately. It also
-checks the deterministic 2058-request / 6912-kernel contract, zero covariance
-scientific evaluations, and at most one retained-matrix conversion for the sole
-successful component. The median root-composition-plus-covariance time must not
-exceed half the median component execution time.
-
-## Benchmark Results
-
-### Baseline Performance (Pre-Optimization)
-
-Run the benchmarks to establish baseline:
-
-```bash
-python run_benchmarks.py --all --save baseline_results.txt
-```
-
-### Post-Optimization Comparison
-
-After implementing optimizations, run again:
-
-```bash
-python run_benchmarks.py --all --save optimized_results.txt
-```
-
-Then compare:
-
-```python
-from benchmark_framework import compare_benchmarks, BenchmarkResult
-
-# Load and compare results
-# (implement result loading as needed)
-```
-
-## Understanding the Results
-
-### Matrix Operation Benchmarks
-
-Key metrics to watch:
-- **eig vs eigh**: For Hermitian matrices, `eigh` should be 1.5-3x faster
-- **matrix_power vs repeated @**: Crossover point depends on matrix size and exponent
-
-Expected speedups from optimizations:
-- Using `eigh` for Hermitian Liouvillians: **2-3x** on propagator calculations
-- Optimized `matrix_power` for small ncyc: **1.5-2x** on CPMG calculations
-- Vectorized Liouvillian construction: **2-5x** on basis operations
-
-### Bottleneck Benchmarks
-
-These show:
-- Time spent in each bottleneck function
-- Number of calls during typical operations
-- cProfile output showing call stacks
-
-Use this to:
-1. Validate that optimizations target the right functions
-2. Ensure optimizations don't introduce new bottlenecks
-3. Measure actual speedup on isolated components
-
-### End-to-End Benchmarks
-
-These show:
-- Total workflow execution time
-- Top 30 time-consuming functions
-- Real-world performance on user workflows
-
-Target speedups:
-- **Quick wins** (eigenvalue caching, vectorization): 2-5x on typical fits
-- **Parallelization** (grid search, statistics): Near-linear with CPU cores
-- **Full optimization** (all improvements): 5-10x potential
-
-## Profiling Individual Components
-
-### Profile a Specific Function
-
-```python
-from benchmark_framework import ProfilerContext
-
-with ProfilerContext("My Test") as profiler:
-    # Your code here
-    result = my_function()
-
-profiler.print_stats(limit=20)
-```
-
-### Run Custom Benchmarks
-
-```python
-from benchmark_framework import Benchmark
-
-bench = Benchmark("My Custom Test", iterations=100)
-result = bench.run(my_function, arg1, arg2, profile=True)
-bench.print_results(result)
-```
-
-## Performance Targets
-
-Based on the analysis, expected improvements:
-
-| Optimization | Target Speedup | Difficulty |
-|--------------|----------------|------------|
-| Eigenvalue caching | 2-3x | Low |
-| Use eigh for Hermitian | 2-3x | Low |
-| Vectorize Liouvillian | 2-5x | Medium |
-| Parallelize grid search | 4-8x (on 8 cores) | Low |
-| Optimize matrix_power | 1.5-2x | Medium |
-| **Combined (Path 1)** | **5-10x** | **Low-Medium** |
-| Native fitting-stack follow-up | Measure current baseline | Medium |
-| JAX autodiff (Future) | +2-5x | High |
-
-## Continuous Benchmarking
-
-### Add New Benchmarks
-
-To add a new benchmark:
-
-1. Create a function in `benchmark_bottlenecks.py` or `benchmark_endtoend.py`
-2. Use the `Benchmark` class or `ProfilerContext` from `benchmark_framework.py`
-3. Add to the appropriate main() function
-4. Document expected results
-
-### Regression Testing
-
-Run benchmarks before major changes:
-
-```bash
-# Before changes
-python run_benchmarks.py --all --save before.txt
-
-# Make changes...
-
-# After changes
-python run_benchmarks.py --all --save after.txt
-
-# Compare (manual diff for now)
-diff before.txt after.txt
-```
-
-## Troubleshooting
-
-### Import Errors
-
-If you get import errors:
-
-```bash
-# Ensure ChemEx is installed in development mode
-pip install -e /home/user/ChemEx
-```
-
-### Missing Examples
-
-End-to-end benchmarks require the examples directory:
-
-```bash
-# Verify examples exist
-ls -la /home/user/ChemEx/examples/Experiments/
-```
-
-### Timeout Issues
-
-If benchmarks timeout (default 5 minutes for E2E):
-
-- Edit `benchmark_endtoend.py` and increase `timeout` values
-- Or run with `--quick` or `--bottlenecks` only
-
-## References
-
-- **Historical Analysis Documents**: See the archived optimizer investigation
-- **Bottleneck Details**: See performance analysis in investigation docs
-- **Optimization Strategy**: See 5-phase migration plan
-
-## Next Steps
-
-1. **Establish Baseline**: Run `--all --save baseline_results.txt`
-2. **Implement Path 1 Optimizations**: Eigenvalue caching, vectorization, parallelization
-3. **Measure Improvements**: Run `--all --save optimized_results.txt`
-4. **Compare Results**: Validate 2-5x speedup achieved
-5. **Native follow-up**: profile the current bounded SciPy TRF implementation
-
----
-
-Generated: 2025-11-14
-Purpose: Performance optimization planning and validation
+[`baseline_results.txt`](baseline_results.txt) and [`optimized_results.txt`](optimized_results.txt) are preserved snapshots from **2025-11-14**. They came from the retired experimental suite, include synthetic matrix comparisons and failed imports, and lack enough environment information for a reliable comparison with current ChemEx. Their names describe the historical experiment; neither file is a baseline or an optimization result for the current implementation. The old scripts were retired because they depended on removed modules or duplicated exploratory comparisons that did not measure the current native fitting path. No speedup claimed in those files is assumed here.
