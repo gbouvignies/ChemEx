@@ -269,6 +269,11 @@ def _compile_constraint_ast(
     raise MethodFormatError(
         f"Constraint contains unsupported scalar syntax {type(node).__name__}",
         source,
+        detail_code=(
+            "non_finite"
+            if isinstance(node, ast.Constant) and isinstance(node.value, (int, float))
+            else None
+        ),
     )
 
 

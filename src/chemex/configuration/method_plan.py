@@ -32,10 +32,19 @@ class SourceRef:
 
 
 class MethodFormatError(ChemExError, ValueError):
-    def __init__(self, message: str, source: SourceRef) -> None:
+    def __init__(
+        self,
+        message: str,
+        source: SourceRef,
+        *,
+        detail_code: str | None = None,
+        detail_context: Mapping[str, object] | None = None,
+    ) -> None:
         super().__init__(message)
         self.message = message
         self.source = source
+        self.detail_code = detail_code
+        self.detail_context = MappingProxyType(dict(detail_context or {}))
 
     def __str__(self) -> str:
         location = f"{self.source.filename}: [{self.source.step}] {self.source.field}"
@@ -330,14 +339,6 @@ class MethodPlan:
     format_origin: FormatOrigin
     steps: tuple[StepPlan, ...]
 
-    def effective_role_actions(self) -> Mapping[str, tuple[RoleAction, ...]]:
-        """Resolve each step's immutable baseline or inherited action chain."""
-        effective: dict[str, tuple[RoleAction, ...]] = {}
-        for step in self.steps:
-            inherited = () if step.roles_from is None else effective[step.roles_from]
-            effective[step.name] = (*inherited, *step.role_actions)
-        return MappingProxyType(effective)
-
     def render(self) -> str:
         lines = ["FORMAT_VERSION = 2"]
         for step in self.steps:
@@ -384,6 +385,7 @@ class MethodPlan:
         return "\n".join(lines) + "\n"
 
     def validate(self, parameter_model: SealedParameterModel) -> None:
+        """Check model-wide Method meaning; active checks need loaded profiles."""
         from chemex.configuration.method_validation import validate_method_plan
 
         validate_method_plan(self, parameter_model)

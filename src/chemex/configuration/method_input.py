@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from chemex.parameters.parameterization import SealedParameterModel
 
 
-def _normalize_method_plan(methods: Methods | MethodPlan) -> MethodPlan:
+def normalize_method_plan(methods: Methods | MethodPlan) -> MethodPlan:
     if isinstance(methods, MethodPlan):
         return methods
 
@@ -40,6 +40,6 @@ def prepare_method_plan(
     parameter_model: SealedParameterModel,
 ) -> MethodPlan:
     """Normalize a supported input and validate its authoritative Method Plan."""
-    plan = _normalize_method_plan(methods)
+    plan = normalize_method_plan(methods)
     plan.validate(parameter_model)
     return plan

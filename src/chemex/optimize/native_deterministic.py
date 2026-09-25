@@ -9,11 +9,6 @@ from typing import Never
 
 import numpy as np
 
-from chemex.configuration.method_plan import DeSearch, GridSearch, SearchScale
-from chemex.configuration.method_validation import (
-    resolve_de_coordinates,
-    resolve_grid_axes,
-)
 from chemex.containers.experiments import Experiments
 from chemex.evaluation.native import (
     EvaluationEngine,
@@ -31,7 +26,6 @@ from chemex.messages import (
     print_running_de,
 )
 from chemex.optimize.de_direct_trf import (
-    DeCoordinateSemantics,
     DeSearchExecution,
     DeSearchInvocation,
     DeSearchTerminal,
@@ -63,6 +57,11 @@ from chemex.optimize.grouped_direct_trf import (
     execute_grouped_direct_trf,
 )
 from chemex.optimize.helper import execute_post_fit
+from chemex.optimize.method_compiler import (
+    DeSearchInstruction,
+    GridSearchInstruction,
+    SearchInstruction,
+)
 from chemex.optimize.profiled_grid import (
     ProfiledGridOutcome,
     execute_profiled_grid,
@@ -365,29 +364,14 @@ def _build_invocation(
 
 
 def _run_product_de_search(
-    search: DeSearch,
+    search: DeSearchInstruction,
     problem: OptimizationProblem,
     parameterization: ActiveParameterization,
     engine: EvaluationEngine,
-    parameter_model: SealedParameterModel,
 ) -> OptimizationProblem:
-    resolved_coordinates = resolve_de_coordinates(search, parameter_model)
-    coordinates = tuple(
-        (
-            coordinate.param_id,
-            coordinate.low,
-            coordinate.high,
-            (
-                DeCoordinateSemantics.LINEAR
-                if coordinate.scale is SearchScale.LINEAR
-                else DeCoordinateSemantics.LOG
-            ),
-        )
-        for coordinate in resolved_coordinates
-    )
     invocation = DeSearchInvocation.for_product_problem(
         problem,
-        search_coordinates=coordinates,
+        search_coordinates=search.coordinates,
         root_seed=search.seed,
     )
     print_running_de()
@@ -462,7 +446,7 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
     *,
     session: AnalysisSession,
     parameterization: ActiveParameterization,
-    search: GridSearch | DeSearch | None = None,
+    search: SearchInstruction = None,
     run_info: RunInfo | None = None,
     step_name: str = "DEFAULT",
 ) -> NativeDeterministicFit | None:
@@ -545,7 +529,7 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
         configuration,
         starting_snapshot,
     )
-    if isinstance(search, DeSearch):
+    if isinstance(search, DeSearchInstruction):
         if run_info is not None:
             run_info.record_stochastic_operation(step_name, "de", search.seed)
         problem = _run_product_de_search(
@@ -553,18 +537,11 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
             problem,
             parameterization,
             engine,
-            parameter_model,
         )
     decomposition = FitDecomposition.from_root(problem, parameterization, engine)
-    if isinstance(search, GridSearch):
-        resolved_grid_axes = resolve_grid_axes(
-            search,
-            parameter_model,
-            active_scope_ids=parameterization.scope_ids,
-            final_fit_ids=problem.controlled_ids,
-        )
+    if isinstance(search, GridSearchInstruction):
         grid_axes: Mapping[str, tuple[float, ...]] | None = {
-            axis.param_id: axis.values for axis in resolved_grid_axes
+            axis.param_id: axis.values for axis in search.axes
         }
         invocation = None
     else:
@@ -579,7 +556,7 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
         controlled_parameter_count=len(problem.controlled_ids),
         profiled_normalization_count=engine.plan.profiled_normalization_count,
         component_labels=component_labels,
-        grid=isinstance(search, GridSearch),
+        grid=isinstance(search, GridSearchInstruction),
     )
     uncertainty_progress = UncertaintyProgressReporter(console)
     outcome, commit = _execute_and_commit_aggregate(
@@ -640,7 +617,7 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
         engine,
         (
             ProfiledGridBasis()
-            if isinstance(search, GridSearch)
+            if isinstance(search, GridSearchInstruction)
             else ContinuousTrfBasis(decomposition.partition_proof)
         ),
         resolved_environment_identity,
@@ -673,7 +650,7 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
             _propagate_uncertainty_interruption(error)
         raise
     variable_count = len(problem.controlled_ids)
-    if isinstance(search, GridSearch):
+    if isinstance(search, GridSearchInstruction):
         try:
             if not isinstance(outcome, ProfiledGridOutcome):
                 raise TypeError("GRID execution returned a non-GRID outcome")

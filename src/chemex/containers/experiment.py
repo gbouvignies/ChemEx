@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Self
@@ -33,6 +33,41 @@ class NoDuplicateNoiseNotice:
 
 
 type NoiseEstimateNotice = UnsupportedNoiseMethodNotice | NoDuplicateNoiseNotice
+
+
+def _partition_profiles(
+    profiles: Sequence[Profile],
+    include: list[SpinSystem] | tuple[SpinSystem, ...] | str | None,
+    exclude: list[SpinSystem] | tuple[SpinSystem, ...] | str | None,
+) -> tuple[tuple[Profile, ...], tuple[Profile, ...]]:
+    selected: list[Profile] = []
+    filtered: list[Profile] = []
+    for profile in profiles:
+        included = include is None or profile.spin_system.part_of(include)
+        excluded = exclude is not None and profile.spin_system.part_of(exclude)
+        (filtered if excluded or not included else selected).append(profile)
+    return tuple(selected), tuple(filtered)
+
+
+def project_profile_selection(
+    profiles: Sequence[Profile],
+    filtered_profiles: Sequence[Profile],
+    selection: ProfileSelection,
+) -> tuple[tuple[Profile, ...], tuple[Profile, ...]]:
+    """Resolve one Method selection without mutating the loaded population."""
+
+    def resolve(
+        value: tuple[str, ...] | str | None,
+    ) -> tuple[SpinSystem, ...] | str | None:
+        if value is None or isinstance(value, str):
+            return value
+        return tuple(SpinSystem.from_name(name) for name in value)
+
+    return _partition_profiles(
+        (*profiles, *filtered_profiles),
+        resolve(selection.include),
+        resolve(selection.exclude),
+    )
 
 
 @dataclass
@@ -76,18 +111,11 @@ class Experiment:
         include: list[SpinSystem] | tuple[SpinSystem, ...] | str | None,
         exclude: list[SpinSystem] | tuple[SpinSystem, ...] | str | None,
     ) -> None:
-        profiles_all = [*self.profiles, *self.filtered_profiles]
-        profiles: list[Profile] = []
-        filtered: list[Profile] = []
-        for profile in profiles_all:
-            included = include is None or profile.spin_system.part_of(include)
-            excluded = exclude is not None and profile.spin_system.part_of(exclude)
-            if included and not excluded:
-                profiles.append(profile)
-            else:
-                filtered.append(profile)
-        self.profiles = profiles
-        self.filtered_profiles = filtered
+        selected, filtered = _partition_profiles(
+            (*self.profiles, *self.filtered_profiles), include, exclude
+        )
+        self.profiles = list(selected)
+        self.filtered_profiles = list(filtered)
 
     def select(self, selection: Selection) -> None:
         """Apply the legacy standalone selection interface."""
@@ -95,18 +123,11 @@ class Experiment:
 
     def select_profiles(self, selection: ProfileSelection) -> None:
         """Apply canonical step-local profile selection semantics."""
-
-        def resolve(
-            value: tuple[str, ...] | str | None,
-        ) -> tuple[SpinSystem, ...] | str | None:
-            if value is None or isinstance(value, str):
-                return value
-            return tuple(SpinSystem.from_name(name) for name in value)
-
-        self._select_profiles(
-            resolve(selection.include),
-            resolve(selection.exclude),
+        selected, filtered = project_profile_selection(
+            self.profiles, self.filtered_profiles, selection
         )
+        self.profiles = list(selected)
+        self.filtered_profiles = list(filtered)
 
     def filter_from_values(self, parameter_values: Mapping[str, float]) -> None:
         """Apply profile filters from resolved native parameter values."""

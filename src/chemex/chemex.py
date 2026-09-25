@@ -7,7 +7,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from chemex.cli import build_parser
-from chemex.configuration.method_input import prepare_method_plan
+from chemex.configuration.method_input import normalize_method_plan
 from chemex.configuration.method_plan import (
     FormatOrigin,
     MethodPlan,
@@ -29,6 +29,7 @@ from chemex.messages import (
 )
 from chemex.optimize.fitting import invalidate_planned_outputs
 from chemex.optimize.helper import execute_simulation
+from chemex.optimize.method_compiler import compile_method_plan
 from chemex.optimize.method_plan_execution import execute_method_plan
 from chemex.parameters.parameterization import (
     ConstraintDomainError,
@@ -86,7 +87,8 @@ def run_fit(
     parameter_model = session.parameter_factory.sealed_parameter_model
     if parameter_model is None:
         raise RuntimeError("Native parameter model is unavailable")
-    plan = prepare_method_plan(methods, parameter_model)
+    plan = normalize_method_plan(methods)
+    executable = compile_method_plan(plan, parameter_model, experiments)
     starting_values = session.analysis_values.snapshot()
     run_info = write_run_info(
         args,
@@ -99,7 +101,7 @@ def run_fit(
 
     try:
         try:
-            invalidate_planned_outputs(plan, args.output)
+            invalidate_planned_outputs(executable, args.output)
         except (Exception, KeyboardInterrupt) as error:
             mark_failure_stage(error, "output")
             raise
@@ -110,7 +112,7 @@ def run_fit(
         print_start_fit()
         execute_method_plan(
             experiments,
-            plan,
+            executable,
             args.output,
             args.plot,
             session=session,

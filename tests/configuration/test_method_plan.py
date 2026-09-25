@@ -13,7 +13,9 @@ from chemex.configuration.method_plan import (
     FixAction,
     FormatOrigin,
     MethodFormatError,
+    MethodPlan,
     ProfileSelection,
+    StepPlan,
 )
 from chemex.configuration.method_validation import (
     resolve_de_coordinates,
@@ -88,6 +90,22 @@ def _parameter_model(
         configuration,
         declarations,
     )
+
+
+@pytest.mark.parametrize(
+    "steps, message",
+    [
+        ((StepPlan("A"), StepPlan("A")), "step names must be unique"),
+        ((StepPlan("A", roles_from="B"), StepPlan("B")), "unique earlier step"),
+    ],
+)
+def test_programmatic_plan_validates_step_identity_and_inheritance(
+    steps: tuple[StepPlan, ...], message: str
+) -> None:
+    model = _parameter_model(ParamDefinition("pb", "PB", "", (), 0.1, 0.0, 1.0))
+
+    with pytest.raises(MethodFormatError, match=message):
+        MethodPlan(FormatOrigin.V2, steps).validate(model)
 
 
 def test_v1_and_v2_normalize_to_the_same_ordered_role_semantics(
@@ -211,7 +229,7 @@ def test_v1_and_v2_allow_supported_default_derivation_role_overrides(
         ParamDefinition("j-a", "J_A", "3N-H", (), -90.0, -120.0, -60.0),
         ParamDefinition("j-b", "J_B", "3N-H", (), -90.0, -120.0, -60.0),
         supports_estimation=True,
-        model_expression="j-a",
+        model_expression="-90.0",
         requires_independent=False,
     )
     if format_version == 1:
@@ -878,6 +896,23 @@ def test_constraint_resolution_errors_point_to_the_reference_span(
 
     assert error.value.source.start == equation.index("MISSING")
     assert error.value.source.end == equation.index("MISSING") + len("MISSING")
+
+
+def test_overridden_invalid_action_is_still_rejected(tmp_path: Path) -> None:
+    model = _parameter_model(ParamDefinition("pb", "PB", "", (), 0.1, 0.0, 1.0))
+    method = _write(
+        tmp_path / "overridden-invalid.toml",
+        """FORMAT_VERSION = 2
+[STEP]
+ROLES = [
+  { CONSTRAIN = ["[PB] = [MISSING]"] },
+  { FIT = ["PB"] },
+]
+""",
+    )
+
+    with pytest.raises(MethodFormatError, match="constraint reference"):
+        read_method_plan([method]).validate(model)
 
 
 def test_fit_cannot_override_a_structurally_unestimable_parameter(

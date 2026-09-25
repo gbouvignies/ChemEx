@@ -44,6 +44,7 @@ from chemex.parameters.parameterization import ActiveParameterization
 from chemex.parameters.sealed import parameter_name_from_definition
 from chemex.parameters.spin_system import SpinSystem
 from chemex.runtime import AnalysisSession
+from tests.method_preview import preview_plan_step
 
 ROOT = Path(__file__).parent.parent
 BINDING = ROOT / "examples/Combinations/2stBinding"
@@ -804,9 +805,8 @@ ROLES = [
         fit_session.parameter_factory.native_construction_error
     )
     plan = read_method_plan([method])
-    parameterization = fit_session.compile_parameterization_from_actions(
-        plan.effective_role_actions()["STEP"],
-        experiments.param_ids,
+    parameterization = preview_plan_step(
+        fit_session, plan, "STEP", experiments.param_ids
     )
     engine = EvaluationEngine.from_experiments(experiments, parameterization)
     configuration = fit_session.parameter_factory.sealed_configuration

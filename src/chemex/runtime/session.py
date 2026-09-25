@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from types import MappingProxyType
 from typing import Protocol
 
-from chemex.configuration.method_plan import MethodPlan, RoleAction
+from chemex.configuration.method_plan import MethodPlan
 from chemex.configuration.methods import Method
 from chemex.experiments.loader import register_experiments
 from chemex.models.loader import register_kinetic_settings
@@ -21,7 +21,6 @@ from chemex.parameters.parameterization import (
     ReportableParameterSet,
     build_initial_analysis_values,
     compile_active_parameterization,
-    compile_active_parameterization_from_actions,
     deferred_derived_ids,
     extend_parameterization_for_report_only_outputs,
     report_only_derived_ids,
@@ -168,23 +167,6 @@ class AnalysisSession:
             parameter_model,
             self.analysis_values.snapshot(),
             method,
-            required_ids,
-        )
-
-    def compile_parameterization_from_actions(
-        self,
-        actions: tuple[RoleAction, ...],
-        required_ids: set[str],
-    ) -> ActiveParameterization:
-        """Compile one canonical effective method step without mutable role state."""
-        parameter_model = self.parameter_factory.sealed_parameter_model
-        if parameter_model is None:
-            msg = "The sealed native parameter model is unavailable"
-            raise RuntimeError(msg)
-        return compile_active_parameterization_from_actions(
-            parameter_model,
-            self.analysis_values.snapshot(),
-            actions,
             required_ids,
         )
 

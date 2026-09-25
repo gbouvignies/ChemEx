@@ -99,6 +99,9 @@ every currently planned method step before the first step starts. This includes
 Obsolete `All/`, `Groups/`, and `Components/` result trees are also removed so
 stale output cannot appear current; `run_info/` and unknown user-created paths
 are not cleared.
+All Method Steps are validated against the loaded profiles before this clearing
+or `run_info/` publication. A rejected plan, including one with an invalid later
+step, leaves prior results and provenance untouched.
 Partial new output can remain after a writer failure, but `outcome.toml` will not
 report that invocation as complete.
 
