@@ -1399,6 +1399,29 @@ def _static_parameterization_from_scope(
     return StaticParameterization(program, binder, roles)
 
 
+def compile_model_constraint(
+    parameter_model: SealedParameterModel,
+    binder: ScientificFunctionBinder,
+    param_id: str,
+) -> CompiledConstraint:
+    """Compile one sealed derivation for both global and active dependency graphs."""
+    declaration = parameter_model.declarations[param_id]
+    expression_text = declaration.model_expression
+    expression = _parse_expression(
+        expression_text,
+        definitions=parameter_model.definitions,
+        binder=binder,
+        target_id=param_id,
+    )
+    return CompiledConstraint(
+        param_id,
+        expression,
+        _dependencies(expression),
+        "model" if declaration.model_owned else "baseline",
+        expression_text,
+    )
+
+
 def compile_static_parameterization(  # noqa: C901 - dependency closure for one resolved scope
     parameter_model: SealedParameterModel,
     roles: Mapping[str, ParameterRole],
@@ -1429,24 +1452,7 @@ def compile_static_parameterization(  # noqa: C901 - dependency closure for one 
                 continue
             constraint = method_constraints.get(param_id)
             if constraint is None:
-                expression_text = parameter_model.declarations[
-                    param_id
-                ].model_expression
-                expression = _parse_expression(
-                    expression_text,
-                    definitions=parameter_model.definitions,
-                    binder=binder,
-                    target_id=param_id,
-                )
-                constraint = CompiledConstraint(
-                    param_id,
-                    expression,
-                    _dependencies(expression),
-                    "model"
-                    if parameter_model.declarations[param_id].model_owned
-                    else "baseline",
-                    expression_text,
-                )
+                constraint = compile_model_constraint(parameter_model, binder, param_id)
             compiled[param_id] = constraint
             for dependency in constraint.dependencies:
                 if dependency not in parameter_model.declarations:
@@ -1504,11 +1510,15 @@ def compile_active_parameterization(
                     (
                         param_id,
                         source,
-                        method.constraints[int(source.rsplit(":", 1)[1])]
-                        .split("=", maxsplit=1)[1]
-                        .strip(),
+                        (
+                            method.constraints[int(source.rsplit(":", 1)[1])]
+                            .split("=", maxsplit=1)[1]
+                            .strip()
+                            if source.startswith("method-rule:")
+                            else expression_text
+                        ),
                     )
-                    for param_id, source, _text in constraints
+                    for param_id, source, expression_text in constraints
                 )
                 raise ConstraintCycleError(error.message, **context) from error
             case "non_finite":

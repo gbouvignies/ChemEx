@@ -1,24 +1,31 @@
-"""Test-only bridge for direct numerical tests using Method role actions."""
+"""Test-only bridge for direct numerical tests using compiled Method meaning."""
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-
-from chemex.configuration.method_plan import RoleAction
+from chemex.configuration.method_plan import MethodPlan
+from chemex.configuration.method_validation import resolve_method_plan
 from chemex.parameters.parameterization import (
     ActiveParameterization,
-    compile_active_parameterization_from_actions,
+    compile_static_parameterization,
 )
 from chemex.runtime import AnalysisSession
 
 
-def preview_actions(
+def preview_plan_step(
     session: AnalysisSession,
-    actions: Sequence[RoleAction],
+    plan: MethodPlan,
+    step_name: str,
     required_ids: set[str],
 ) -> ActiveParameterization:
+    """Bind one test scope through the production global Method resolver."""
     model = session.parameter_factory.sealed_parameter_model
     assert model is not None
-    return compile_active_parameterization_from_actions(
-        model, session.analysis_values.snapshot(), actions, required_ids
+    resolved = resolve_method_plan(plan, model)
+    index = next(
+        index for index, step in enumerate(plan.steps) if step.name == step_name
     )
+    meaning = resolved[index]
+    static = compile_static_parameterization(
+        model, meaning.roles, meaning.constraints, required_ids
+    )
+    return static.bind(session.analysis_values.snapshot())

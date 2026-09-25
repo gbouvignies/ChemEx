@@ -229,7 +229,7 @@ def test_v1_and_v2_allow_supported_default_derivation_role_overrides(
         ParamDefinition("j-a", "J_A", "3N-H", (), -90.0, -120.0, -60.0),
         ParamDefinition("j-b", "J_B", "3N-H", (), -90.0, -120.0, -60.0),
         supports_estimation=True,
-        model_expression="j-a",
+        model_expression="-90.0",
         requires_independent=False,
     )
     if format_version == 1:

@@ -214,7 +214,7 @@ def make_args(command: str) -> Namespace:
 def _executable_plan(
     *steps: FitStep | SkippedStep,
 ) -> ExecutableMethodPlan:
-    return ExecutableMethodPlan("stub", (), steps)
+    return ExecutableMethodPlan(steps)
 
 
 def _fit_step(

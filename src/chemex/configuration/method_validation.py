@@ -45,9 +45,11 @@ from chemex.parameters.parameterization import (
     ParameterRole,
     ReferenceExpression,
     ScalarExpression,
+    ScientificFunctionBinder,
     SealedParameterModel,
     baseline_parameter_role,
     compatible_reference_context,
+    compile_model_constraint,
 )
 from chemex.parameters.parameterization import (
     LiteralExpression as ValueLiteralExpression,
@@ -515,7 +517,7 @@ def _apply_actions(
 
 
 def _find_cycle(
-    constraints: dict[str, _ResolvedConstraint], order: tuple[str, ...]
+    constraints: Mapping[str, CompiledConstraint], order: tuple[str, ...]
 ) -> tuple[str, ...] | None:
     state = dict.fromkeys(constraints, 0)
     stack: list[str] = []
@@ -548,12 +550,36 @@ def _find_cycle(
 
 
 def _validate_constraint_graph(
-    constraints: dict[str, _ResolvedConstraint], model: SealedParameterModel
+    constraints: dict[str, _ResolvedConstraint],
+    roles: Mapping[str, ParameterRole],
+    model: SealedParameterModel,
+    binder: ScientificFunctionBinder,
+    model_constraints: dict[str, CompiledConstraint],
+    step_name: str,
 ) -> None:
     order = tuple(definition.param_id for definition in model.definitions)
-    cycle = _find_cycle(constraints, order)
+    graph: dict[str, CompiledConstraint] = {}
+    for param_id in order:
+        if roles[param_id] is not ParameterRole.DERIVED:
+            continue
+        if param_id in constraints:
+            graph[param_id] = constraints[param_id].compiled
+            continue
+        if param_id not in model_constraints:
+            model_constraints[param_id] = compile_model_constraint(
+                model, binder, param_id
+            )
+        graph[param_id] = model_constraints[param_id]
+    cycle = _find_cycle(graph, order)
     if cycle is not None:
-        source = constraints[cycle[0]].declaration.source
+        method_member = next(
+            (param_id for param_id in cycle if param_id in constraints), None
+        )
+        source = (
+            constraints[method_member].declaration.source
+            if method_member is not None
+            else SourceRef(Path("<sealed-parameter-model>"), step_name, "DERIVATIONS")
+        )
         raise MethodFormatError(
             f"Constraint dependency cycle contains {', '.join(cycle)}",
             source,
@@ -563,8 +589,8 @@ def _validate_constraint_graph(
                 "constraints": tuple(
                     (
                         param_id,
-                        constraints[param_id].compiled.source,
-                        constraints[param_id].compiled.expression_text,
+                        graph[param_id].source,
+                        graph[param_id].expression_text,
                     )
                     for param_id in cycle
                 ),
@@ -671,7 +697,11 @@ def resolve_grid_axes(
     active_scope_ids: tuple[str, ...],
     final_fit_ids: tuple[str, ...],
 ) -> tuple[ResolvedGridAxis, ...]:
-    """Compatibility preview through the Method compiler's search projection."""
+    """Standalone compatibility preview, never an executable-plan fit input.
+
+    This assumes global FIT eligibility; only ``resolve_method_plan`` knows the
+    effective Method roles. Fitting must use ``compile_method_plan`` instead.
+    """
     roles = dict.fromkeys(model.declarations, ParameterRole.FIT)
     axes = _validate_grid(search, roles, model)
     return project_grid_axes(
@@ -752,6 +782,8 @@ def resolve_method_plan(
     constraints_by_step: dict[str, dict[str, _ResolvedConstraint]] = {}
     ordinals_by_step: dict[str, int] = {}
     resolved_steps: list[ResolvedMethodStep] = []
+    binder = ScientificFunctionBinder.for_model(model.model_name)
+    model_constraints: dict[str, CompiledConstraint] = {}
     for step in plan.steps:
         if step.name in effective_by_step:
             raise MethodFormatError(
@@ -776,7 +808,9 @@ def resolve_method_plan(
             model,
             0 if step.roles_from is None else ordinals_by_step[step.roles_from],
         )
-        _validate_constraint_graph(constraints, model)
+        _validate_constraint_graph(
+            constraints, roles, model, binder, model_constraints, step.name
+        )
         effective_by_step[step.name] = roles
         constraints_by_step[step.name] = constraints
         ordinals_by_step[step.name] = ordinal

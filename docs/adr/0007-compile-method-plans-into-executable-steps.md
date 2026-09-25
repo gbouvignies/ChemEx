@@ -15,12 +15,12 @@ not read Method language again.
 
 The input `MethodPlan` remains the immutable, renderable description produced by
 v1 TOML, v2 TOML, or the supported Python `Methods` mapping. One compilation
-module accepts that plan, a sealed parameter model, and the loaded profile
-population. Its small interface returns an immutable **Executable Method Plan**
-or source-located diagnostics. This is the only module allowed to interpret
-Method selectors, `ROLES_FROM`, ordered role actions, constraints, profile
-selection, or GRID/DE declarations. The compiler has one semantic implementation
-for all input versions; adapters only preserve their input syntax and defaults.
+interface accepts that plan, a sealed parameter model, and the loaded profile
+population. It returns an immutable **Executable Method Plan** or source-located
+diagnostics. The global resolver and active compiler form the sole fitting
+pipeline that interprets Method selectors, `ROLES_FROM`, ordered role actions,
+constraints, profile selection, or GRID/DE declarations. Input adapters only
+preserve version-specific syntax and defaults.
 
 An executable fit step owns its name and output identity; its concrete, ordered
 profile bindings; effective parameter roles and a restricted constraint/value
@@ -33,6 +33,12 @@ instructions. The plan is immutable for one sealed model and one loaded profile
 population. It does not capture parameter values, observation masks, an
 optimizer problem, or a resume cursor. Runtime objects may refer to mutable
 profiles, but their membership and order in the plan cannot change.
+
+The executable plan carries no unused plan-level model or population identity
+fields. Each compiled parameter program records the sealed model identity and
+checks it against the step-time values snapshot. Concrete profile bindings
+capture the loaded membership; a persisted population fingerprint remains a
+separate, versioned provenance decision if restart verification needs one.
 
 An explicit skipped step owns its name, ordinal, output identity, and
 `no_profiles` reason. It has no active parameterization or executable search or
@@ -66,6 +72,12 @@ unique global FIT coordinate. DE duplicate targets and configured physical
 bounds are also profile-independent checks. A transient cycle removed by a
 later action is not a final cycle. Inherited roles are resolved even when their
 source step is skipped.
+
+The global cycle graph includes final Method constraints and effective model or
+baseline derivations, even when no profile is selected. A cycle containing a
+Method constraint reports its source location and lists the model derivation
+members. This check shares the sealed-expression compiler used by active
+parameterization and reads no current numerical values.
 
 For a step with **at least one selected profile**, compilation additionally
 computes active parameter requirements and constraint dependency closure. It
@@ -115,11 +127,11 @@ stale plan.
 
 The final deletion test is structural: no production executor or numerical
 module imports `StepPlan`, Method selectors/actions, `GridSearch`, or `DeSearch`,
-and no runtime path accepts a Method expression or selector string. No second
-function can independently decide the effective Method role, constraint
-reference, selection, or search coordinate. A typed `ExecutableStep` that merely
-contains `StepPlan` or forwards to old interpreters fails this test regardless
-of its line count.
+and no fit execution or numerical runtime path accepts a Method expression or
+selector string. No second function can independently decide the effective
+Method role, constraint reference, selection, or search coordinate. A typed
+`ExecutableStep` fails this test if it contains `StepPlan` or forwards to old
+interpreters, regardless of its line count.
 
 `MethodPlan`/`StepPlan`, `ProfileSelection`, and `GridSearch`/`DeSearch` remain
 input types only. `ConstraintProgram` remains a useful restricted numerical
@@ -129,6 +141,16 @@ resolved GRID/DE coordinate records can serve the numeric interface if they
 contain no source-language behavior. A separate validation result mirroring
 the executable plan, or an adapter that reconstructs `Method` for fitting,
 has no place in the end state.
+
+`MethodPlan.effective_role_actions()` is removed because it independently
+interpreted inheritance and had no production caller. Standalone compatibility
+previews such as `resolve_grid_axes()` and
+`compile_active_parameterization_from_actions()` remain callable for Python
+consumers and tests. They reuse the resolver or projection functions; GRID's
+standalone preview assumes the caller has already established global FIT
+eligibility. Structural tests forbid their use by fitting modules. The
+`Experiments.select_profiles()` compatibility method shares the compiler's
+selection projection but is likewise outside the fit path.
 
 ## Compatibility and rejected alternatives
 

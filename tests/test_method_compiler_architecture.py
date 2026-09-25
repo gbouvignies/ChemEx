@@ -103,3 +103,20 @@ def test_compilation_has_no_analysis_values_dependency_or_action_replay() -> Non
         for node in ast.walk(parameterization)
         if isinstance(node, ast.FunctionDef)
     }
+
+
+def test_compatibility_previews_cannot_reenter_fitting() -> None:
+    method_plan = _tree("configuration/method_plan.py")
+    assert "effective_role_actions" not in {
+        node.name for node in ast.walk(method_plan) if isinstance(node, ast.FunctionDef)
+    }
+
+    for path in (SOURCE / "optimize").rglob("*.py"):
+        module = str(path.relative_to(SOURCE))
+        tree = _tree(module)
+        assert "resolve_grid_axes" not in _imported_names(tree), module
+        assert "resolve_grid_axes" not in _called_names(tree), module
+        assert "compile_active_parameterization_from_actions" not in _called_names(
+            tree
+        ), module
+        assert "select_profiles" not in _called_names(tree), module

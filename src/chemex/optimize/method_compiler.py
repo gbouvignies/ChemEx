@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from pathlib import Path
 
 from chemex.configuration.method_plan import (
     DeSearch,
@@ -78,10 +77,6 @@ type ExecutableStep = FitStep | SkippedStep
 
 @dataclass(frozen=True, slots=True)
 class ExecutableMethodPlan:
-    model_identity: str
-    population_identity: tuple[
-        tuple[Path, tuple[tuple[str, tuple[str, ...]], ...]], ...
-    ]
     steps: tuple[ExecutableStep, ...]
 
 
@@ -111,16 +106,6 @@ def compile_method_plan(
             tuple(experiment.filtered_profiles),
         )
         for experiment in experiments
-    )
-    population_identity = tuple(
-        (
-            binding.experiment.filename,
-            tuple(
-                (str(profile.spin_system), tuple(sorted(profile.param_ids)))
-                for profile in (*binding.selected, *binding.filtered)
-            ),
-        )
-        for binding in bindings
     )
     steps: list[ExecutableStep] = []
     for ordinal, (step, meaning) in enumerate(
@@ -184,4 +169,4 @@ def compile_method_plan(
                 step.statistics,
             )
         )
-    return ExecutableMethodPlan(model.identity, population_identity, tuple(steps))
+    return ExecutableMethodPlan(tuple(steps))

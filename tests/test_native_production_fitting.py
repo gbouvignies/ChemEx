@@ -45,7 +45,7 @@ from chemex.exceptions import ArtifactPublicationError, ChemExError
 from chemex.experiments.builder import build_experiments
 from chemex.optimize.fitting import run_methods
 from chemex.optimize.mcmc import McmcConfigurationError, NativeMcmcIncompleteError
-from chemex.optimize.method_compiler import FitStep, compile_method_plan
+from chemex.optimize.method_compiler import FitStep, SkippedStep, compile_method_plan
 from chemex.optimize.native_deterministic import (
     NativeDeterministicAnalysisError,
     NativeDeterministicInternalError,
@@ -1208,6 +1208,53 @@ ROLES = [{ CONSTRAIN = ["[R1A_A, NUC->G2N-H] = [UNKNOWN]"] }]
         compile_method_plan(read_method_plan([method]), model, experiments)
 
     assert error.value.source.filename == method
+
+
+@pytest.mark.parametrize("format_version", (1, 2))
+def test_empty_step_rejects_cycle_through_model_derivation(
+    tmp_path: Path, format_version: int
+) -> None:
+    _, session, experiments = _programmatic_fit_context(tmp_path / "Output")
+    model = session.parameter_factory.sealed_parameter_model
+    assert model is not None
+    method = tmp_path / "model-cycle.toml"
+    version = "FORMAT_VERSION = 2\n" if format_version == 2 else ""
+    constraint = (
+        'ROLES = [{ CONSTRAIN = ["[PB] = [PA]"] }]'
+        if format_version == 2
+        else 'CONSTRAINTS = ["[PB] = [PA]"]'
+    )
+    method.write_text(
+        f'{version}[EMPTY]\nINCLUDE = ["K999"]\n{constraint}\n',
+        encoding="utf-8",
+    )
+    plan = read_method_plan([method])
+
+    with pytest.raises(MethodFormatError, match="cycle") as error:
+        compile_method_plan(plan, model, experiments)
+
+    assert error.value.source.filename == method
+    assert error.value.source.step == "EMPTY"
+    assert error.value.source.field == (
+        "ROLES[0].CONSTRAIN[0]" if format_version == 2 else "CONSTRAINTS"
+    )
+    assert error.value.source.index == (None if format_version == 2 else 0)
+    assert {source for _, source, _ in error.value.detail_context["constraints"]} == {
+        "method-rule:0",
+        "model",
+    }
+
+    overridden = (
+        'ROLES = [{ CONSTRAIN = ["[PB] = [PA]"] }, { FIT = ["PB"] }]'
+        if format_version == 2
+        else 'CONSTRAINTS = ["[PB] = [PA]"]\nFIT = ["PB"]'
+    )
+    method.write_text(
+        method.read_text(encoding="utf-8").replace(constraint, overridden),
+        encoding="utf-8",
+    )
+    executable = compile_method_plan(read_method_plan([method]), model, experiments)
+    assert isinstance(executable.steps[0], SkippedStep)
 
 
 def test_compilation_is_stable_across_committed_values_and_rebinds_latest(
