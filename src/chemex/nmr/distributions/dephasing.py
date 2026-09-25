@@ -20,10 +20,9 @@ def generate(
 ) -> Distribution:
     """Generate a 'distribution' that triggers dephasing mode.
 
-    In dephasing mode, the propagator calculation adjusts eigenvalues
-    to effectively dephase all coherences except those along the
-    effective field (eigenvalues with non-zero imaginary parts are
-    scaled to cause rapid dephasing).
+    For positive durations, the propagator assigns zero weight to modes
+    with a non-negligible imaginary eigenvalue. Modes along the effective
+    field retain their ordinary exponential evolution.
 
     Parameters
     ----------
