@@ -42,7 +42,7 @@ def test_fit_statistics_count_all_estimated_quantities(
     assert result["nvarys"] == controlled
     assert result["dof"] == expected_dof
     assert result["redchi"] == observations / expected_dof
-    assert result["pvalue"] == 1.0 - stats.chi2.cdf(observations, expected_dof)
+    assert result["pvalue"] == stats.chi2.sf(observations, expected_dof)
     assert result["aic"] == observations + 2 * estimated
     assert result["bic"] == observations + math.log(observations) * estimated
 
@@ -68,6 +68,42 @@ def test_nonpositive_residual_dof_makes_dof_dependent_statistics_unavailable(
     assert result["aic"] == 2.0 + 2 * estimated
     assert result["bic"] == 2.0 + math.log(2.0) * estimated
     assert result["ks_pvalue"] == stats.kstest(residuals, "norm").pvalue
+
+
+def test_fit_statistics_preserve_representable_extreme_chi_square_tail() -> None:
+    residuals = np.array([np.sqrt(1000.0), 0.0])
+
+    result = calculate_statistics_from_residuals(
+        residuals,
+        controlled_coordinate_count=1,
+    )
+
+    expected = stats.chi2.sf(1000.0, 1)
+    assert 1.0 - stats.chi2.cdf(1000.0, 1) == 0.0
+    assert expected > 0.0
+    assert result["pvalue"] == expected
+
+
+def test_statistics_toml_preserves_representable_extreme_chi_square_tail(
+    tmp_path: Path,
+) -> None:
+    _write_statistics(
+        Experiments(),
+        tmp_path,
+        residuals=np.array([np.sqrt(1000.0), 0.0]),
+        controlled_coordinate_count=1,
+        profiled_normalization_count=0,
+    )
+
+    result = tomllib.loads((tmp_path / "statistics.toml").read_text(encoding="utf-8"))
+    expected = stats.chi2.sf(1000.0, 1)
+
+    assert expected > 0.0
+    assert result["chi-squared test"] == pytest.approx(
+        expected,
+        rel=5.0e-6,
+        abs=0.0,
+    )
 
 
 def test_statistics_toml_serializes_nonpositive_dof_as_nan(tmp_path: Path) -> None:
@@ -113,7 +149,7 @@ def test_statistics_toml_preserves_variable_count_and_uses_effective_parameters(
     assert result["chi-square"] == 7.0
     assert result["reduced-chi-square"] == 7.0 / 5.0
     assert result["chi-squared test"] == pytest.approx(
-        1.0 - stats.chi2.cdf(7.0, 5),
+        stats.chi2.sf(7.0, 5),
         rel=0.0,
         abs=5.0e-7,
     )

@@ -61,7 +61,7 @@ def calculate_statistics_from_residuals(
     pvalue = (
         float("nan")
         if positive_degrees_of_freedom is None
-        else float(1.0 - stats.chi2.cdf(chisqr, positive_degrees_of_freedom))
+        else float(stats.chi2.sf(chisqr, positive_degrees_of_freedom))
     )
     return {
         "ndata": counts.residual_count,
