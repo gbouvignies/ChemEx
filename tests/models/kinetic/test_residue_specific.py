@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
@@ -17,21 +18,28 @@ def setup_module() -> None:
     register_kinetic_settings()
 
 
-def test_2st_residue_specific_matches_legacy_alias() -> None:
+def test_2st_rs_modifier_preserves_settings_except_kinetic_scope() -> None:
     conditions = Conditions()
 
+    base_settings = model_factory.create("2st", conditions)
     settings = model_factory.create_for_model(ModelSpec.from_name("2st.rs"), conditions)
-    legacy_settings = model_factory.create("2st_rs", conditions)
 
-    assert settings.keys() == legacy_settings.keys()
+    assert settings.keys() == base_settings.keys()
 
-    for key in settings:
-        assert settings[key].name_setting == legacy_settings[key].name_setting
-        assert settings[key].value == legacy_settings[key].value
-        assert settings[key].min == legacy_settings[key].min
-        assert settings[key].max == legacy_settings[key].max
-        assert settings[key].vary == legacy_settings[key].vary
-        assert settings[key].expr == legacy_settings[key].expr
+    for key, base in base_settings.items():
+        modified = settings[key]
+        assert modified.name_setting == replace(
+            base.name_setting,
+            spin_system_part="g",
+        )
+        assert modified.value == base.value
+        assert modified.min == base.min
+        assert modified.max == base.max
+        assert modified.vary == base.vary
+        assert modified.expr == base.expr
+        assert modified.supports_estimation == base.supports_estimation
+        assert modified.report_only == base.report_only
+        assert modified.model_owned == base.model_owned
 
 
 def test_three_state_models_become_residue_specific_with_rs_suffix() -> None:

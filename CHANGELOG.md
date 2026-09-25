@@ -8,6 +8,8 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
 ## [Unreleased]
 
 ### Changed
+- **Breaking model selection:** Removed the legacy `2st_rs` kinetic-model name.
+  Use the composable `2st.rs` spelling instead.
 - ChemEx now validates and compiles every Method Step against the loaded
   profiles before fitting or clearing prior results. An invalid later step
   rejects the run before earlier steps can commit or create `run_info/`.

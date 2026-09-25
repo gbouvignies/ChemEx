@@ -11,7 +11,7 @@ import pytest
 from chemex.configuration.conditions import Conditions
 from chemex.models.factory import model_factory
 from chemex.models.loader import register_kinetic_settings
-from chemex.models.model import ModelSpec
+from chemex.models.model import ModelSelectionError, ModelSpec
 from chemex.nmr.basis import Basis
 from chemex.parameters.setting import ParamLocalSetting
 from chemex.parameters.spin_system import SpinSystem
@@ -20,7 +20,6 @@ from chemex.runtime import AnalysisSession
 PAGE = Path(__file__).parents[3] / "website/docs/user_guide/fitting/kinetic_models.md"
 CONDITIONS = Conditions(temperature=25.0, p_total=1e-3, l_total=2e-3, d2o=0.2)
 ALIASES = {
-    "2st_rs": "2st.rs",
     "3st_triangle": "3st",
     "3st_eyring": "3st_eyring_linear",
 }
@@ -104,6 +103,10 @@ def render_runtime_parameter_inventory() -> str:
 def test_public_names_and_aliases_match_runtime() -> None:
     table = _block(PAGE.read_text(encoding="utf-8"), "kinetic-model-names")
     rows = re.findall(r"^\| `([^`]+)` \| .+ \| (.+) \|$", table, re.MULTILINE)
+    assert len(model_factory.set) == 34
+    assert "2st_rs" not in model_factory.set
+    with pytest.raises(ModelSelectionError):
+        ModelSpec.from_name("2st_rs")
     assert len(rows) == len(model_factory.set)
     assert {name for name, _ in rows} == model_factory.set
     documented_aliases = {

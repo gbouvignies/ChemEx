@@ -21,7 +21,6 @@ provenance.
 | `2st_monomer_dimer` | Monomer ↔ dimer | — |
 | `2st_monomer_tetramer` | Monomer ↔ tetramer | — |
 | `2st_monomer_trimer` | Monomer ↔ trimer | — |
-| `2st_rs` | Historical residue-specific two-state exchange | `2st.rs` |
 | `3st` | Complete A/B/C exchange graph | — |
 | `3st_binding_cs` | Apo conformational selection, then ligand binding | — |
 | `3st_binding_if` | Ligand binding, then induced fit | — |
@@ -62,14 +61,13 @@ for populations, directional rates, shift signs, and label swapping.
 
 The suffixes `.rs`, `.mf`, and `.tc` may be combined in any order; each changes
 only its own parameter family. Accepted redundant combinations remain accepted.
-For example, `2st_rs.rs` has the same kinetic scope as `2st.rs`, while the
-selected spelling remains in provenance.
+For example, `2st.rs.mf` and `2st.mf.rs` select the same model behavior.
 
-**`.rs`** adds residue/group identity to eligible kinetic quantities, including
-their derived populations and rates. It leaves global sample conditions such as
-`D2O` global and changes neither equations, domains, default roles, nor base
-model physics. The compatibility base name `2st_rs` corresponds scientifically
-to `2st.rs`.
+**`.rs`** is the residue-specific modifier. It adds residue/group identity to
+eligible kinetic quantities, including their derived populations and rates. It
+leaves global sample conditions such as `D2O` global and changes neither
+equations, domains, default roles, nor base model physics. For ordinary two-state
+exchange, select `2st.rs`.
 
 **`.mf`** uses independent model-free `TAUC` (ns), `S2` (unitless, 0–1), and
 `KHH` (s⁻¹, where applicable) in place of independently assigned relaxation
@@ -124,7 +122,8 @@ For ordinary `2st`, A ↔ B has independent population `PB` (fraction, default
 Both zero population endpoints and `KEX_AB = 0` are valid, with exact zero
 rates where appropriate. These quantities are scoped by temperature and total
 protein/ligand concentrations and are global across spins unless `.rs` is
-selected. `2st_rs` has this same physics and residue/group scope.
+selected. `2st.rs` uses the same physics with eligible kinetic quantities scoped
+to the residue/group.
 
 ### H/D solvent exchange
 
@@ -592,7 +591,6 @@ sealed parameter construction by the test suite.
 | `2st_monomer_dimer` | `KOFF` 100.0 [0.0, 1000000.0] (fit; T; global); `KD` 1e-06 [5e-324, 1.0] (fit; T; global) | `C_MONOMER`, `C_DIMER`, `KAB`, `KBA`, `PA`, `PB` (T,P; global) | — |
 | `2st_monomer_tetramer` | `KOFF` 100.0 [0.0, 1000000.0] (fit; T; global); `KD` 1e-06 [5e-324, 1.0] (fit; T; global) | `C_MONOMER`, `C_TETRAMER`, `KAB`, `KBA`, `PA`, `PB` (T,P; global) | — |
 | `2st_monomer_trimer` | `KOFF` 100.0 [0.0, 1000000.0] (fit; T; global); `KD` 1e-06 [5e-324, 1.0] (fit; T; global) | `C_MONOMER`, `C_TRIMER`, `KAB`, `KBA`, `PA`, `PB` (T,P; global) | — |
-| `2st_rs` | `KEX_AB` 200.0 [0.0, 1000000.0] (fit; T,P,L; group); `PB` 0.05 [0.0, 1.0] (fit; T,P,L; group) | `PA`, `KAB`, `KBA` (T,P,L; group) | — |
 | `3st` | `PB` 0.02 [0.0, 1.0] (fit; T,P,L; global); `PC` 0.02 [0.0, 1.0] (fit; T,P,L; global); `KEX_AB` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_AC` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_BC` 200.0 [0.0, 1000000.0] (fit; T,P,L; global) | `PA`, `KAB`, `KBA`, `KAC`, `KCA`, `KBC`, `KCB` (T,P,L; global) | — |
 | `3st_binding_cs` | `KD_APP` 1e-06 [5e-324, 1.0] (fit; T; global); `KOFF_BC` 100.0 [0.0, 1000000.0] (fit; T; global); `KEQ_AB` 1.0 [5e-324, 1000000.0] (fit; T; global); `KEX_AB` 200.0 [0.0, 1000000.0] (fit; T; global) | `KAB`, `KBA` (T; global); `C_L`, `KBC`, `KCB`, `PA`, `PB`, `PC` (T,P,L; global) | `KD_BC`, `KON_BC` (T; global) |
 | `3st_binding_if` | `KD_APP` 0.001 [5e-324, 1.0] (fit; T; global); `KOFF_AB` 100.0 [0.0, 1000000.0] (fit; T; global); `KEQ_BC` 1.0 [0.0, 1000000.0] (fit; T; global); `KEX_BC` 200.0 [0.0, 1000000.0] (fit; T; global) | `KBC`, `KCB` (T; global); `C_L`, `KAB`, `KBA`, `PA`, `PB`, `PC` (T,P,L; global) | `KD_AB`, `KON_AB` (T; global) |
