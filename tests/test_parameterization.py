@@ -78,6 +78,7 @@ from chemex.parameters.spin_system import SpinSystem
 from chemex.parameters.userfunctions import user_function_registry
 from chemex.parameters.values import AnalysisValues, AnalysisValuesSnapshot
 from chemex.runtime import AnalysisSession
+from tests.method_preview import preview_actions as _preview_actions
 
 ROOT = Path(__file__).parent.parent
 DCEST_EXPERIMENT = ROOT / "examples/Experiments/DCEST_15N_HD_EXCH/Experiments/3hz.toml"
@@ -523,8 +524,8 @@ def test_shipped_method_compiles_roles_and_resolves_without_mutation() -> None:
         for param_id, parameter in session.parameters.database._parameters.items()
     }
 
-    parameterization = session.compile_parameterization_from_actions(
-        effective_actions["STEP1"], required_ids
+    parameterization = _preview_actions(
+        session, effective_actions["STEP1"], required_ids
     )
     resolved = parameterization.resolve(parameterization.frame_from_snapshot(before))
 
@@ -550,9 +551,7 @@ def test_shipped_method_compiles_roles_and_resolves_without_mutation() -> None:
         session.parameters.database._parameters[r1_b].expr == legacy_expressions[r1_b]
     )
 
-    step2 = session.compile_parameterization_from_actions(
-        effective_actions["STEP2"], required_ids
-    )
+    step2 = _preview_actions(session, effective_actions["STEP2"], required_ids)
     assert step2.role(d2o) is ParameterRole.FIX
     assert session.analysis_values.snapshot() == before
 
@@ -683,11 +682,13 @@ def test_shipped_rdc_j_b_default_is_derived_but_explicitly_estimable(
     for plan in plans:
         session.validate_method_plan(plan)
         actions = plan.effective_role_actions()
-        step1 = session.compile_parameterization_from_actions(
+        step1 = _preview_actions(
+            session,
             actions["STEP1"],
             required_ids,
         )
-        step2 = session.compile_parameterization_from_actions(
+        step2 = _preview_actions(
+            session,
             actions["STEP2"],
             required_ids,
         )
@@ -875,7 +876,8 @@ def test_binding_current_roles_compile_all_estimable_r2_b_coordinates() -> None:
     effective_actions = plan.effective_role_actions()
 
     experiments.select_profiles(plan.steps[0].selection)
-    step1 = session.compile_parameterization_from_actions(
+    step1 = _preview_actions(
+        session,
         effective_actions["STEP1"],
         experiments.param_ids,
     )
@@ -899,7 +901,8 @@ def test_binding_current_roles_compile_all_estimable_r2_b_coordinates() -> None:
         assert not declaration.model_owned
 
     experiments.select_profiles(plan.steps[1].selection)
-    step2 = session.compile_parameterization_from_actions(
+    step2 = _preview_actions(
+        session,
         effective_actions["STEP2"],
         experiments.param_ids,
     )
@@ -1039,8 +1042,8 @@ def test_real_model_free_scientific_expression_matches_legacy_resolution() -> No
     assert not snapshot.occurrence_identity.startswith("bootstrap:")
 
     plan = read_method_plan([MF_METHOD])
-    parameterization = native_session.compile_parameterization_from_actions(
-        plan.effective_role_actions()["DEFAULT"], required_ids
+    parameterization = _preview_actions(
+        native_session, plan.effective_role_actions()["DEFAULT"], required_ids
     )
     definitions = native_session.parameter_factory.sealed_definitions
     assert definitions is not None
@@ -1637,7 +1640,8 @@ def test_shipped_methyl_constraint_resolves_companion_spin_for_both_states() -> 
     )
     plan = read_method_plan([METHYL_METHOD])
     session.validate_method_plan(plan)
-    parameterization = session.compile_parameterization_from_actions(
+    parameterization = _preview_actions(
+        session,
         plan.effective_role_actions()["STEP1"],
         experiments.param_ids,
     )
@@ -2247,7 +2251,7 @@ def test_native_compilation_failure_cannot_fall_back_to_legacy_fit(
         msg = "native compilation failed"
         raise RuntimeError(msg)
 
-    monkeypatch.setattr(session, "compile_parameterization_from_actions", fail_preview)
+    monkeypatch.setattr(chemex_module, "compile_method_plan", fail_preview)
     args = Namespace(
         commands="fit",
         model="2st",

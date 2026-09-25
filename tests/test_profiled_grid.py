@@ -45,6 +45,7 @@ from chemex.optimize.profiled_grid import (
 from chemex.parameters.spin_system import SpinSystem
 from chemex.printers.grid import write_grid_output
 from chemex.runtime import AnalysisSession
+from tests.method_preview import preview_actions
 
 ROOT = Path(__file__).parent.parent
 CPMG = ROOT / "examples/Experiments/CPMG_15N_IP"
@@ -308,8 +309,8 @@ def test_shipped_cpmg_step1_discovers_five_500_point_residue_factors() -> None:
     plan = read_method_plan([CPMG / "Methods/method_grid.toml"])
     step = plan.steps[0]
     experiments.select_profiles(step.selection)
-    parameterization = session.compile_parameterization_from_actions(
-        plan.effective_role_actions()[step.name], experiments.param_ids
+    parameterization = preview_actions(
+        session, plan.effective_role_actions()[step.name], experiments.param_ids
     )
     engine = EvaluationEngine.from_experiments(experiments, parameterization)
     configuration = session.parameter_factory.sealed_configuration
@@ -387,8 +388,8 @@ def test_shipped_cpmg_step3_discovers_residue_local_20_point_factors() -> None:
     plan = read_method_plan([CPMG / "Methods/method_grid.toml"])
     step = plan.steps[2]
     experiments.select_profiles(step.selection)
-    parameterization = session.compile_parameterization_from_actions(
-        plan.effective_role_actions()[step.name], experiments.param_ids
+    parameterization = preview_actions(
+        session, plan.effective_role_actions()[step.name], experiments.param_ids
     )
     engine = EvaluationEngine.from_experiments(experiments, parameterization)
     configuration = session.parameter_factory.sealed_configuration
@@ -596,8 +597,8 @@ def test_cpmg_grid_points_hold_axes_while_optimizing_factor_nuisance() -> None:
     assert session.try_build_analysis_values()
     plan = read_method_plan([CPMG / "Methods/method_grid.toml"])
     step = plan.steps[0]
-    parameterization = session.compile_parameterization_from_actions(
-        plan.effective_role_actions()[step.name], experiments.param_ids
+    parameterization = preview_actions(
+        session, plan.effective_role_actions()[step.name], experiments.param_ids
     )
     engine = EvaluationEngine.from_experiments(experiments, parameterization)
     configuration = session.parameter_factory.sealed_configuration

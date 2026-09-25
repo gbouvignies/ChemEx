@@ -37,6 +37,7 @@ from chemex.parameters.relaxation import (
 )
 from chemex.parameters.spin_system import SpinSystem
 from chemex.runtime import AnalysisSession
+from tests.method_preview import preview_actions
 
 
 def test_two_state_shared_cross_rate_uses_the_limiting_psd_block() -> None:
@@ -720,8 +721,8 @@ def test_shipped_v71hg2_compiles_complete_dq_tq_state_mapping() -> None:
         read_defaults([example / "Parameters/parameters.toml"])
     )
     assert session.try_build_analysis_values()
-    parameterization = session.compile_parameterization_from_actions(
-        plan.effective_role_actions()["STEP1"], experiments.param_ids
+    parameterization = preview_actions(
+        session, plan.effective_role_actions()["STEP1"], experiments.param_ids
     )
     engine = EvaluationEngine.from_experiments(experiments, parameterization)
     configuration = session.parameter_factory.sealed_configuration

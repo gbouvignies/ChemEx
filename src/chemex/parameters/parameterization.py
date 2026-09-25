@@ -10,12 +10,10 @@ from __future__ import annotations
 import ast
 import hashlib
 import inspect
-import io
 import json
 import math
 import operator
 import re
-import tokenize
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -27,25 +25,12 @@ from uuid import uuid4
 
 import numpy as np
 
-from chemex.configuration.conditions import Conditions
-from chemex.configuration.method_plan import (
-    ConstrainAction as MethodConstrainAction,
-)
-from chemex.configuration.method_plan import (
-    FitAction as MethodFitAction,
-)
-from chemex.configuration.method_plan import (
-    FixAction as MethodFixAction,
-)
 from chemex.configuration.method_plan import (
     RoleAction as MethodRoleAction,
 )
-from chemex.configuration.method_plan import (
-    render_expression as render_method_expression,
-)
 from chemex.configuration.methods import Method
 from chemex.nmr.rates import rate_functions
-from chemex.parameters.name import ParamName, matches_parameter_index_selector
+from chemex.parameters.name import ParamName
 from chemex.parameters.relaxation import SealedRelaxationDomains
 from chemex.parameters.sealed import (
     ParamDefinition,
@@ -53,9 +38,6 @@ from chemex.parameters.sealed import (
     SealedDefinitions,
 )
 from chemex.parameters.spin_system import SpinSystem
-from chemex.parameters.temperature_shifts import (
-    canonical_control_guidance,
-)
 from chemex.parameters.userfunctions import user_function_registry
 from chemex.parameters.values import AnalysisValuesSnapshot
 
@@ -913,6 +895,46 @@ class ActiveParameterization:
 
 
 @dataclass(frozen=True, slots=True)
+class StaticParameterization:
+    """A value-independent parameter program for one Method Step scope."""
+
+    program: ConstraintProgram
+    binder: ScientificFunctionBinder = field(repr=False, compare=False)
+    roles: tuple[tuple[str, ParameterRole], ...]
+
+    @property
+    def fit_ids(self) -> tuple[str, ...]:
+        return tuple(
+            param_id for param_id, role in self.roles if role is ParameterRole.FIT
+        )
+
+    def bind(self, snapshot: AnalysisValuesSnapshot) -> ActiveParameterization:
+        expected = (
+            self.program.model_identity,
+            self.program.definitions_identity,
+            self.program.configuration_identity,
+        )
+        actual = (
+            snapshot.model_identity,
+            snapshot.definitions_identity,
+            snapshot.configuration_identity,
+        )
+        if actual != expected:
+            raise IncompatibleParameterizationInputError(
+                "Analysis Values snapshot does not belong to the compiled Method Step",
+                expected=expected,
+                actual=actual,
+            )
+        return ActiveParameterization(
+            self.program,
+            self.binder,
+            snapshot.occurrence_identity,
+            snapshot.revision,
+            self.roles,
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class ReportableParameterSet:
     """The finite derived values selected once for uncertainty and output."""
 
@@ -925,371 +947,6 @@ class ReportableParameterSet:
         return MappingProxyType(
             {param_id: self.values[param_id] for param_id in self.report_only_ids}
         )
-
-
-@dataclass(frozen=True, slots=True)
-class _RoleRule:
-    role: ParameterRole
-    selector: str
-    expression_text: str
-    matches: tuple[str, ...]
-    ordinal: int
-
-
-def _definition_name(definition: ParamDefinition) -> ParamName:
-    return ParamName(
-        definition.name,
-        SpinSystem.from_name(definition.spin_system_name),
-        Conditions.model_construct(None, **dict(definition.condition_entries)),
-    )
-
-
-def _match_selector(
-    selector_text: str,
-    definitions: SealedDefinitions,
-    *,
-    role: ParameterRole,
-    ordinal: int,
-) -> tuple[str, ...]:
-    selector = ParamName.from_section(selector_text)
-    matches = tuple(
-        definition.param_id
-        for definition in definitions
-        if matches_parameter_index_selector(selector, _definition_name(definition))
-    )
-    if not matches:
-        raise NoParameterMatchError(
-            "No sealed parameter matches a method selector",
-            selector=selector_text,
-            role=role.value,
-            ordinal=ordinal,
-        )
-    return matches
-
-
-def _scan_selectors(text: str) -> tuple[tuple[int, int, str], ...]:
-    selectors: list[tuple[int, int, str]] = []
-    position = 0
-    while position < len(text):
-        if text[position] != "[":
-            position += 1
-            continue
-        start = position
-        depth = 1
-        position += 1
-        while position < len(text) and depth:
-            if text[position] == "[":
-                depth += 1
-            elif text[position] == "]":
-                depth -= 1
-            position += 1
-        if depth:
-            raise UnsupportedConstraintExpressionError(
-                "Unclosed parameter selector",
-                expression=text,
-            )
-        selectors.append((start, position, text[start + 1 : position - 1]))
-    return tuple(selectors)
-
-
-def _split_constraint(text: str) -> tuple[str, str]:
-    if text.count("=") != 1:
-        raise UnsupportedConstraintExpressionError(
-            "A method constraint must contain exactly one '='",
-            expression=text,
-        )
-    left, right = text.split("=", maxsplit=1)
-    selectors = _scan_selectors(left)
-    if (
-        len(selectors) != 1
-        or left[: selectors[0][0]].strip()
-        or left[selectors[0][1] :].strip()
-    ):
-        raise UnsupportedConstraintExpressionError(
-            "Constraint left side must be one bracketed selector",
-            expression=text,
-        )
-    if not right.strip():
-        raise UnsupportedConstraintExpressionError(
-            "Constraint right side cannot be empty",
-            expression=text,
-        )
-    return selectors[0][2], right.strip()
-
-
-def _validate_public_numeric_tokens(
-    source: str,
-    references: Mapping[str, str],
-    expression: str,
-) -> None:
-    try:
-        tokens = tokenize.generate_tokens(io.StringIO(source).readline)
-        for token in tokens:
-            if token.type in {
-                tokenize.NEWLINE,
-                tokenize.NL,
-                tokenize.ENDMARKER,
-                tokenize.ENCODING,
-            }:
-                continue
-            if token.type == tokenize.NUMBER and _PUBLIC_DECIMAL.fullmatch(
-                token.string
-            ):
-                continue
-            if token.type == tokenize.NAME and token.string in references:
-                continue
-            if token.type == tokenize.OP and token.string in _PUBLIC_OPERATORS:
-                continue
-            raise UnsupportedConstraintExpressionError(
-                "Method expression contains syntax outside ChemEx numeric grammar",
-                expression=expression,
-                token=token.string,
-            )
-    except (IndentationError, tokenize.TokenError) as error:
-        raise UnsupportedConstraintExpressionError(
-            "Constraint is not a valid scalar expression",
-            expression=expression,
-        ) from error
-
-
-def _validate_public_expression_syntax(text: str) -> None:
-    source, references = _replace_selectors(text)
-    _validate_public_numeric_tokens(source, references, text)
-    try:
-        parsed = ast.parse(source, mode="eval")
-    except (SyntaxError, ValueError) as error:
-        raise UnsupportedConstraintExpressionError(
-            "Constraint is not a valid scalar expression",
-            expression=text,
-        ) from error
-
-    def validate(node: ast.AST) -> None:
-        if isinstance(node, ast.Constant):
-            _compile_literal(node, "method-syntax")
-            return
-        if isinstance(node, ast.Name) and node.id in references:
-            return
-        if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
-            validate(node.operand)
-            return
-        if isinstance(node, ast.BinOp) and isinstance(
-            node.op,
-            (ast.Add, ast.Sub, ast.Mult, ast.Div),
-        ):
-            validate(node.left)
-            validate(node.right)
-            return
-        raise UnsupportedConstraintExpressionError(
-            "Method expression contains unsupported scalar syntax",
-            expression=text,
-            syntax=type(node).__name__,
-        )
-
-    validate(parsed.body)
-
-
-def _build_rules(
-    method: Method, definitions: SealedDefinitions
-) -> tuple[_RoleRule, ...]:
-    def reject_protected_constant_reference(selector: str) -> None:
-        if ParamName.from_section(selector).name == "TREF":
-            raise ModelDerivationOverrideError(
-                "Method constraint cannot reference a protected model constant",
-                selector=selector,
-            )
-
-    rules: list[_RoleRule] = []
-    ordinal = 0
-    for text in method.constraints:
-        selector, expression = _split_constraint(text)
-        for _start, _end, reference in _scan_selectors(expression):
-            reject_protected_constant_reference(reference)
-        _validate_public_expression_syntax(expression)
-        rules.append(
-            _RoleRule(
-                ParameterRole.DERIVED,
-                selector,
-                expression,
-                _match_selector(
-                    selector,
-                    definitions,
-                    role=ParameterRole.DERIVED,
-                    ordinal=ordinal,
-                ),
-                ordinal,
-            )
-        )
-        ordinal += 1
-    for role, selectors in (
-        (ParameterRole.FIX, method.fix),
-        (ParameterRole.FIT, method.fit),
-    ):
-        for selector in selectors:
-            rules.append(
-                _RoleRule(
-                    role,
-                    selector,
-                    "",
-                    _match_selector(
-                        selector,
-                        definitions,
-                        role=role,
-                        ordinal=ordinal,
-                    ),
-                    ordinal,
-                )
-            )
-            ordinal += 1
-    return tuple(rules)
-
-
-def _build_action_rules(
-    actions: Sequence[MethodRoleAction],
-    definitions: SealedDefinitions,
-) -> tuple[_RoleRule, ...]:
-    """Compile canonical ordered complete-role actions without legacy buckets."""
-    rules: list[_RoleRule] = []
-    ordinal = 0
-    for action in actions:
-        if isinstance(action, (MethodFitAction, MethodFixAction)):
-            role = (
-                ParameterRole.FIT
-                if isinstance(action, MethodFitAction)
-                else ParameterRole.FIX
-            )
-            for selector in action.selectors:
-                selector_text = selector.render()
-                rules.append(
-                    _RoleRule(
-                        role,
-                        selector_text,
-                        "",
-                        _match_selector(
-                            selector_text,
-                            definitions,
-                            role=role,
-                            ordinal=ordinal,
-                        ),
-                        ordinal,
-                    )
-                )
-                ordinal += 1
-            continue
-        if not isinstance(action, MethodConstrainAction):
-            raise TypeError(f"Unsupported canonical role action {type(action)!r}")
-        for constraint in action.constraints:
-            selector_text = constraint.target.render()
-            expression_text = render_method_expression(constraint.expression)
-            _validate_public_expression_syntax(expression_text)
-            rules.append(
-                _RoleRule(
-                    ParameterRole.DERIVED,
-                    selector_text,
-                    expression_text,
-                    _match_selector(
-                        selector_text,
-                        definitions,
-                        role=ParameterRole.DERIVED,
-                        ordinal=ordinal,
-                    ),
-                    ordinal,
-                )
-            )
-            ordinal += 1
-    return tuple(rules)
-
-
-def _role_for(
-    param_id: str,
-    declaration: ParameterDeclaration,
-    rules: Sequence[_RoleRule],
-    *,
-    initialize_missing: bool = False,
-) -> tuple[ParameterRole, str, str]:
-    role = (
-        ParameterRole.DERIVED
-        if initialize_missing and declaration.model_expression
-        else baseline_parameter_role(declaration)
-    )
-    expression = declaration.model_expression
-    source = "model" if declaration.model_owned else "baseline"
-    for rule in rules:
-        if param_id not in rule.matches:
-            continue
-        role = rule.role
-        expression = rule.expression_text
-        source = f"method-rule:{rule.ordinal}"
-    return role, expression, source
-
-
-def _validate_model_derivation_authority(
-    rules: Sequence[_RoleRule],
-    parameter_model: SealedParameterModel,
-) -> None:
-    declarations = parameter_model.declarations
-    for rule in rules:
-        derived_matches = tuple(
-            param_id for param_id in rule.matches if declarations[param_id].model_owned
-        )
-        if derived_matches:
-            guidance = tuple(
-                dict.fromkeys(
-                    advice
-                    for param_id in derived_matches
-                    if (
-                        advice := canonical_control_guidance(
-                            parameter_model.definitions[param_id].name
-                        )
-                    )
-                    is not None
-                )
-            )
-            suffix = f"; {'; '.join(guidance)}" if guidance else ""
-            raise ModelDerivationOverrideError(
-                f"Method rule cannot override a model-owned derivation{suffix}",
-                selector=rule.selector,
-                role=rule.role.value,
-                ordinal=rule.ordinal,
-                param_ids=derived_matches,
-            )
-
-
-def _validate_estimation_authority(
-    rules: Sequence[_RoleRule],
-    declarations: SealedParameterDeclarations,
-    active_ids: set[str],
-) -> None:
-    for rule in rules:
-        if rule.role is not ParameterRole.FIT:
-            continue
-        unsupported_matches = tuple(
-            param_id
-            for param_id in rule.matches
-            if param_id in active_ids and not declarations[param_id].supports_estimation
-        )
-        if unsupported_matches:
-            raise IncompatibleParameterizationInputError(
-                "Method rule cannot estimate a parameter that lacks scientific "
-                "estimation support",
-                selector=rule.selector,
-                role=rule.role.value,
-                ordinal=rule.ordinal,
-                param_ids=unsupported_matches,
-            )
-
-
-def _replace_selectors(right: str) -> tuple[str, Mapping[str, str]]:
-    selectors = _scan_selectors(right)
-    replacements: dict[str, str] = {}
-    parts: list[str] = []
-    position = 0
-    for index, (start, end, selector) in enumerate(selectors):
-        placeholder = f"__selector_{index}"
-        parts.extend((right[position:start], placeholder))
-        replacements[placeholder] = selector
-        position = end
-    parts.append(right[position:])
-    return "".join(parts), MappingProxyType(replacements)
 
 
 def compatible_reference_context(
@@ -1332,77 +989,11 @@ def compatible_reference_context(
     return spin_specificity, frozenset(matched), extras
 
 
-def _resolve_reference(
-    selector_text: str,
-    target_id: str,
-    definitions: SealedDefinitions,
-) -> str:
-    selector = ParamName.from_section(selector_text)
-    candidates = tuple(
-        definition
-        for definition in definitions
-        if matches_parameter_index_selector(selector, _definition_name(definition))
-    )
-    if not candidates:
-        raise NoParameterMatchError(
-            "No sealed parameter matches a constraint reference",
-            selector=selector_text,
-            target_id=target_id,
-        )
-    non_self = tuple(item for item in candidates if item.param_id != target_id)
-    if not non_self:
-        raise ConstraintSelfReferenceError(
-            "Constraint reference resolves only to its target",
-            selector=selector_text,
-            target_id=target_id,
-        )
-    target = definitions[target_id]
-    ranked = tuple(
-        (candidate, context)
-        for candidate in non_self
-        if (context := compatible_reference_context(candidate, target, selector))
-        is not None
-    )
-    if not ranked:
-        raise NoParameterMatchError(
-            "No context-compatible parameter matches a constraint reference",
-            selector=selector_text,
-            target_id=target_id,
-        )
-    maximum_spin_specificity = max(context[0] for _candidate, context in ranked)
-    spin_eligible = tuple(
-        (candidate, context)
-        for candidate, context in ranked
-        if context[0] == maximum_spin_specificity
-    )
-    minimum_extras = min(context[2] for _candidate, context in spin_eligible)
-    eligible = tuple(
-        (candidate, context[1])
-        for candidate, context in spin_eligible
-        if context[2] == minimum_extras
-    )
-    maximal = tuple(
-        candidate
-        for candidate, fields in eligible
-        if not any(fields < other_fields for _other, other_fields in eligible)
-    )
-    if len(maximal) != 1:
-        raise AmbiguousParameterReferenceError(
-            "Constraint reference has multiple equally specific matches",
-            selector=selector_text,
-            target_id=target_id,
-            candidate_ids=tuple(item.param_id for item in maximal),
-        )
-    return maximal[0].param_id
-
-
 @dataclass(frozen=True, slots=True)
 class _ExpressionCompileContext:
-    references: Mapping[str, str]
     definitions: SealedDefinitions
     binder: ScientificFunctionBinder
     target_id: str
-    model_owned: bool
 
 
 def _compile_literal(node: ast.Constant, target_id: str) -> LiteralExpression:
@@ -1431,30 +1022,23 @@ def _compile_reference(
     node: ast.Name,
     context: _ExpressionCompileContext,
 ) -> ReferenceExpression:
-    if node.id in context.references:
-        param_id = _resolve_reference(
-            context.references[node.id],
-            context.target_id,
-            context.definitions,
-        )
-    elif context.model_owned and node.id.startswith("__"):
-        param_id = node.id
-        if param_id not in context.definitions:
-            raise IncompleteParameterDependenciesError(
-                "Model expression references an unknown sealed parameter",
-                target_id=context.target_id,
-                dependency_id=param_id,
-            )
-        if param_id == context.target_id:
-            raise ConstraintSelfReferenceError(
-                "Model expression directly references its target",
-                target_id=context.target_id,
-            )
-    else:
+    if not node.id.startswith("__"):
         raise UnsupportedConstraintExpressionError(
             "Bare names are not supported in scalar constraints",
             target_id=context.target_id,
             name=node.id,
+        )
+    param_id = node.id
+    if param_id not in context.definitions:
+        raise IncompleteParameterDependenciesError(
+            "Model expression references an unknown sealed parameter",
+            target_id=context.target_id,
+            dependency_id=param_id,
+        )
+    if param_id == context.target_id:
+        raise ConstraintSelfReferenceError(
+            "Model expression directly references its target",
+            target_id=context.target_id,
         )
     return ReferenceExpression(param_id)
 
@@ -1494,8 +1078,7 @@ def _compile_function(
     context: _ExpressionCompileContext,
 ) -> FunctionExpression:
     if (
-        not context.model_owned
-        or not isinstance(node.func, ast.Name)
+        not isinstance(node.func, ast.Name)
         or node.keywords
         or node.func.id not in context.binder
     ):
@@ -1521,7 +1104,7 @@ def _compile_function_component(
     node: ast.Subscript,
     context: _ExpressionCompileContext,
 ) -> FunctionExpression:
-    if not context.model_owned or not isinstance(node.value, ast.Call):
+    if not isinstance(node.value, ast.Call):
         raise UnsupportedConstraintExpressionError(
             "Only model-owned scientific-function components may be selected",
             target_id=context.target_id,
@@ -1587,14 +1170,9 @@ def _parse_expression(
     definitions: SealedDefinitions,
     binder: ScientificFunctionBinder,
     target_id: str,
-    model_owned: bool,
 ) -> ScalarExpression:
-    source = text
-    references: Mapping[str, str] = MappingProxyType({})
-    if not model_owned:
-        source, references = _replace_selectors(text)
     try:
-        parsed = ast.parse(source, mode="eval")
+        parsed = ast.parse(text, mode="eval")
     except (SyntaxError, ValueError) as error:
         raise UnsupportedConstraintExpressionError(
             "Constraint is not a valid scalar expression",
@@ -1604,11 +1182,9 @@ def _parse_expression(
     return _compile_ast(
         parsed.body,
         _ExpressionCompileContext(
-            references,
             definitions,
             binder,
             target_id,
-            model_owned,
         ),
     )
 
@@ -1774,121 +1350,23 @@ def _validate_parameterization_inputs(
     return required
 
 
-def _compile_active_scope(
+def _static_parameterization_from_scope(
     parameter_model: SealedParameterModel,
-    rules: Sequence[_RoleRule],
     binder: ScientificFunctionBinder,
-    required: set[str],
-    *,
-    initialize_missing: bool = False,
-) -> tuple[
-    set[str],
-    dict[str, tuple[ParameterRole, str, str]],
-    dict[str, CompiledConstraint],
-]:
-    definitions = parameter_model.definitions
-    active = set(required)
-    role_data: dict[str, tuple[ParameterRole, str, str]] = {}
-    compiled: dict[str, CompiledConstraint] = {}
-    pending = True
-    while pending:
-        pending = False
-        for definition in definitions:
-            param_id = definition.param_id
-            if param_id not in active or param_id in role_data:
-                continue
-            declaration = parameter_model.declarations[param_id]
-            role, expression_text, source = _role_for(
-                param_id,
-                declaration,
-                rules,
-                initialize_missing=initialize_missing,
-            )
-            role_data[param_id] = (role, expression_text, source)
-            if role is not ParameterRole.DERIVED:
-                continue
-            expression = _parse_expression(
-                expression_text,
-                definitions=definitions,
-                binder=binder,
-                target_id=param_id,
-                model_owned=source in {"model", "baseline"},
-            )
-            dependencies = _dependencies(expression)
-            compiled[param_id] = CompiledConstraint(
-                param_id,
-                expression,
-                dependencies,
-                source,
-                expression_text,
-            )
-            for dependency in dependencies:
-                if dependency not in parameter_model.declarations:
-                    raise IncompleteParameterDependenciesError(
-                        "Constraint dependency is absent from the sealed model",
-                        target_id=param_id,
-                        dependency_id=dependency,
-                    )
-                if dependency not in active:
-                    active.add(dependency)
-                    pending = True
-    return active, role_data, compiled
-
-
-def _validate_rules_in_active_scope(
-    rules: Sequence[_RoleRule],
     active: set[str],
-) -> None:
-    inactive_rules = tuple(rule for rule in rules if not (set(rule.matches) & active))
-    if not inactive_rules:
-        return
-    rule = inactive_rules[0]
-    raise NoParameterMatchError(
-        "Method selector has no match in the active dependency scope",
-        selector=rule.selector,
-        role=rule.role.value,
-        ordinal=rule.ordinal,
-    )
-
-
-def _compile_active_parameterization_from_rules(
-    parameter_model: SealedParameterModel,
-    snapshot: AnalysisValuesSnapshot,
-    rules: Sequence[_RoleRule],
-    required_ids: Sequence[str] | set[str],
-    *,
-    initialize_missing: bool = False,
-    require_active_rule_matches: bool = True,
-) -> ActiveParameterization:
-    required = _validate_parameterization_inputs(
-        parameter_model,
-        snapshot,
-        required_ids,
-    )
-
+    roles_by_id: Mapping[str, ParameterRole],
+    compiled: Mapping[str, CompiledConstraint],
+) -> StaticParameterization:
     definitions = parameter_model.definitions
-    _validate_model_derivation_authority(rules, parameter_model)
-    binder = ScientificFunctionBinder.for_model(parameter_model.model_name)
     definition_order = {
         definition.param_id: position for position, definition in enumerate(definitions)
     }
-    active, role_data, compiled = _compile_active_scope(
-        parameter_model,
-        rules,
-        binder,
-        required,
-        initialize_missing=initialize_missing,
-    )
-    _validate_estimation_authority(rules, parameter_model.declarations, active)
-    if require_active_rule_matches:
-        _validate_rules_in_active_scope(rules, active)
-
     scope_ids = tuple(
         definition.param_id
         for definition in definitions
         if definition.param_id in active
     )
-    roles = tuple((param_id, role_data[param_id][0]) for param_id in scope_ids)
+    roles = tuple((param_id, roles_by_id[param_id]) for param_id in scope_ids)
     independent_ids = tuple(
         param_id
         for param_id, role in roles
@@ -1897,22 +1375,17 @@ def _compile_active_parameterization_from_rules(
     derived_ids = tuple(
         param_id for param_id, role in roles if role is ParameterRole.DERIVED
     )
-    evaluation_order = _topological_order(
-        derived_ids,
-        compiled,
-        definition_order,
-    )
-    constraints = tuple(compiled[param_id] for param_id in derived_ids)
+    evaluation_order = _topological_order(derived_ids, compiled, definition_order)
     program = ConstraintProgram(
         parameter_model_identity=parameter_model.identity,
         model_identity=parameter_model.model_identity,
-        definitions_identity=snapshot.definitions_identity,
-        configuration_identity=snapshot.configuration_identity,
+        definitions_identity=definitions.identity,
+        configuration_identity=parameter_model.configuration.identity,
         function_binder_identity=binder.identity,
         scope_ids=scope_ids,
         independent_ids=independent_ids,
         derived_ids=derived_ids,
-        constraints=constraints,
+        constraints=tuple(compiled[param_id] for param_id in derived_ids),
         evaluation_order=evaluation_order,
         relaxation_domains=SealedRelaxationDomains(
             tuple(
@@ -1923,12 +1396,70 @@ def _compile_active_parameterization_from_rules(
             )
         ),
     )
-    return ActiveParameterization(
-        program=program,
-        binder=binder,
-        occurrence_identity=snapshot.occurrence_identity,
-        source_revision=snapshot.revision,
-        _roles=roles,
+    return StaticParameterization(program, binder, roles)
+
+
+def compile_static_parameterization(  # noqa: C901 - dependency closure for one resolved scope
+    parameter_model: SealedParameterModel,
+    roles: Mapping[str, ParameterRole],
+    method_constraints: Mapping[str, CompiledConstraint],
+    required_ids: Sequence[str] | set[str],
+) -> StaticParameterization:
+    """Project resolved roles and constraints without reading Analysis Values."""
+    required = set(required_ids)
+    unknown = required - set(parameter_model.declarations)
+    if unknown:
+        raise IncompleteParameterDependenciesError(
+            "Required scope contains unknown sealed parameter IDs",
+            param_ids=tuple(sorted(unknown)),
+        )
+    if not required:
+        raise IncompleteParameterDependenciesError("Required parameter scope is empty")
+    binder = ScientificFunctionBinder.for_model(parameter_model.model_name)
+    active = set(required)
+    compiled: dict[str, CompiledConstraint] = {}
+    pending = True
+    while pending:
+        pending = False
+        for definition in parameter_model.definitions:
+            param_id = definition.param_id
+            if param_id not in active or param_id in compiled:
+                continue
+            if roles[param_id] is not ParameterRole.DERIVED:
+                continue
+            constraint = method_constraints.get(param_id)
+            if constraint is None:
+                expression_text = parameter_model.declarations[
+                    param_id
+                ].model_expression
+                expression = _parse_expression(
+                    expression_text,
+                    definitions=parameter_model.definitions,
+                    binder=binder,
+                    target_id=param_id,
+                )
+                constraint = CompiledConstraint(
+                    param_id,
+                    expression,
+                    _dependencies(expression),
+                    "model"
+                    if parameter_model.declarations[param_id].model_owned
+                    else "baseline",
+                    expression_text,
+                )
+            compiled[param_id] = constraint
+            for dependency in constraint.dependencies:
+                if dependency not in parameter_model.declarations:
+                    raise IncompleteParameterDependenciesError(
+                        "Constraint dependency is absent from the sealed model",
+                        target_id=param_id,
+                        dependency_id=dependency,
+                    )
+                if dependency not in active:
+                    active.add(dependency)
+                    pending = True
+    return _static_parameterization_from_scope(
+        parameter_model, binder, active, roles, compiled
     )
 
 
@@ -1938,14 +1469,56 @@ def compile_active_parameterization(
     method: Method,
     required_ids: Sequence[str] | set[str],
 ) -> ActiveParameterization:
-    """Compile one fresh method-scoped role and constraint program."""
-    rules = _build_rules(method, parameter_model.definitions)
-    return _compile_active_parameterization_from_rules(
-        parameter_model,
-        snapshot,
-        rules,
-        required_ids,
+    """Adapt the legacy Python Method through the Method semantic compiler."""
+    from chemex.configuration.method_input import normalize_method_plan
+    from chemex.configuration.method_plan import MethodFormatError
+    from chemex.configuration.method_validation import resolve_method_plan
+
+    _validate_parameterization_inputs(parameter_model, snapshot, required_ids)
+    try:
+        plan = normalize_method_plan({"DEFAULT": method})
+        resolved = resolve_method_plan(plan, parameter_model)[0]
+    except MethodFormatError as error:
+        context = dict(error.detail_context)
+        match error.detail_code:
+            case "model_derivation_override":
+                raise ModelDerivationOverrideError(error.message, **context) from error
+            case "incompatible_input":
+                raise IncompatibleParameterizationInputError(
+                    error.message, **context
+                ) from error
+            case "no_match":
+                raise NoParameterMatchError(error.message, **context) from error
+            case "self_reference":
+                raise ConstraintSelfReferenceError(error.message, **context) from error
+            case "ambiguity":
+                raise AmbiguousParameterReferenceError(
+                    error.message, **context
+                ) from error
+            case "cycle":
+                constraints = cast(
+                    tuple[tuple[str, str, str], ...],
+                    context.get("constraints", ()),
+                )
+                context["constraints"] = tuple(
+                    (
+                        param_id,
+                        source,
+                        method.constraints[int(source.rsplit(":", 1)[1])]
+                        .split("=", maxsplit=1)[1]
+                        .strip(),
+                    )
+                    for param_id, source, _text in constraints
+                )
+                raise ConstraintCycleError(error.message, **context) from error
+            case "non_finite":
+                raise NonFiniteParameterValueError(error.message) from error
+            case _:
+                raise UnsupportedConstraintExpressionError(error.message) from error
+    static = compile_static_parameterization(
+        parameter_model, resolved.roles, resolved.constraints, required_ids
     )
+    return static.bind(snapshot)
 
 
 def compile_active_parameterization_from_actions(
@@ -1954,15 +1527,19 @@ def compile_active_parameterization_from_actions(
     actions: Sequence[MethodRoleAction],
     required_ids: Sequence[str] | set[str],
 ) -> ActiveParameterization:
-    """Compile directly from canonical effective method-role semantics."""
-    rules = _build_action_rules(actions, parameter_model.definitions)
-    return _compile_active_parameterization_from_rules(
-        parameter_model,
-        snapshot,
-        rules,
-        required_ids,
-        require_active_rule_matches=False,
+    """Compatibility preview through the authoritative Method resolver."""
+    from chemex.configuration.method_plan import FormatOrigin, MethodPlan, StepPlan
+    from chemex.configuration.method_validation import resolve_method_plan
+
+    _validate_parameterization_inputs(parameter_model, snapshot, required_ids)
+    plan = MethodPlan(
+        FormatOrigin.V2,
+        (StepPlan("DEFAULT", role_actions=tuple(actions)),),
     )
+    resolved = resolve_method_plan(plan, parameter_model)[0]
+    return compile_static_parameterization(
+        parameter_model, resolved.roles, resolved.constraints, required_ids
+    ).bind(snapshot)
 
 
 def extend_parameterization_for_report_only_outputs(
@@ -2011,7 +1588,6 @@ def extend_parameterization_for_report_only_outputs(
             definitions=parameter_model.definitions,
             binder=parameterization.binder,
             target_id=param_id,
-            model_owned=True,
         )
         dependencies = _dependencies(expression)
         missing = set(dependencies) - active
@@ -2113,13 +1689,20 @@ def build_initial_analysis_values(
             and config.param_id not in deferred_ids
         ),
     )
-    parameterization = _compile_active_parameterization_from_rules(
+    roles = {
+        param_id: (
+            ParameterRole.DERIVED
+            if declaration.model_expression
+            else baseline_parameter_role(declaration)
+        )
+        for param_id, declaration in parameter_model.declarations.items()
+    }
+    parameterization = compile_static_parameterization(
         parameter_model,
-        bootstrap_snapshot,
-        (),
+        roles,
+        {},
         set(parameter_model.declarations) - set(deferred_ids),
-        initialize_missing=True,
-    )
+    ).bind(bootstrap_snapshot)
     resolved = parameterization.resolve(
         parameterization.frame_from_snapshot(bootstrap_snapshot)
     )

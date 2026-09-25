@@ -6,7 +6,6 @@ import secrets
 from pathlib import Path
 
 from chemex.configuration.method_plan import (
-    MethodPlan,
     ResamplingKind,
     ResamplingRequest,
     StatisticsPlan,
@@ -17,9 +16,11 @@ from chemex.messages import (
     print_mcmc_no_vary_warning,
     print_no_data,
     print_running_statistics,
+    print_selecting_profiles,
     print_step_name,
 )
 from chemex.optimize.mcmc import run_native_mcmc
+from chemex.optimize.method_compiler import ExecutableMethodPlan, SkippedStep
 from chemex.optimize.native_deterministic import (
     NativeDeterministicFit,
     run_native_deterministic,
@@ -157,29 +158,30 @@ def _run_requested_native_statistics(
 
 def execute_method_plan(
     experiments: Experiments,
-    plan: MethodPlan,
+    plan: ExecutableMethodPlan,
     path: Path,
     plot_level: str,
     *,
     session: AnalysisSession,
     run_info: RunInfo | None = None,
 ) -> None:
-    """Execute a validated Method Plan afresh against committed analysis state."""
-    effective_actions = plan.effective_role_actions()
-    for index, step in enumerate(plan.steps, start=1):
+    """Execute resolved steps, binding current numerical values at each step."""
+    for step in plan.steps:
         section = step.name
         if section:
-            print_step_name(section, index, len(plan.steps))
+            print_step_name(section, step.ordinal, len(plan.steps))
 
-        experiments.select_profiles(step.selection)
-        if not experiments:
+        if isinstance(step, SkippedStep):
+            print_selecting_profiles(0)
             print_no_data()
             continue
 
+        for binding in step.bindings:
+            binding.activate()
+        print_selecting_profiles(step.profile_count)
         print_fitmethod("trf")
-        parameterization = session.compile_parameterization_from_actions(
-            effective_actions[section],
-            experiments.param_ids,
+        parameterization = step.parameterization.bind(
+            session.analysis_values.snapshot()
         )
         step_path = path / section if len(plan.steps) > 1 else path
         step_name = section or "DEFAULT"

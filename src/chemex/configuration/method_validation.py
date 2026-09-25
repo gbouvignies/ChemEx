@@ -1,7 +1,10 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
+from pathlib import Path
+from types import MappingProxyType
+from typing import Literal, cast
 
 import numpy as np
 
@@ -24,6 +27,10 @@ from chemex.configuration.method_plan import (
     SelectorExpression,
     SourceRef,
     UnaryExpression,
+    render_expression,
+)
+from chemex.configuration.method_plan import (
+    LiteralExpression as MethodLiteralExpression,
 )
 from chemex.models.kinetic._binding_migration import (
     binding_rate_migration,
@@ -31,10 +38,22 @@ from chemex.models.kinetic._binding_migration import (
 )
 from chemex.parameters.name import ParamName, matches_parameter_index_selector
 from chemex.parameters.parameterization import (
+    BinaryExpression as ValueBinaryExpression,
+)
+from chemex.parameters.parameterization import (
+    CompiledConstraint,
     ParameterRole,
+    ReferenceExpression,
+    ScalarExpression,
     SealedParameterModel,
     baseline_parameter_role,
     compatible_reference_context,
+)
+from chemex.parameters.parameterization import (
+    LiteralExpression as ValueLiteralExpression,
+)
+from chemex.parameters.parameterization import (
+    UnaryExpression as ValueUnaryExpression,
 )
 from chemex.parameters.sealed import ParamDefinition
 from chemex.parameters.spin_system import SpinSystem
@@ -47,6 +66,7 @@ from chemex.parameters.temperature_shifts import (
 class _ResolvedConstraint:
     declaration: Constraint
     dependencies: tuple[str, ...]
+    compiled: CompiledConstraint
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,6 +86,23 @@ class ResolvedGridAxis:
     param_id: str
     values: tuple[float, ...]
     declaration_ordinal: int
+
+
+@dataclass(frozen=True, slots=True)
+class MatchedGridAxis:
+    matches: tuple[str, ...]
+    values: tuple[float, ...]
+    source: SourceRef
+    ordinal: int
+    selector_text: str
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedMethodStep:
+    roles: Mapping[str, ParameterRole]
+    constraints: Mapping[str, CompiledConstraint]
+    grid_axes: tuple[MatchedGridAxis, ...] = ()
+    de_coordinates: tuple[ResolvedDeCoordinate, ...] = ()
 
 
 def _param_name(definition: ParamDefinition) -> ParamName:
@@ -110,6 +147,8 @@ def _matches(
         raise MethodFormatError(
             f"No parameter matches selector [{selector.render()}]",
             _source(selector, fallback),
+            detail_code="no_match",
+            detail_context={"selector": selector.render().lower()},
         )
     return matches
 
@@ -128,13 +167,24 @@ def _resolve_constraint_reference(
     )
     if not candidates:
         raise MethodFormatError(
-            f"No parameter matches constraint reference [{selector.render()}]", source
+            f"No parameter matches constraint reference [{selector.render()}]",
+            source,
+            detail_code="no_match",
+            detail_context={
+                "selector": selector.render().lower(),
+                "target_id": target_id,
+            },
         )
     non_self = tuple(item for item in candidates if item.param_id != target_id)
     if not non_self:
         raise MethodFormatError(
             f"Constraint reference [{selector.render()}] resolves only to its target",
             source,
+            detail_code="self_reference",
+            detail_context={
+                "selector": selector.render().lower(),
+                "target_id": target_id,
+            },
         )
     target = model.definitions[target_id]
     ranked = tuple(
@@ -145,7 +195,13 @@ def _resolve_constraint_reference(
     )
     if not ranked:
         raise MethodFormatError(
-            f"No context-compatible parameter matches [{selector.render()}]", source
+            f"No context-compatible parameter matches [{selector.render()}]",
+            source,
+            detail_code="no_match",
+            detail_context={
+                "selector": selector.render().lower(),
+                "target_id": target_id,
+            },
         )
     maximum_spin_specificity = max(context[0] for _candidate, context in ranked)
     spin_eligible = tuple(
@@ -170,6 +226,12 @@ def _resolve_constraint_reference(
             f"Constraint reference [{selector.render()}] is ambiguous among "
             f"{candidate_ids}",
             source,
+            detail_code="ambiguity",
+            detail_context={
+                "selector": selector.render().lower(),
+                "target_id": target_id,
+                "candidate_ids": candidate_ids,
+            },
         )
     return maximal[0].param_id
 
@@ -298,6 +360,8 @@ def _reject_protected(
         raise MethodFormatError(
             f"{operation} cannot override model-owned parameters {protected}{suffix}",
             source,
+            detail_code="model_derivation_override",
+            detail_context={"param_ids": protected},
         )
 
 
@@ -315,7 +379,10 @@ def _reject_protected_constants(
     )
     if protected:
         raise MethodFormatError(
-            f"{operation} cannot use protected model constants {protected}", source
+            f"{operation} cannot use protected model constants {protected}",
+            source,
+            detail_code="model_derivation_override",
+            detail_context={"param_ids": protected},
         )
 
 
@@ -334,7 +401,60 @@ def _reject_unestimable(
             f"FIT cannot override parameters that do not support estimation "
             f"{unestimable}",
             source,
+            detail_code="incompatible_input",
+            detail_context={"param_ids": unestimable},
         )
+
+
+def _compile_method_expression(
+    expression: ConstraintExpression,
+    target_id: str,
+    model: SealedParameterModel,
+    source: SourceRef,
+    dependencies: list[str],
+) -> ScalarExpression:
+    if isinstance(expression, MethodLiteralExpression):
+        return ValueLiteralExpression(expression.value)
+    if isinstance(expression, SelectorExpression):
+        reference = expression.selector
+        reference_source = _source(reference, source)
+        param_id = _resolve_constraint_reference(
+            reference, target_id, model, reference_source
+        )
+        _reject_protected_constants(
+            _matches(reference, model, reference_source),
+            model,
+            reference_source,
+            "Constraint reference",
+        )
+        dependencies.append(param_id)
+        return ReferenceExpression(param_id)
+    if isinstance(expression, UnaryExpression):
+        return ValueUnaryExpression(
+            "positive" if expression.operator == "+" else "negative",
+            _compile_method_expression(
+                expression.operand, target_id, model, source, dependencies
+            ),
+        )
+    operators = {
+        "+": "add",
+        "-": "subtract",
+        "*": "multiply",
+        "/": "divide",
+    }
+    operator = cast(
+        Literal["add", "subtract", "multiply", "divide"],
+        operators[expression.operator],
+    )
+    return ValueBinaryExpression(
+        operator,
+        _compile_method_expression(
+            expression.left, target_id, model, source, dependencies
+        ),
+        _compile_method_expression(
+            expression.right, target_id, model, source, dependencies
+        ),
+    )
 
 
 def _apply_actions(
@@ -342,7 +462,8 @@ def _apply_actions(
     constraints: dict[str, _ResolvedConstraint],
     actions: tuple[FitAction | FixAction | ConstrainAction, ...],
     model: SealedParameterModel,
-) -> None:
+    ordinal: int = 0,
+) -> int:
     for action in actions:
         if isinstance(action, (FitAction, FixAction)):
             role = (
@@ -362,36 +483,35 @@ def _apply_actions(
                 roles.update(dict.fromkeys(matches, role))
                 for param_id in matches:
                     constraints.pop(param_id, None)
+                ordinal += 1
             continue
         for constraint in action.constraints:
             matches = _matches(constraint.target, model, constraint.source)
             _reject_protected(matches, model, constraint.source, "Constraint")
             for param_id in matches:
-                dependencies = tuple(
-                    dict.fromkeys(
-                        _resolve_constraint_reference(
-                            reference,
-                            param_id,
-                            model,
-                            _source(reference, constraint.source),
-                        )
-                        for reference in _references(constraint.expression)
-                    )
+                dependencies_found: list[str] = []
+                expression = _compile_method_expression(
+                    constraint.expression,
+                    param_id,
+                    model,
+                    constraint.source,
+                    dependencies_found,
                 )
-                for reference in _references(constraint.expression):
-                    reference_matches = _matches(
-                        reference,
-                        model,
-                        _source(reference, constraint.source),
-                    )
-                    _reject_protected_constants(
-                        reference_matches,
-                        model,
-                        _source(reference, constraint.source),
-                        "Constraint reference",
-                    )
+                dependencies = tuple(dict.fromkeys(dependencies_found))
                 roles[param_id] = ParameterRole.DERIVED
-                constraints[param_id] = _ResolvedConstraint(constraint, dependencies)
+                constraints[param_id] = _ResolvedConstraint(
+                    constraint,
+                    dependencies,
+                    CompiledConstraint(
+                        param_id,
+                        expression,
+                        dependencies,
+                        f"method-rule:{ordinal}",
+                        render_expression(constraint.expression),
+                    ),
+                )
+            ordinal += 1
+    return ordinal
 
 
 def _find_cycle(
@@ -435,7 +555,20 @@ def _validate_constraint_graph(
     if cycle is not None:
         source = constraints[cycle[0]].declaration.source
         raise MethodFormatError(
-            f"Constraint dependency cycle contains {', '.join(cycle)}", source
+            f"Constraint dependency cycle contains {', '.join(cycle)}",
+            source,
+            detail_code="cycle",
+            detail_context={
+                "param_ids": cycle,
+                "constraints": tuple(
+                    (
+                        param_id,
+                        constraints[param_id].compiled.source,
+                        constraints[param_id].compiled.expression_text,
+                    )
+                    for param_id in cycle
+                ),
+            },
         )
 
 
@@ -443,8 +576,9 @@ def _validate_grid(
     search: GridSearch,
     roles: dict[str, ParameterRole],
     model: SealedParameterModel,
-) -> None:
-    for axis in search.axes:
+) -> tuple[MatchedGridAxis, ...]:
+    resolved: list[MatchedGridAxis] = []
+    for ordinal, axis in enumerate(search.axes):
         matches = _matches(axis.selector, model, axis.source)
         _reject_protected(matches, model, axis.source, "GRID")
         if not any(roles[param_id] is ParameterRole.FIT for param_id in matches):
@@ -452,6 +586,16 @@ def _validate_grid(
                 "GRID target is not a final independent FIT coordinate",
                 axis.source,
             )
+        resolved.append(
+            MatchedGridAxis(
+                matches,
+                _grid_values(axis),
+                axis.source,
+                ordinal,
+                axis.selector.render(),
+            )
+        )
+    return tuple(resolved)
 
 
 def _grid_values(axis: GridAxis) -> tuple[float, ...]:
@@ -465,8 +609,8 @@ def _grid_values(axis: GridAxis) -> tuple[float, ...]:
     return tuple(float(value) for value in values)
 
 
-def resolve_grid_axes(
-    search: GridSearch,
+def project_grid_axes(
+    axes: tuple[MatchedGridAxis, ...],
     model: SealedParameterModel,
     *,
     active_scope_ids: tuple[str, ...],
@@ -482,16 +626,14 @@ def resolve_grid_axes(
     final_fit = frozenset(final_fit_ids)
     concrete: dict[str, ResolvedGridAxis] = {}
     sources: dict[str, SourceRef] = {}
-    for ordinal, axis in enumerate(search.axes):
+    for axis in axes:
         active_matches = tuple(
-            param_id
-            for param_id in _matches(axis.selector, model, axis.source)
-            if param_id in active_scope
+            param_id for param_id in axis.matches if param_id in active_scope
         )
         if not active_matches:
             raise MethodFormatError(
                 "GRID selector has no applicable coordinate in the current "
-                f"active step: [{axis.selector.render()}]",
+                f"active step: [{axis.selector_text}]",
                 axis.source,
             )
         matches = tuple(
@@ -503,9 +645,8 @@ def resolve_grid_axes(
                 "active non-FIT matches: " + ", ".join(active_matches),
                 axis.source,
             )
-        values = _grid_values(axis)
         for param_id in matches:
-            concrete[param_id] = ResolvedGridAxis(param_id, values, ordinal)
+            concrete[param_id] = ResolvedGridAxis(param_id, axis.values, axis.ordinal)
             sources[param_id] = axis.source
     for resolved in concrete.values():
         _check_bounds(
@@ -523,11 +664,29 @@ def resolve_grid_axes(
     )
 
 
+def resolve_grid_axes(
+    search: GridSearch,
+    model: SealedParameterModel,
+    *,
+    active_scope_ids: tuple[str, ...],
+    final_fit_ids: tuple[str, ...],
+) -> tuple[ResolvedGridAxis, ...]:
+    """Compatibility preview through the Method compiler's search projection."""
+    roles = dict.fromkeys(model.declarations, ParameterRole.FIT)
+    axes = _validate_grid(search, roles, model)
+    return project_grid_axes(
+        axes,
+        model,
+        active_scope_ids=active_scope_ids,
+        final_fit_ids=final_fit_ids,
+    )
+
+
 def _validate_de(
     search: DeSearch,
     roles: dict[str, ParameterRole],
     model: SealedParameterModel,
-) -> None:
+) -> tuple[ResolvedDeCoordinate, ...]:
     seen: set[str] = set()
     resolved = resolve_de_coordinates(search, model)
     for coordinate, resolved_coordinate in zip(
@@ -552,6 +711,7 @@ def _validate_de(
             model,
             coordinate.source,
         )
+    return resolved
 
 
 def resolve_de_coordinates(
@@ -580,7 +740,9 @@ def resolve_de_coordinates(
     return tuple(resolved)
 
 
-def validate_method_plan(plan: MethodPlan, model: SealedParameterModel) -> None:
+def resolve_method_plan(
+    plan: MethodPlan, model: SealedParameterModel
+) -> tuple[ResolvedMethodStep, ...]:
     _validate_legacy_binding_selectors(plan, model)
     baseline = {
         param_id: baseline_parameter_role(declaration)
@@ -588,18 +750,54 @@ def validate_method_plan(plan: MethodPlan, model: SealedParameterModel) -> None:
     }
     effective_by_step: dict[str, dict[str, ParameterRole]] = {}
     constraints_by_step: dict[str, dict[str, _ResolvedConstraint]] = {}
+    ordinals_by_step: dict[str, int] = {}
+    resolved_steps: list[ResolvedMethodStep] = []
     for step in plan.steps:
+        if step.name in effective_by_step:
+            raise MethodFormatError(
+                "Method step names must be unique",
+                SourceRef(Path("<method-plan>"), step.name, "NAME"),
+            )
+        if step.roles_from is not None and step.roles_from not in effective_by_step:
+            raise MethodFormatError(
+                "ROLES_FROM must name one unique earlier step",
+                SourceRef(Path("<method-plan>"), step.name, "ROLES_FROM"),
+            )
         roles = dict(
             baseline if step.roles_from is None else effective_by_step[step.roles_from]
         )
         constraints = dict(
             {} if step.roles_from is None else constraints_by_step[step.roles_from]
         )
-        _apply_actions(roles, constraints, step.role_actions, model)
+        ordinal = _apply_actions(
+            roles,
+            constraints,
+            step.role_actions,
+            model,
+            0 if step.roles_from is None else ordinals_by_step[step.roles_from],
+        )
         _validate_constraint_graph(constraints, model)
         effective_by_step[step.name] = roles
         constraints_by_step[step.name] = constraints
+        ordinals_by_step[step.name] = ordinal
+        grid_axes: tuple[MatchedGridAxis, ...] = ()
+        de_coordinates: tuple[ResolvedDeCoordinate, ...] = ()
         if isinstance(step.search, GridSearch):
-            _validate_grid(step.search, roles, model)
+            grid_axes = _validate_grid(step.search, roles, model)
         elif isinstance(step.search, DeSearch):
-            _validate_de(step.search, roles, model)
+            de_coordinates = _validate_de(step.search, roles, model)
+        resolved_steps.append(
+            ResolvedMethodStep(
+                MappingProxyType(roles),
+                MappingProxyType(
+                    {param_id: item.compiled for param_id, item in constraints.items()}
+                ),
+                grid_axes,
+                de_coordinates,
+            )
+        )
+    return tuple(resolved_steps)
+
+
+def validate_method_plan(plan: MethodPlan, model: SealedParameterModel) -> None:
+    resolve_method_plan(plan, model)

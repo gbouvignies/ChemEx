@@ -40,6 +40,18 @@ Each step has six straightforward rules:
 Steps execute in declaration order. Results are written under the step name for
 multi-step methods.
 
+Before fitting, ChemEx checks every step against the loaded profiles. If a
+later step has an invalid role, constraint, or active GRID/DE target, no step
+runs and no existing results are cleared. This changes the failure timing for
+multi-step methods: an invalid later step no longer leaves commits from valid
+earlier steps. Starting values are still read when each step begins, so a later
+valid step sees values committed by earlier steps.
+
+A step selecting no profiles is reported as skipped and produces no fit or
+statistics. Its selectors and constraints must still be valid against the
+parameter model. A globally valid GRID or DE declaration in that step does
+not need an active fit coordinate, because the step has no active profiles.
+
 ## Ordered parameter roles
 
 `ROLES` is an ordered array. Every entry contains exactly one action:

@@ -3,11 +3,12 @@
 import shutil
 from pathlib import Path
 
-from chemex.configuration.method_input import prepare_method_plan
+from chemex.configuration.method_input import normalize_method_plan
 from chemex.configuration.method_plan import MethodPlan
 from chemex.configuration.methods import Methods
 from chemex.containers.experiments import Experiments
 from chemex.exceptions import ArtifactPublicationError
+from chemex.optimize.method_compiler import ExecutableMethodPlan, compile_method_plan
 from chemex.optimize.method_plan_execution import execute_method_plan
 from chemex.run_info import RunInfo
 from chemex.runtime import AnalysisSession
@@ -25,7 +26,9 @@ _CHEMEX_RESULT_PATHS = (
 )
 
 
-def invalidate_planned_outputs(plan: MethodPlan, path: Path) -> None:
+def invalidate_planned_outputs(
+    plan: MethodPlan | ExecutableMethodPlan, path: Path
+) -> None:
     """Remove only ChemEx-owned results for every method step planned now."""
     names = tuple(step.name for step in plan.steps)
     if len(names) > 1:
@@ -67,10 +70,11 @@ def run_methods(
     parameter_model = session.parameter_factory.sealed_parameter_model
     if parameter_model is None:
         raise RuntimeError("Native parameter model is unavailable")
-    plan = prepare_method_plan(methods, parameter_model)
+    plan = normalize_method_plan(methods)
+    executable = compile_method_plan(plan, parameter_model, experiments)
     execute_method_plan(
         experiments,
-        plan,
+        executable,
         path,
         plot_level,
         session=session,

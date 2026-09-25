@@ -73,6 +73,7 @@ from chemex.parameters.values import AnalysisValuesSnapshot, StaleAnalysisValues
 from chemex.runtime import AnalysisSession, ExecutionSettings
 from chemex.runtime.execution import NATIVE_THREAD_ENV_VARS
 from chemex.typing import Array
+from tests.method_preview import preview_actions
 
 ROOT = Path(__file__).parent.parent
 EXPERIMENT = ROOT / "examples/Experiments/RELAXATION_HZNZ/Experiments/800mhz.toml"
@@ -106,8 +107,8 @@ def _qualification_fit(
         session.parameter_factory.native_construction_error
     )
     plan = read_method_plan([METHOD])
-    parameterization = session.compile_parameterization_from_actions(
-        plan.effective_role_actions()["DEFAULT"], experiments.param_ids
+    parameterization = preview_actions(
+        session, plan.effective_role_actions()["DEFAULT"], experiments.param_ids
     )
     engine = EvaluationEngine.from_experiments(experiments, parameterization)
     configuration = session.parameter_factory.sealed_configuration
@@ -623,7 +624,8 @@ def test_representative_single_component_fit_materializes_and_commits_atomically
     configuration = session.parameter_factory.sealed_configuration
     assert configuration is not None
     plan = read_method_plan([METHOD])
-    revision_one_parameterization = session.compile_parameterization_from_actions(
+    revision_one_parameterization = preview_actions(
+        session,
         plan.effective_role_actions()["DEFAULT"],
         experiments.param_ids,
     )
@@ -726,8 +728,8 @@ def test_cpmg_step1_direct_trf_preserves_requests_and_reuses_profile_kernels() -
         read_defaults([CPMG_ROOT / "Parameters/parameters.toml"])
     )
     assert session.try_build_analysis_values()
-    parameterization = session.compile_parameterization_from_actions(
-        plan.effective_role_actions()["STEP1"], experiments.param_ids
+    parameterization = preview_actions(
+        session, plan.effective_role_actions()["STEP1"], experiments.param_ids
     )
     engine = EvaluationEngine.from_experiments(experiments, parameterization)
     configuration = session.parameter_factory.sealed_configuration

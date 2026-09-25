@@ -27,8 +27,17 @@ import chemex.printers.grid as grid_printer_module
 import chemex.run_info as run_info_module
 from chemex.chemex import run, run_fit
 from chemex.cli import build_parser
-from chemex.configuration.method_plan import MethodFormatError
-from chemex.configuration.methods import Method, Selection
+from chemex.configuration.method_plan import (
+    FixAction,
+    FormatOrigin,
+    MethodFormatError,
+    MethodPlan,
+    ParameterSelector,
+    ProfileSelection,
+    SourceRef,
+    StepPlan,
+)
+from chemex.configuration.methods import Method, Selection, read_method_plan
 from chemex.configuration.parameters import read_defaults
 from chemex.containers.experiments import Experiments
 from chemex.evaluation.native import BoundEvaluator, EvaluationFailure
@@ -36,6 +45,7 @@ from chemex.exceptions import ArtifactPublicationError, ChemExError
 from chemex.experiments.builder import build_experiments
 from chemex.optimize.fitting import run_methods
 from chemex.optimize.mcmc import McmcConfigurationError, NativeMcmcIncompleteError
+from chemex.optimize.method_compiler import FitStep, compile_method_plan
 from chemex.optimize.native_deterministic import (
     NativeDeterministicAnalysisError,
     NativeDeterministicInternalError,
@@ -1101,6 +1111,216 @@ ROLES = [{ FIX = ["R1A_A"] }]
 
     assert session.analysis_values.snapshot().revision == 1
     assert second_value == pytest.approx(first_value, rel=1.0e-12)
+
+
+def test_empty_method_step_keeps_inherited_roles_without_active_grid_target(
+    tmp_path: Path,
+) -> None:
+    method = tmp_path / "empty-grid.toml"
+    method.write_text(
+        """FORMAT_VERSION = 2
+[EMPTY]
+INCLUDE = ["K999"]
+ROLES = [{ FIX = ["PB", "KEX_AB"] }]
+
+[EMPTY.SEARCH.GRID]
+AXES = ["[R1A_A, NUC->G2N-H] = values(2.0)"]
+
+[NEXT]
+ROLES_FROM = "EMPTY"
+""",
+        encoding="utf-8",
+    )
+    output = tmp_path / "Output"
+    session = AnalysisSession.create()
+
+    run(_fit_arguments(output, method), session=session)
+
+    assert not (output / "EMPTY" / "Parameters").exists()
+    assert (output / "NEXT" / "Parameters" / "fitted.toml").exists()
+    assert session.analysis_values.snapshot().revision == 1
+
+
+def test_empty_de_step_does_not_require_an_active_fit_coordinate(
+    tmp_path: Path,
+) -> None:
+    method = tmp_path / "empty-de.toml"
+    method.write_text(
+        """FORMAT_VERSION = 2
+[EMPTY]
+INCLUDE = ["K999"]
+
+[EMPTY.SEARCH.DE]
+SEED = 7
+COORDINATES = ["[R1A_A, NUC->G2N-H] = lin(1.0, 3.0)"]
+
+[NEXT]
+""",
+        encoding="utf-8",
+    )
+    output = tmp_path / "Output"
+    session = AnalysisSession.create()
+
+    run(_fit_arguments(output, method), session=session)
+
+    assert not (output / "EMPTY" / "Parameters").exists()
+    assert (output / "NEXT" / "Parameters" / "fitted.toml").exists()
+    assert session.analysis_values.snapshot().revision == 1
+
+
+def test_empty_step_still_rejects_globally_invalid_role_action(tmp_path: Path) -> None:
+    _, session, experiments = _programmatic_fit_context(tmp_path / "Output")
+    source = SourceRef(tmp_path / "method.toml", "EMPTY", "ROLES[0].FIX[0]")
+    plan = MethodPlan(
+        FormatOrigin.V2,
+        (
+            StepPlan(
+                "EMPTY",
+                selection=ProfileSelection(("K999",), None),
+                role_actions=(
+                    FixAction((ParameterSelector("UNKNOWN", source=source),), source),
+                ),
+            ),
+        ),
+    )
+    model = session.parameter_factory.sealed_parameter_model
+    assert model is not None
+
+    with pytest.raises(MethodFormatError, match="No parameter matches selector"):
+        compile_method_plan(plan, model, experiments)
+
+
+def test_empty_step_still_rejects_globally_invalid_constraint(tmp_path: Path) -> None:
+    _, session, experiments = _programmatic_fit_context(tmp_path / "Output")
+    method = tmp_path / "invalid-empty-constraint.toml"
+    method.write_text(
+        """FORMAT_VERSION = 2
+[EMPTY]
+INCLUDE = ["K999"]
+ROLES = [{ CONSTRAIN = ["[R1A_A, NUC->G2N-H] = [UNKNOWN]"] }]
+""",
+        encoding="utf-8",
+    )
+    model = session.parameter_factory.sealed_parameter_model
+    assert model is not None
+
+    with pytest.raises(MethodFormatError, match="constraint reference") as error:
+        compile_method_plan(read_method_plan([method]), model, experiments)
+
+    assert error.value.source.filename == method
+
+
+def test_compilation_is_stable_across_committed_values_and_rebinds_latest(
+    tmp_path: Path,
+) -> None:
+    _, session, experiments = _programmatic_fit_context(tmp_path / "Output")
+    model = session.parameter_factory.sealed_parameter_model
+    assert model is not None
+    plan = MethodPlan(FormatOrigin.V2, (StepPlan("STEP"),))
+
+    executable = compile_method_plan(plan, model, experiments)
+    step = executable.steps[0]
+    assert isinstance(step, FitStep)
+    original = session.analysis_values.snapshot()
+    coordinate = step.parameterization.fit_ids[0]
+    changed = session.analysis_values.commit(
+        {coordinate: original[coordinate] + 0.25},
+        expected=original,
+        scope=(coordinate,),
+    )
+    recompiled = compile_method_plan(plan, model, experiments)
+    recompiled_step = recompiled.steps[0]
+    assert isinstance(recompiled_step, FitStep)
+    assert executable == recompiled
+    assert (
+        step.parameterization.program.fingerprint
+        == recompiled_step.parameterization.program.fingerprint
+    )
+
+    original_bound = step.parameterization.bind(original)
+    changed_bound = step.parameterization.bind(changed)
+    original_frame = original_bound.frame_from_snapshot(original)
+    changed_frame = changed_bound.frame_from_snapshot(changed)
+    assert original_bound.program is changed_bound.program
+    assert changed_bound.source_revision == original.revision + 1
+    original_values = dict(original_frame.ordered_items())
+    changed_values = dict(changed_frame.ordered_items())
+    assert changed_values[coordinate] == pytest.approx(
+        original_values[coordinate] + 0.25
+    )
+
+
+def test_later_inactive_grid_target_fails_before_any_fit_or_output_change(
+    tmp_path: Path,
+) -> None:
+    method = tmp_path / "later-invalid-grid.toml"
+    method.write_text(
+        """FORMAT_VERSION = 2
+[FIRST]
+ROLES = [{ FIX = ["PB", "KEX_AB"] }]
+
+[SECOND]
+INCLUDE = ["G2N-HN"]
+
+[SECOND.SEARCH.GRID]
+AXES = ["[R1A_A, NUC->H3N-H] = values(2.0)"]
+""",
+        encoding="utf-8",
+    )
+    output = tmp_path / "Output"
+    preserved = output / "Data" / "preserved.dat"
+    preserved.parent.mkdir(parents=True)
+    preserved.write_text("previous run\n", encoding="utf-8")
+    session = AnalysisSession.create()
+
+    with pytest.raises(MethodFormatError, match="no applicable coordinate"):
+        run(
+            _fit_arguments(
+                output,
+                method,
+                include=("G2N-HN", "H3N-HN"),
+            ),
+            session=session,
+        )
+
+    assert session.analysis_values.snapshot().revision == 0
+    assert preserved.read_text(encoding="utf-8") == "previous run\n"
+    assert not (output / "run_info").exists()
+
+
+def test_later_inactive_de_target_fails_before_any_fit_or_output_change(
+    tmp_path: Path,
+) -> None:
+    method = tmp_path / "later-invalid-de.toml"
+    method.write_text(
+        """FORMAT_VERSION = 2
+[FIRST]
+ROLES = [{ FIX = ["PB", "KEX_AB"] }]
+
+[SECOND]
+INCLUDE = ["G2N-HN"]
+
+[SECOND.SEARCH.DE]
+SEED = 7
+COORDINATES = ["[R1A_A, NUC->H3N-H] = lin(1.0, 3.0)"]
+""",
+        encoding="utf-8",
+    )
+    output = tmp_path / "Output"
+    preserved = output / "Data" / "preserved.dat"
+    preserved.parent.mkdir(parents=True)
+    preserved.write_text("previous run\n", encoding="utf-8")
+    session = AnalysisSession.create()
+
+    with pytest.raises(MethodFormatError, match="no active final independent FIT"):
+        run(
+            _fit_arguments(output, method, include=("G2N-HN", "H3N-HN")),
+            session=session,
+        )
+
+    assert session.analysis_values.snapshot().revision == 0
+    assert preserved.read_text(encoding="utf-8") == "previous run\n"
+    assert not (output / "run_info").exists()
 
 
 def test_constrained_value_becomes_the_next_independent_start(

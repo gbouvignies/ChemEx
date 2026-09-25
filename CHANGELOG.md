@@ -7,6 +7,14 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
 
 ## [Unreleased]
 
+### Changed
+- ChemEx now validates and compiles every Method Step against the loaded
+  profiles before fitting or clearing prior results. An invalid later step
+  rejects the run before earlier steps can commit or create `run_info/`.
+  A step selecting no profiles is reported as skipped; its valid GRID or DE
+  declaration needs no active fit coordinate. Fit results for valid, nonempty
+  steps are unchanged.
+
 ## [2026.09.2] - 2026-09-23
 
 ### Added

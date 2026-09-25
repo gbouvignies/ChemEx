@@ -50,6 +50,7 @@ from chemex.optimize.progress import (
 from chemex.parameters.parameterization import ActiveParameterization
 from chemex.runtime import AnalysisSession
 from chemex.typing import Array
+from tests.method_preview import preview_actions
 
 ROOT = Path(__file__).parent.parent
 EXPERIMENT = ROOT / "examples/Experiments/RELAXATION_HZNZ/Experiments/800mhz.toml"
@@ -79,8 +80,8 @@ def _grouped_problem(
     )
     if method is None:
         plan = read_method_plan([METHOD])
-        parameterization = session.compile_parameterization_from_actions(
-            plan.effective_role_actions()["DEFAULT"], experiments.param_ids
+        parameterization = preview_actions(
+            session, plan.effective_role_actions()["DEFAULT"], experiments.param_ids
         )
     else:
         parameterization = session.compile_parameterization(
