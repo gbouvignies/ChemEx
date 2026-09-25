@@ -22,14 +22,6 @@ def _cache_key(
     return tuple(hashkey(engine.basis, *args, **kwargs))
 
 
-def _dephase_eigenvalues(eigenvalues: Array) -> Array:
-    return np.where(
-        np.abs(eigenvalues.imag) < SMALL_VALUE,
-        eigenvalues,
-        eigenvalues * 1e9,
-    )
-
-
 def _as_diagonal_matrices(values: Array) -> Array:
     diagonal_shape = (*values.shape, values.shape[-1])
     diagonal_matrices = np.zeros(diagonal_shape, dtype=np.complex128)
@@ -52,10 +44,18 @@ def calculate_propagators(
         return expm(liouv_array * delays_array[0])
 
     eigenvalues, eigenvectors = np.linalg.eig(liouv_array)
+    exponents = np.multiply.outer(delays_array, eigenvalues)
     if dephasing:
-        eigenvalues = _dephase_eigenvalues(eigenvalues)
-
-    exp_eigenvalues = np.exp(np.multiply.outer(delays_array, eigenvalues))
+        # The complete-dephasing limit removes oscillatory modes for positive
+        # durations. At zero duration there is no evolution, so retain identity.
+        removed = (delays_array > 0).reshape((-1,) + (1,) * eigenvalues.ndim) & (
+            np.abs(eigenvalues.imag) >= SMALL_VALUE
+        )
+        exp_eigenvalues = np.exp(
+            exponents, out=np.zeros_like(exponents), where=~removed
+        )
+    else:
+        exp_eigenvalues = np.exp(exponents)
     diagonal_matrices = _as_diagonal_matrices(exp_eigenvalues)
 
     vectors = np.expand_dims(eigenvectors, axis=0)
