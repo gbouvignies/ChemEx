@@ -36,10 +36,10 @@ from chemex.configuration.methods import (
     Selection,
     read_method_plan,
 )
-from chemex.configuration.parameters import read_defaults
+from chemex.configuration.parameters import DefaultSetting, read_defaults
 from chemex.experiments.builder import build_experiments
 from chemex.models.factory import model_factory
-from chemex.parameters.database import ParameterIndex
+from chemex.parameters.database import ParameterCatalog, ParameterIndex
 from chemex.parameters.name import ParamName
 from chemex.parameters.parameterization import (
     ActiveParameterization,
@@ -71,7 +71,9 @@ from chemex.parameters.sealed import (
     ParamDefinition,
     SealedConfiguration,
     SealedDefinitions,
+    extract_condition_entries,
 )
+from chemex.parameters.setting import ParamSetting
 from chemex.parameters.spin_system import SpinSystem
 from chemex.parameters.userfunctions import user_function_registry
 from chemex.parameters.values import AnalysisValues, AnalysisValuesSnapshot
@@ -1426,6 +1428,164 @@ def test_parameter_selectors_use_legacy_exact_name_matching(
             method,
             required_ids,
         )
+
+
+def test_condition_default_selector_matches_its_named_field() -> None:
+    first = ParamName("KEX_AB", conditions=Conditions(p_total=2e-4, l_total=1e-4))
+    second = ParamName("KEX_AB", conditions=Conditions(p_total=1e-4, l_total=2e-4))
+    catalog = ParameterCatalog()
+    catalog.add_multiple(
+        {name.id_: ParamSetting(name, value=200.0) for name in (first, second)}
+    )
+
+    assert catalog.get_matching_ids(ParamName.from_section("KEX_AB")) == {
+        first.id_,
+        second.id_,
+    }
+    catalog.set_defaults(
+        [(ParamName.from_section("KEX_AB, [P]->2e-4"), DefaultSetting(345.0))]
+    )
+
+    assert catalog.get_parameters([first.id_])[first.id_].value == 345.0
+    assert catalog.get_parameters([second.id_])[second.id_].value == 200.0
+
+
+def test_unqualified_selector_matches_all_condition_fields() -> None:
+    name = ParamName(
+        "PB",
+        conditions=Conditions(
+            temperature=25.0,
+            h_larmor_frq=800.0,
+            p_total=1e-4,
+            l_total=2e-4,
+            d2o=0.5,
+        ),
+    )
+    index = ParameterIndex()
+    index.add(name)
+
+    assert index.get_matching_ids(ParamName.from_section("PB")) == {name.id_}
+
+
+@pytest.mark.parametrize("format_version", (1, 2))
+@pytest.mark.parametrize("role", ("FIX", "FIT"))
+def test_condition_method_selector_matches_its_named_field(
+    tmp_path: Path,
+    format_version: int,
+    role: str,
+) -> None:
+    names = (
+        ParamName("KEX_AB", conditions=Conditions(p_total=2e-4, l_total=1e-4)),
+        ParamName("KEX_AB", conditions=Conditions(p_total=1e-4, l_total=2e-4)),
+    )
+    definitions = tuple(
+        ParamDefinition(
+            name.id_,
+            name.name,
+            "",
+            extract_condition_entries(name.conditions),
+            200.0,
+            0.0,
+            1e6,
+        )
+        for name in names
+    )
+    declarations = tuple(
+        ParameterDeclaration(
+            name.id_,
+            True,
+            requires_independent=True,
+            fits_by_default=role == "FIX",
+        )
+        for name in names
+    )
+    model, snapshot = _native_fixture(declarations, definitions=definitions)
+    roles = f'{role} = ["KEX_AB, [P]->2e-4"]'
+    if format_version == 2:
+        roles = f'ROLES = [{{ {role} = ["KEX_AB, [P]->2e-4"] }}]'
+    method_file = tmp_path / "method.toml"
+    method_file.write_text(
+        f"{'FORMAT_VERSION = 2' if format_version == 2 else ''}\n[STEP]\n{roles}\n",
+        encoding="utf-8",
+    )
+    plan = read_method_plan([method_file])
+    plan.validate(model)
+
+    parameterization = compile_active_parameterization_from_actions(
+        model,
+        snapshot,
+        plan.effective_role_actions()["STEP"],
+        {name.id_ for name in names},
+    )
+
+    selected = ParameterRole.FIX if role == "FIX" else ParameterRole.FIT
+    baseline = ParameterRole.FIT if role == "FIX" else ParameterRole.FIX
+    assert parameterization.role(names[0].id_) is selected
+    assert parameterization.role(names[1].id_) is baseline
+
+
+def test_condition_constraint_resolves_target_and_reference_by_field() -> None:
+    definitions = (
+        ParamDefinition(
+            "__PB_P2_L1",
+            "PB",
+            "",
+            (("p_total", 2e-4), ("l_total", 1e-4)),
+            0.0,
+            -10.0,
+            10.0,
+        ),
+        ParamDefinition(
+            "__PB_P1_L2",
+            "PB",
+            "",
+            (("p_total", 1e-4), ("l_total", 2e-4)),
+            7.0,
+            -10.0,
+            10.0,
+        ),
+        ParamDefinition(
+            "__KEX_P2_L1",
+            "KEX_AB",
+            "",
+            (("p_total", 2e-4), ("l_total", 1e-4)),
+            3.0,
+            -10.0,
+            10.0,
+        ),
+        ParamDefinition(
+            "__KEX_P1_L2",
+            "KEX_AB",
+            "",
+            (("p_total", 1e-4), ("l_total", 2e-4)),
+            5.0,
+            -10.0,
+            10.0,
+        ),
+    )
+    declarations = tuple(
+        ParameterDeclaration(item.param_id, True, requires_independent=True)
+        for item in definitions
+    )
+    model, snapshot = _native_fixture(
+        declarations,
+        definitions=definitions,
+        values={item.param_id: item.default_value for item in definitions},
+    )
+
+    parameterization = compile_active_parameterization(
+        model,
+        snapshot,
+        Method(constraints=("[PB, [P]->2e-4] = [KEX_AB, [P]->2e-4]",)),
+        {"__PB_P2_L1", "__PB_P1_L2"},
+    )
+    resolved = parameterization.resolve(parameterization.frame_from_snapshot(snapshot))
+
+    assert parameterization.role("__PB_P2_L1") is ParameterRole.DERIVED
+    assert parameterization.role("__PB_P1_L2") is ParameterRole.FIX
+    assert parameterization.program.constraints[0].dependencies == ("__KEX_P2_L1",)
+    assert resolved["__PB_P2_L1"] == 3.0
+    assert resolved["__PB_P1_L2"] == 7.0
 
 
 def test_exact_spin_reference_outranks_condition_specific_global() -> None:

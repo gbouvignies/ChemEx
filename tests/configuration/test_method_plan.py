@@ -15,7 +15,10 @@ from chemex.configuration.method_plan import (
     MethodFormatError,
     ProfileSelection,
 )
-from chemex.configuration.method_validation import resolve_grid_axes
+from chemex.configuration.method_validation import (
+    resolve_de_coordinates,
+    resolve_grid_axes,
+)
 from chemex.configuration.methods import Method, Statistics, read_method_plan
 from chemex.parameters.parameterization import (
     ParameterDeclaration,
@@ -1116,6 +1119,68 @@ AXES = [
     assert resolved[0].values == (0.0, 5.0, 10.0)
     assert resolved[1].values == (2.0, 4.0)
     assert tuple(axis.declaration_ordinal for axis in resolved) == (0, 1)
+
+
+@pytest.mark.parametrize("search_kind", ("GRID", "DE"))
+def test_search_condition_selector_matches_its_named_field(
+    tmp_path: Path,
+    search_kind: str,
+) -> None:
+    first_id = "kex-p2-l1"
+    second_id = "kex-p1-l2"
+    model = _parameter_model(
+        ParamDefinition(
+            first_id,
+            "KEX_AB",
+            "",
+            (("p_total", 2e-4), ("l_total", 1e-4)),
+            2.0,
+            0.0,
+            10.0,
+        ),
+        ParamDefinition(
+            second_id,
+            "KEX_AB",
+            "",
+            (("p_total", 1e-4), ("l_total", 2e-4)),
+            2.0,
+            0.0,
+            10.0,
+        ),
+    )
+    field = "AXES" if search_kind == "GRID" else "COORDINATES"
+    coordinate = (
+        "[KEX_AB, [P]->2e-4] = lin(1, 3, 3)"
+        if search_kind == "GRID"
+        else "[KEX_AB, [P]->2e-4] = lin(1, 3)"
+    )
+    method = _write(
+        tmp_path / "condition-search.toml",
+        f"FORMAT_VERSION = 2\n[STEP.SEARCH.{search_kind}]\n"
+        f'{field} = ["{coordinate}"]\n'
+        f"{'SEED = 1' if search_kind == 'DE' else ''}\n",
+    )
+    plan = read_method_plan([method])
+    plan.validate(model)
+    search = plan.steps[0].search
+
+    if isinstance(search, DeSearch):
+        resolved_ids = tuple(
+            item.param_id for item in resolve_de_coordinates(search, model)
+        )
+    else:
+        assert search is not None
+        resolved_ids = tuple(
+            item.param_id
+            for item in resolve_grid_axes(
+                search,
+                model,
+                active_scope_ids=(first_id, second_id),
+                final_fit_ids=(first_id, second_id),
+            )
+        )
+
+    assert resolved_ids == (first_id,)
 
 
 def test_grid_resolution_rejects_inactive_non_fit_and_out_of_bounds_targets(
