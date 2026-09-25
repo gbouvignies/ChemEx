@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from chemex.configuration.conditions import Conditions
 from chemex.models.factory import model_factory
 from chemex.models.loader import register_kinetic_settings
@@ -55,6 +57,35 @@ def test_hd_models_keep_d2o_global_with_rs_suffix() -> None:
 
     for key in ("kdh", "phi", "kab", "kba", "pa", "pb"):
         assert settings[key].name_setting.spin_system_part == "g"
+
+
+@pytest.mark.parametrize(
+    "name",
+    ("3st_binding_cs", "3st_monomer_dimer_trimer", "3st_eyring_linear"),
+)
+def test_rs_changes_only_eligible_kinetic_scope_across_families(name: str) -> None:
+    conditions = Conditions(temperature=25.0, p_total=1e-3, l_total=2e-3)
+    base = model_factory.create(name, conditions)
+    residue_specific = model_factory.create_for_model(
+        ModelSpec.from_name(f"{name}.rs"),
+        conditions,
+    )
+
+    assert base.keys() == residue_specific.keys()
+    for key, setting in base.items():
+        modified = residue_specific[key]
+        assert modified.name_setting.name == setting.name_setting.name
+        assert (
+            modified.name_setting.conditions_part
+            == setting.name_setting.conditions_part
+        )
+        assert modified.name_setting.spin_system_part == "g"
+        assert modified.value == setting.value
+        assert modified.min == setting.min
+        assert modified.max == setting.max
+        assert modified.vary == setting.vary
+        assert modified.expr == setting.expr
+        assert modified.report_only == setting.report_only
 
 
 def test_parameter_factory_uses_residue_specific_model_settings() -> None:
