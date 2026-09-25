@@ -4,34 +4,50 @@ sidebar_position: 7
 
 # Kinetic Models
 
-The kinetic model (specified with the `-d` or `--model` option) defines the type of exchange model to be used for data analysis. Available models include:
+The kinetic model (specified with `-d` or `--model`) defines the exchange
+system used for analysis. The following are **all** runtime-registered base
+names. A compatibility spelling selects the indicated scientific model, but
+ChemEx retains the spelling supplied by the user in model identity and run
+provenance.
 
-| Model Name          | Description                                                                     |
-| ------------------- | ------------------------------------------------------------------------------- |
-| `2st`               | 2-state exchange model (default)                                                |
-| `3st`               | Complete 3-state exchange model                                                  |
-| `3st_triangle`      | Historical explicit compatibility name for `3st`                                |
-| `3st_linear`        | Linear A ↔ B ↔ C exchange model                                                  |
-| `3st_fork`          | A-centered B ↔ A ↔ C exchange model                                              |
-| `4st`               | Complete 4-state exchange model                                                  |
-| `4st_linear`        | Linear 4-state exchange model                                                    |
-| `4st_fork`          | A-centered 4-state exchange model                                                |
-| `5st`               | Complete 5-state exchange model                                                  |
-| `5st_linear`        | Linear 5-state exchange model                                                    |
-| `5st_fork`          | A-centered 5-state exchange model                                                |
-| `6st`               | Complete 6-state exchange model                                                  |
-| `6st_linear`        | Linear 6-state exchange model                                                    |
-| `6st_fork`          | A-centered 6-state exchange model                                                |
-| `2st_hd`            | 2-state exchange model for H/D solvent exchange studies                         |
-| `2st_eyring`        | 2-state exchange model for temperature-dependent studies                        |
-| `3st_eyring`        | Compatibility name for the linear 3-state Eyring model                          |
-| `3st_eyring_linear` | Linear A ↔ B ↔ C Eyring model for temperature-dependent studies                 |
-| `3st_eyring_fork`   | Fork B ↔ A ↔ C Eyring model for temperature-dependent studies                   |
-| `4st_eyring`        | 4-state exchange model for temperature-dependent studies                        |
-| `2st_binding`       | 2-state exchange model for ligand binding studies                               |
-| `3st_binding_cs`    | 3-state conformational-selection ligand binding model                           |
-| `3st_binding_if`    | 3-state induced-fit ligand binding model                                         |
-| `4st_hd`            | 4-state exchange model for simultaneous normal and H/D solvent exchange studies |
+<!-- kinetic-model-names:start -->
+| Model name | Physical system and topology | Canonical scientific equivalent |
+| --- | --- | --- |
+| `1st` | One non-exchanging state | — |
+| `2st` | A ↔ B exchange (default) | — |
+| `2st_binding` | Free protein ↔ ligand-bound protein | — |
+| `2st_eyring` | A ↔ B with Eyring temperature dependence | — |
+| `2st_hd` | Protonated ↔ deuterated state | — |
+| `2st_monomer_dimer` | Monomer ↔ dimer | — |
+| `2st_monomer_tetramer` | Monomer ↔ tetramer | — |
+| `2st_monomer_trimer` | Monomer ↔ trimer | — |
+| `3st` | Complete A/B/C exchange graph | — |
+| `3st_binding_cs` | Apo conformational selection, then ligand binding | — |
+| `3st_binding_if` | Ligand binding, then induced fit | — |
+| `3st_binding_partner_2st` | Protein binding two interconverting ligand forms | — |
+| `3st_double_binding` | Two competing bound complexes | — |
+| `3st_eyring` | Historical linear three-state Eyring exchange | `3st_eyring_linear` |
+| `3st_eyring_fork` | A-centered Eyring fork | — |
+| `3st_eyring_linear` | A ↔ B ↔ C Eyring exchange | — |
+| `3st_fork` | A-centered three-state fork | — |
+| `3st_linear` | A ↔ B ↔ C exchange | — |
+| `3st_monomer_dimer_tetramer` | Sequential monomer/dimer/tetramer association | — |
+| `3st_monomer_dimer_trimer` | Sequential monomer/dimer/trimer association | — |
+| `3st_triangle` | Historical complete three-state graph | `3st` |
+| `4st` | Complete four-state exchange graph | — |
+| `4st_binding_3_bound_states` | Free protein and three interconverting bound forms | — |
+| `4st_binding_partner_2st` | Protein binding two ligand forms, with a third bound form | — |
+| `4st_eyring` | Complete four-state Eyring exchange graph | — |
+| `4st_fork` | A-centered four-state fork | — |
+| `4st_hd` | Two conformers, each with protonated/deuterated forms | — |
+| `4st_linear` | Four-state chain | — |
+| `5st` | Complete five-state exchange graph | — |
+| `5st_fork` | A-centered five-state fork | — |
+| `5st_linear` | Five-state chain | — |
+| `6st` | Complete six-state exchange graph | — |
+| `6st_fork` | A-centered six-state fork | — |
+| `6st_linear` | Six-state chain | — |
+<!-- kinetic-model-names:end -->
 
 In these models, each state in the exchange process is represented with a unique
 parameter suffix (`A`, `B`, `C`, `D`, etc.). For example, `R1_A` and `R2_B`
@@ -41,13 +57,28 @@ excited state, but this is an analyst-defined convention rather than an ordering
 enforced by ChemEx. See [Exchange States and Parameters](exchange_states_parameters.md)
 for populations, directional rates, shift signs, and label swapping.
 
-:::note
-For any kinetic model, you can add the `.rs` suffix to make the kinetic parameters residue-specific (for example, `2st.rs` or `3st_eyring.rs`). Suffixes can be combined, such as `2st.rs.mf`. The legacy `2st_rs` name remains supported as an alias for `2st.rs`.
-:::
+## Composable modifiers
 
-:::note
-For any kinetic model, you can add the `.mf` suffix to create a model that fits model-free parameters directly (e.g., `TAUC_A`, `S2_A`), rather than individual relaxation parameters (e.g., `R1_A`, `R2_A`). For an example, see `CEST_15N_TR/` under `Examples/Experiments/`.
-:::
+The suffixes `.rs`, `.mf`, and `.tc` may be combined in any order; each changes
+only its own parameter family. Accepted redundant combinations remain accepted.
+For example, `2st.rs.mf` and `2st.mf.rs` select the same model behavior.
+
+**`.rs`** is the residue-specific modifier. It adds residue/group identity to
+eligible kinetic quantities, including their derived populations and rates. It
+leaves global sample conditions such as `D2O` global and changes neither
+equations, domains, default roles, nor base model physics. For ordinary two-state
+exchange, select `2st.rs`.
+
+**`.mf`** uses independent model-free `TAUC` (ns), `S2` (unitless, 0–1), and
+`KHH` (s⁻¹, where applicable) in place of independently assigned relaxation
+rates. Their defaults are respectively 4 ns, 0.9, and 0 s⁻¹; their bounds are
+[0, 1000] ns, [0, 1], and [0, 1e6] s⁻¹. Relaxation and cross-correlation rates
+are model-derived, with magnetic-field and nucleus dependence retained on the
+rates. `KHH` stays with the physical proton even for reversed `HN`/`NH`
+orientation; deuterated labels use the corresponding deuterated rate model.
+Exact zero `TAUC`, `S2`, or `KHH` is retained, and the derived rates must still
+satisfy ChemEx's relaxation feasibility conditions. For an example, see
+`CEST_15N_TR/` under `Examples/Experiments/`.
 
 ## Linear chemical-shift temperature coefficients
 
@@ -61,6 +92,110 @@ degrees Celsius.
 See [Temperature-dependent chemical shifts](temperature_dependent_shifts.md) for
 the equations, parameter roles, multistate and Eyring composition, fitting
 limitations, and output behavior.
+
+## Reading kinetic parameter settings
+
+In the [runtime parameter inventory](#runtime-parameter-inventory), **input**
+means an independent coordinate or fixed value that can be supplied through a
+parameter file; **derived** means ChemEx calculates it, and **report-only**
+means it is calculated for output but does not block dynamics when its value
+cannot be represented. A default fitted role is marked `fit`; `fixed` values
+can still be selected by an applicable Method Plan unless protected by their
+model. `estimate` marks an explicit estimation capability. Bounds shown there
+are the registered defaults; parameter files can override ordinary bounds.
+
+Scopes use `T` for temperature, `P` for total protein, `L` for total ligand,
+and `D` for D2O fraction. `group` identifies residue/group-specific kinetics;
+`global` means no spin or group qualifier. A missing condition dimension means
+the parameter is shared across that dimension. Independent binding and
+oligomerization inputs are normally temperature-scoped and shared across spin
+systems and concentrations; their derived populations and rates also depend on
+total concentrations. A model may have further domain checks beyond the
+registered default bounds; the family sections state the important ones.
+
+### One and two states
+
+`1st` has only state A, with `PA = 1` and no kinetic input or exchange edge.
+For ordinary `2st`, A ↔ B has independent population `PB` (fraction, default
+0.05, [0, 1]) and total exchange scale `KEX_AB` (s⁻¹, default 200,
+[0, 1e6]). `PA = 1 − PB`; `KAB` and `KBA` are derived directional rates.
+Both zero population endpoints and `KEX_AB = 0` are valid, with exact zero
+rates where appropriate. These quantities are scoped by temperature and total
+protein/ligand concentrations and are global across spins unless `.rs` is
+selected. `2st.rs` uses the same physics with eligible kinetic quantities scoped
+to the residue/group.
+
+### H/D solvent exchange
+
+`2st_hd` uses A (protonated) ↔ B (deuterated). The independent physical inputs
+are global solvent `D2O` (fraction), residue/group-specific `KDH` (s⁻¹), and
+residue/group-specific fractionation factor `PHI` (unitless). `KDH` is fitted by
+default; `PHI` is fixed by default. ChemEx derives both populations and
+directional rates. `KDH = 0` freezes both directions without erasing the
+solvent-defined equilibrium composition. `D2O` remains global under `.rs`.
+
+`4st_hd` combines conformers A/B with their deuterated forms C/D. The square
+has conformational A ↔ B and C ↔ D edges, and solvent-exchange A ↔ C and
+B ↔ D edges; there is no A ↔ D or B ↔ C edge. `POP_B` selects the conformer
+fraction, `KEX_AB` the conformational scale, and group-specific `KDH_A`,
+`KDH_B`, and `PHI_A` the solvent kinetics. `PHI_B` is derived from `PHI_A`.
+`D2O` is global. All four populations and eight directional rates are derived.
+The conformational scale defaults to exact zero, leaving the two H/D pairs
+without interconversion; zero solvent-exchange scales similarly freeze their
+corresponding H/D edges without changing equilibrium composition.
+
+### Ligand binding
+
+`2st_binding` describes free protein A + ligand L ↔ complex B. Supply
+`KD` (M) and `KOFF` (s⁻¹), together with positive total protein concentration
+and nonnegative total ligand concentration. ChemEx derives free concentrations,
+populations, and tagged directional rates. `KON` is report-only. `KD` must be
+strictly positive even if bounds are overridden; zero ligand gives only free
+protein, while `KOFF = 0` freezes tagged exchange without changing the
+equilibrium species.
+
+For all binding models below, `KD`/`KD_APP` are in M, `KOFF` and `KEX` in
+s⁻¹, and `KEQ` ratios are dimensionless. Independent binding inputs are fitted
+by default. Exact-zero `KOFF`/`KEX` freezes the corresponding tagged edge
+without changing composition. Positive protein total and positive dissociation
+constants are required; zero ligand is allowed. The derived concentrations,
+populations, and directional rates follow the equilibrium species, while
+`KON` quantities are report-only. The [runtime inventory](#runtime-parameter-inventory)
+gives each model's exact public parameter names, defaults, bounds, and scope.
+
+| Model | States and reaction scheme | Independent physical inputs | Important derived quantities and boundaries |
+| --- | --- | --- | --- |
+| `3st_double_binding` | A = free protein; A + L ↔ B and A + L ↔ C are competing bound complexes | `KD_AB`, `KOFF_AB`, `KD_AC`, `KOFF_AC` | Free species, `PA`–`PC`, tagged edge rates; no B ↔ C edge |
+| `3st_binding_partner_2st` | Ligand L1 ↔ L2; A + L1 ↔ B and A + L2 ↔ C, with B ↔ C tagged exchange | `KD_AB`, `KOFF_AB`, `KD_AC`, `KOFF_AC`, `KEQ`, `KEX_BC` | `KEQ = 0` removes L2 and C exactly; zero ligand leaves A only, although the B ↔ C rate split remains defined by the input equilibrium ratios |
+| `4st_binding_partner_2st` | Ligand L1 ↔ L2; A + L1 ↔ B and A + L2 ↔ C, then C ↔ D is a third bound form; B ↔ C also exchanges | `KD_AB`, `KOFF_AB`, `KD_AC`, `KOFF_AC`, `KEQ_L`, `KEQ_PL`, `KEX_BC`, `KEX_CD` | `KEQ_L = 0` removes L2, C, D; `KEQ_PL = 0` removes D exactly |
+| `4st_binding_3_bound_states` | A = free protein; A + L ↔ B ↔ C ↔ D, with three bound forms | `KD_APP`, `KOFF_AB`, `KEQ_BC`, `KEX_BC`, `KEQ_CD`, `KEX_CD` | `KD_AB`, `KD_EFF`, free/bound concentrations and `PA`–`PD` are derived; zero `KEQ_BC` removes C/D and zero `KEQ_CD` removes D exactly |
+
+In the partner models, `KEQ` or `KEQ_L` sets the free L2/L1 ratio;
+`KEQ_PL` sets the D/C bound-state ratio. In the three-bound-state model,
+`KEQ_BC` and `KEQ_CD` set C/B and D/C, and `KD_APP` refers to the total
+bound protein concentration. Ratios of zero remove the named downstream
+species exactly; a positive dissociation constant is still required.
+
+### Oligomerization
+
+For direct `2st_monomer_dimer`, `2st_monomer_trimer`, and
+`2st_monomer_tetramer`, A is monomer and B is the named oligomer: respectively
+2A ↔ B, 3A ↔ B, and 4A ↔ B. Independent `KD` (M to the power of oligomer size
+minus one) and `KOFF` (s⁻¹) determine chemical equilibrium and tagged exchange.
+ChemEx derives monomer/oligomer concentrations, protein-unit populations, and
+directional rates. `KD` must be positive; `KOFF = 0` freezes tagged exchange
+while preserving chemical equilibrium. Zero total protein leaves only state A
+as the reference population and zero association.
+
+The sequential models add C: `3st_monomer_dimer_trimer` has
+2A ↔ B and A + B ↔ C, while `3st_monomer_dimer_tetramer` has
+2A ↔ B and 2B ↔ C. Supply `KD1`, `KD2`, `KOFF1`, and `KOFF2`; the `KD`
+units follow each reaction's stoichiometry. Monomer/dimer/higher-oligomer
+concentrations, all three populations, and tagged rates are derived. The
+trimer model includes A ↔ C, B ↔ C, and A ↔ B tagged edges; the tetramer
+model includes only A ↔ B and B ↔ C. Zero `KOFF1` or `KOFF2` freezes the
+associated tagged directions without erasing equilibrium species. Zero `KD1`
+or `KD2` is invalid.
 
 ## Generic N-state models
 
@@ -432,3 +567,56 @@ a universal thermodynamic requirement. Derived rates and populations are scoped
 by temperature, `p_total`, and `l_total`; changing magnetic field alone does not
 create another chemical kinetic rate. Public parameter names, units, defaults,
 and TOML syntax are unchanged.
+
+## Runtime parameter inventory
+
+This compact inventory is projected from the registered settings under
+representative conditions (25 °C, 1 mM total protein, 2 mM total ligand,
+20% D2O). It lists only kinetic quantities, not experiment-specific shift or
+relaxation parameters. Family sections above explain scientific meaning and
+units. The exact table is checked against runtime settings and representative
+sealed parameter construction by the test suite.
+
+<details>
+<summary>Show all kinetic inputs, defaults, bounds, scopes, and derived names</summary>
+
+<!-- kinetic-parameters:start -->
+| Model | Independent input: default [bounds] (role; scope) | Derived | Report-only |
+| --- | --- | --- | --- |
+| `1st` | — | `PA` (all; global) | — |
+| `2st` | `KEX_AB` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `PB` 0.05 [0.0, 1.0] (fit; T,P,L; global) | `PA`, `KAB`, `KBA` (T,P,L; global) | — |
+| `2st_binding` | `KOFF` 100.0 [0.0, 1000000.0] (fit; T; global); `KD` 0.001 [5e-324, 1.0] (fit; T; global) | `P_FREE`, `L_FREE`, `PL`, `KAB`, `KBA`, `PA`, `PB` (T,P,L; global) | `KON` (T; global) |
+| `2st_eyring` | `DH_B` 8000.0 [-200000.0, 200000.0] (fit; P,L; global); `DS_B` 0.0 [-500.0, 500.0] (fit; P,L; global); `DH_AB` 65000.0 [-200000.0, 200000.0] (fit; P,L; global); `DS_AB` 0.0 [-500.0, 500.0] (fit; P,L; global) | `KAB`, `KBA`, `PA`, `PB` (T,P,L; global) | — |
+| `2st_hd` | `D2O` 0.2 [0.0, 1.0] (fixed, estimate; D; global); `KDH` 1.0 [0.0, 1000000.0] (fit; T; group); `PHI` 1.1 [0.75, 1.5] (fixed; T; group) | `KAB`, `KBA`, `PA`, `PB` (T,D; group) | — |
+| `2st_monomer_dimer` | `KOFF` 100.0 [0.0, 1000000.0] (fit; T; global); `KD` 1e-06 [5e-324, 1.0] (fit; T; global) | `C_MONOMER`, `C_DIMER`, `KAB`, `KBA`, `PA`, `PB` (T,P; global) | — |
+| `2st_monomer_tetramer` | `KOFF` 100.0 [0.0, 1000000.0] (fit; T; global); `KD` 1e-06 [5e-324, 1.0] (fit; T; global) | `C_MONOMER`, `C_TETRAMER`, `KAB`, `KBA`, `PA`, `PB` (T,P; global) | — |
+| `2st_monomer_trimer` | `KOFF` 100.0 [0.0, 1000000.0] (fit; T; global); `KD` 1e-06 [5e-324, 1.0] (fit; T; global) | `C_MONOMER`, `C_TRIMER`, `KAB`, `KBA`, `PA`, `PB` (T,P; global) | — |
+| `3st` | `PB` 0.02 [0.0, 1.0] (fit; T,P,L; global); `PC` 0.02 [0.0, 1.0] (fit; T,P,L; global); `KEX_AB` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_AC` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_BC` 200.0 [0.0, 1000000.0] (fit; T,P,L; global) | `PA`, `KAB`, `KBA`, `KAC`, `KCA`, `KBC`, `KCB` (T,P,L; global) | — |
+| `3st_binding_cs` | `KD_APP` 1e-06 [5e-324, 1.0] (fit; T; global); `KOFF_BC` 100.0 [0.0, 1000000.0] (fit; T; global); `KEQ_AB` 1.0 [5e-324, 1000000.0] (fit; T; global); `KEX_AB` 200.0 [0.0, 1000000.0] (fit; T; global) | `KAB`, `KBA` (T; global); `C_L`, `KBC`, `KCB`, `PA`, `PB`, `PC` (T,P,L; global) | `KD_BC`, `KON_BC` (T; global) |
+| `3st_binding_if` | `KD_APP` 0.001 [5e-324, 1.0] (fit; T; global); `KOFF_AB` 100.0 [0.0, 1000000.0] (fit; T; global); `KEQ_BC` 1.0 [0.0, 1000000.0] (fit; T; global); `KEX_BC` 200.0 [0.0, 1000000.0] (fit; T; global) | `KBC`, `KCB` (T; global); `C_L`, `KAB`, `KBA`, `PA`, `PB`, `PC` (T,P,L; global) | `KD_AB`, `KON_AB` (T; global) |
+| `3st_binding_partner_2st` | `KOFF_AB` 100.0 [0.0, 1000000.0] (fit; T; global); `KD_AB` 0.001 [5e-324, 1.0] (fit; T; global); `KOFF_AC` 100.0 [0.0, 1000000.0] (fit; T; global); `KD_AC` 0.001 [5e-324, 1.0] (fit; T; global); `KEQ` 1.0 [0.0, 1000000.0] (fit; T; global); `KEX_BC` 1000.0 [0.0, 1000000.0] (fit; T; global) | `L1_FREE`, `L2_FREE`, `PL1`, `PL2`, `KAB`, `KBA`, `KAC`, `KCA`, `KBC`, `KCB`, `PA`, `PB`, `PC` (T,P,L; global) | `KON_AB`, `KON_AC` (T; global) |
+| `3st_double_binding` | `KOFF_AB` 100.0 [0.0, 1000000.0] (fit; T; global); `KD_AB` 0.001 [5e-324, 1.0] (fit; T; global); `KOFF_AC` 100.0 [0.0, 1000000.0] (fit; T; global); `KD_AC` 0.001 [5e-324, 1.0] (fit; T; global) | `PFREE`, `L_FREE`, `KAB`, `KBA`, `KAC`, `KCA`, `PA`, `PB`, `PC` (T,P,L; global) | `KON_AB`, `KON_AC` (T; global) |
+| `3st_eyring` | `DH_B` 8000.0 [-200000.0, 200000.0] (fit; P,L; global); `DH_C` 8000.0 [-200000.0, 200000.0] (fit; P,L; global); `DS_B` 0.0 [-500.0, 500.0] (fixed; P,L; global); `DS_C` 0.0 [-500.0, 500.0] (fixed; P,L; global); `DH_AB` 65000.0 [-200000.0, 200000.0] (fit; P,L; global); `DS_AB` 0.0 [-500.0, 500.0] (fixed; P,L; global); `DH_BC` 65000.0 [-200000.0, 200000.0] (fit; P,L; global); `DS_BC` 0.0 [-500.0, 500.0] (fixed; P,L; global) | `KAB`, `KBA`, `KBC`, `KCB`, `PA`, `PB`, `PC` (T,P,L; global) | — |
+| `3st_eyring_fork` | `DH_B` 8000.0 [-200000.0, 200000.0] (fit; P,L; global); `DH_C` 8000.0 [-200000.0, 200000.0] (fit; P,L; global); `DS_B` 0.0 [-500.0, 500.0] (fixed; P,L; global); `DS_C` 0.0 [-500.0, 500.0] (fixed; P,L; global); `DH_AB` 65000.0 [-200000.0, 200000.0] (fit; P,L; global); `DS_AB` 0.0 [-500.0, 500.0] (fixed; P,L; global); `DH_AC` 65000.0 [-200000.0, 200000.0] (fit; P,L; global); `DS_AC` 0.0 [-500.0, 500.0] (fixed; P,L; global) | `KAB`, `KBA`, `KAC`, `KCA`, `PA`, `PB`, `PC` (T,P,L; global) | — |
+| `3st_eyring_linear` | `DH_B` 8000.0 [-200000.0, 200000.0] (fit; P,L; global); `DH_C` 8000.0 [-200000.0, 200000.0] (fit; P,L; global); `DS_B` 0.0 [-500.0, 500.0] (fixed; P,L; global); `DS_C` 0.0 [-500.0, 500.0] (fixed; P,L; global); `DH_AB` 65000.0 [-200000.0, 200000.0] (fit; P,L; global); `DS_AB` 0.0 [-500.0, 500.0] (fixed; P,L; global); `DH_BC` 65000.0 [-200000.0, 200000.0] (fit; P,L; global); `DS_BC` 0.0 [-500.0, 500.0] (fixed; P,L; global) | `KAB`, `KBA`, `KBC`, `KCB`, `PA`, `PB`, `PC` (T,P,L; global) | — |
+| `3st_fork` | `PB` 0.02 [0.0, 1.0] (fit; T,P,L; global); `PC` 0.02 [0.0, 1.0] (fit; T,P,L; global); `KEX_AB` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_AC` 200.0 [0.0, 1000000.0] (fit; T,P,L; global) | `PA`, `KAB`, `KBA`, `KAC`, `KCA` (T,P,L; global) | — |
+| `3st_linear` | `PB` 0.02 [0.0, 1.0] (fit; T,P,L; global); `PC` 0.02 [0.0, 1.0] (fit; T,P,L; global); `KEX_AB` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_BC` 200.0 [0.0, 1000000.0] (fit; T,P,L; global) | `PA`, `KAB`, `KBA`, `KBC`, `KCB` (T,P,L; global) | — |
+| `3st_monomer_dimer_tetramer` | `KD1` 1e-06 [5e-324, 1.0] (fit; T; global); `KD2` 1e-06 [5e-324, 1.0] (fit; T; global); `KOFF1` 100.0 [0.0, 1000000.0] (fit; T; global); `KOFF2` 100.0 [0.0, 1000000.0] (fit; T; global) | `C_MONOMER`, `C_DIMER`, `C_TETRAMER`, `KAB`, `KBA`, `KBC`, `KCB`, `PA`, `PB`, `PC` (T,P; global) | — |
+| `3st_monomer_dimer_trimer` | `KD1` 1e-06 [5e-324, 1.0] (fit; T; global); `KD2` 1e-06 [5e-324, 1.0] (fit; T; global); `KOFF1` 100.0 [0.0, 1000000.0] (fit; T; global); `KOFF2` 100.0 [0.0, 1000000.0] (fit; T; global) | `C_MONOMER`, `C_DIMER`, `C_TRIMER`, `KAB`, `KBA`, `KAC`, `KCA`, `KBC`, `KCB`, `PA`, `PB`, `PC` (T,P; global) | — |
+| `3st_triangle` | `PB` 0.02 [0.0, 1.0] (fit; T,P,L; global); `PC` 0.02 [0.0, 1.0] (fit; T,P,L; global); `KEX_AB` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_AC` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_BC` 200.0 [0.0, 1000000.0] (fit; T,P,L; global) | `PA`, `KAB`, `KBA`, `KAC`, `KCA`, `KBC`, `KCB` (T,P,L; global) | — |
+| `4st` | `PB` 0.02 [0.0, 1.0] (fit; T,P,L; global); `PC` 0.02 [0.0, 1.0] (fit; T,P,L; global); `PD` 0.02 [0.0, 1.0] (fit; T,P,L; global); `KEX_AB` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_AC` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_AD` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_BC` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_BD` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_CD` 200.0 [0.0, 1000000.0] (fit; T,P,L; global) | `PA`, `KAB`, `KBA`, `KAC`, `KCA`, `KAD`, `KDA`, `KBC`, `KCB`, `KBD`, `KDB`, `KCD`, `KDC` (T,P,L; global) | — |
+| `4st_binding_3_bound_states` | `KD_APP` 1e-06 [5e-324, 1.0] (fit; T; global); `KOFF_AB` 100.0 [0.0, 1000000.0] (fit; T; global); `KEX_BC` 1000.0 [0.0, 1000000.0] (fit; T; global); `KEQ_BC` 1.0 [0.0, 100.0] (fit; T; global); `KEX_CD` 1000.0 [0.0, 1000000.0] (fit; T; global); `KEQ_CD` 1.0 [0.0, 100.0] (fit; T; global) | `KD_AB` (T; global); `C_P`, `C_L`, `C_PL1`, `C_PL2`, `C_PL3`, `C_PL`, `KD_EFF`, `KAB`, `KBA`, `KBC`, `KCB`, `KCD`, `KDC`, `PA`, `PB`, `PC`, `PD` (T,P,L; global) | `KON_AB` (T; global) |
+| `4st_binding_partner_2st` | `KOFF_AB` 100.0 [0.0, 1000000.0] (fit; T; global); `KD_AB` 0.001 [5e-324, 1.0] (fit; T; global); `KOFF_AC` 100.0 [0.0, 1000000.0] (fit; T; global); `KD_AC` 0.001 [5e-324, 1.0] (fit; T; global); `KEQ_L` 1.0 [0.0, 1000000.0] (fit; T; global); `KEQ_PL` 1.0 [0.0, 1000000.0] (fit; T; global); `KEX_BC` 1000.0 [0.0, 1000000.0] (fit; T; global); `KEX_CD` 1000.0 [0.0, 1000000.0] (fit; T; global) | `P_FREE`, `L1_FREE`, `L2_FREE`, `PL1`, `PL2`, `PL3`, `KAB`, `KBA`, `KAC`, `KCA`, `KBC`, `KCB`, `KCD`, `KDC`, `PA`, `PB`, `PC`, `PD` (T,P,L; global) | `KON_AB`, `KON_AC` (T; global) |
+| `4st_eyring` | `DH_B` 8000.0 [-200000.0, 200000.0] (fit; P,L; global); `DH_C` 8000.0 [-200000.0, 200000.0] (fit; P,L; global); `DH_D` 8000.0 [-200000.0, 200000.0] (fit; P,L; global); `DH_AB` 75000.0 [-200000.0, 200000.0] (fit; P,L; global); `DH_AC` 75000.0 [-200000.0, 200000.0] (fixed; P,L; global); `DH_AD` 75000.0 [-200000.0, 200000.0] (fixed; P,L; global); `DH_BC` 75000.0 [-200000.0, 200000.0] (fit; P,L; global); `DH_BD` 75000.0 [-200000.0, 200000.0] (fit; P,L; global); `DH_CD` 75000.0 [-200000.0, 200000.0] (fit; P,L; global); `DS_B` 0.0 [-500.0, 500.0] (fixed; P,L; global); `DS_C` 0.0 [-500.0, 500.0] (fixed; P,L; global); `DS_D` 0.0 [-500.0, 500.0] (fixed; P,L; global); `DS_AB` 0.0 [-500.0, 500.0] (fixed; P,L; global); `DS_AC` 0.0 [-500.0, 500.0] (fixed; P,L; global); `DS_AD` 0.0 [-500.0, 500.0] (fixed; P,L; global); `DS_BC` 0.0 [-500.0, 500.0] (fixed; P,L; global); `DS_BD` 0.0 [-500.0, 500.0] (fixed; P,L; global); `DS_CD` 0.0 [-500.0, 500.0] (fixed; P,L; global) | `KAB`, `KBA`, `KAC`, `KCA`, `KAD`, `KDA`, `KBC`, `KCB`, `KBD`, `KDB`, `KCD`, `KDC`, `PA`, `PB`, `PC`, `PD` (T,P,L; global) | — |
+| `4st_fork` | `PB` 0.02 [0.0, 1.0] (fit; T,P,L; global); `PC` 0.02 [0.0, 1.0] (fit; T,P,L; global); `PD` 0.02 [0.0, 1.0] (fit; T,P,L; global); `KEX_AB` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_AC` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_AD` 200.0 [0.0, 1000000.0] (fit; T,P,L; global) | `PA`, `KAB`, `KBA`, `KAC`, `KCA`, `KAD`, `KDA` (T,P,L; global) | — |
+| `4st_hd` | `D2O` 0.2 [0.0, 1.0] (fixed; D; global); `POP_B` 0.02 [0.0, 1.0] (fit; T,P,L; global); `KEX_AB` 0.0 [0.0, 1000000.0] (fit; T,P,L; global); `KDH_A` 1.0 [0.0, 1000000.0] (fit; T; group); `KDH_B` 1.0 [0.0, 1000000.0] (fit; T; group); `PHI_A` 1.1 [0.75, 1.5] (fixed; T; group) | `PHI_B` (T; group); `KAB`, `KBA`, `KCD`, `KDC` (T,P,L; global); `KAC`, `KCA`, `KBD`, `KDB` (T,D; group); `PA`, `PB`, `PC`, `PD` (T,P,L,D; group) | — |
+| `4st_linear` | `PB` 0.02 [0.0, 1.0] (fit; T,P,L; global); `PC` 0.02 [0.0, 1.0] (fit; T,P,L; global); `PD` 0.02 [0.0, 1.0] (fit; T,P,L; global); `KEX_AB` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_BC` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_CD` 200.0 [0.0, 1000000.0] (fit; T,P,L; global) | `PA`, `KAB`, `KBA`, `KBC`, `KCB`, `KCD`, `KDC` (T,P,L; global) | — |
+| `5st` | `PB` 0.02 [0.0, 1.0] (fit; T,P,L; global); `PC` 0.02 [0.0, 1.0] (fit; T,P,L; global); `PD` 0.02 [0.0, 1.0] (fit; T,P,L; global); `PE` 0.02 [0.0, 1.0] (fit; T,P,L; global); `KEX_AB` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_AC` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_AD` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_AE` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_BC` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_BD` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_BE` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_CD` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_CE` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_DE` 200.0 [0.0, 1000000.0] (fit; T,P,L; global) | `PA`, `KAB`, `KBA`, `KAC`, `KCA`, `KAD`, `KDA`, `KAE`, `KEA`, `KBC`, `KCB`, `KBD`, `KDB`, `KBE`, `KEB`, `KCD`, `KDC`, `KCE`, `KEC`, `KDE`, `KED` (T,P,L; global) | — |
+| `5st_fork` | `PB` 0.02 [0.0, 1.0] (fit; T,P,L; global); `PC` 0.02 [0.0, 1.0] (fit; T,P,L; global); `PD` 0.02 [0.0, 1.0] (fit; T,P,L; global); `PE` 0.02 [0.0, 1.0] (fit; T,P,L; global); `KEX_AB` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_AC` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_AD` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_AE` 200.0 [0.0, 1000000.0] (fit; T,P,L; global) | `PA`, `KAB`, `KBA`, `KAC`, `KCA`, `KAD`, `KDA`, `KAE`, `KEA` (T,P,L; global) | — |
+| `5st_linear` | `PB` 0.02 [0.0, 1.0] (fit; T,P,L; global); `PC` 0.02 [0.0, 1.0] (fit; T,P,L; global); `PD` 0.02 [0.0, 1.0] (fit; T,P,L; global); `PE` 0.02 [0.0, 1.0] (fit; T,P,L; global); `KEX_AB` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_BC` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_CD` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_DE` 200.0 [0.0, 1000000.0] (fit; T,P,L; global) | `PA`, `KAB`, `KBA`, `KBC`, `KCB`, `KCD`, `KDC`, `KDE`, `KED` (T,P,L; global) | — |
+| `6st` | `PB` 0.02 [0.0, 1.0] (fit; T,P,L; global); `PC` 0.02 [0.0, 1.0] (fit; T,P,L; global); `PD` 0.02 [0.0, 1.0] (fit; T,P,L; global); `PE` 0.02 [0.0, 1.0] (fit; T,P,L; global); `PF` 0.02 [0.0, 1.0] (fit; T,P,L; global); `KEX_AB` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_AC` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_AD` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_AE` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_AF` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_BC` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_BD` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_BE` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_BF` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_CD` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_CE` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_CF` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_DE` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_DF` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_EF` 200.0 [0.0, 1000000.0] (fit; T,P,L; global) | `PA`, `KAB`, `KBA`, `KAC`, `KCA`, `KAD`, `KDA`, `KAE`, `KEA`, `KAF`, `KFA`, `KBC`, `KCB`, `KBD`, `KDB`, `KBE`, `KEB`, `KBF`, `KFB`, `KCD`, `KDC`, `KCE`, `KEC`, `KCF`, `KFC`, `KDE`, `KED`, `KDF`, `KFD`, `KEF`, `KFE` (T,P,L; global) | — |
+| `6st_fork` | `PB` 0.02 [0.0, 1.0] (fit; T,P,L; global); `PC` 0.02 [0.0, 1.0] (fit; T,P,L; global); `PD` 0.02 [0.0, 1.0] (fit; T,P,L; global); `PE` 0.02 [0.0, 1.0] (fit; T,P,L; global); `PF` 0.02 [0.0, 1.0] (fit; T,P,L; global); `KEX_AB` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_AC` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_AD` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_AE` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_AF` 200.0 [0.0, 1000000.0] (fit; T,P,L; global) | `PA`, `KAB`, `KBA`, `KAC`, `KCA`, `KAD`, `KDA`, `KAE`, `KEA`, `KAF`, `KFA` (T,P,L; global) | — |
+| `6st_linear` | `PB` 0.02 [0.0, 1.0] (fit; T,P,L; global); `PC` 0.02 [0.0, 1.0] (fit; T,P,L; global); `PD` 0.02 [0.0, 1.0] (fit; T,P,L; global); `PE` 0.02 [0.0, 1.0] (fit; T,P,L; global); `PF` 0.02 [0.0, 1.0] (fit; T,P,L; global); `KEX_AB` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_BC` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_CD` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_DE` 200.0 [0.0, 1000000.0] (fit; T,P,L; global); `KEX_EF` 200.0 [0.0, 1000000.0] (fit; T,P,L; global) | `PA`, `KAB`, `KBA`, `KBC`, `KCB`, `KCD`, `KDC`, `KDE`, `KED`, `KEF`, `KFE` (T,P,L; global) | — |
+<!-- kinetic-parameters:end -->
+
+</details>

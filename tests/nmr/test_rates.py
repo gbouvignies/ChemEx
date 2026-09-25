@@ -194,3 +194,12 @@ def test_khh_remains_attached_to_the_physical_proton() -> None:
     )
     assert nh_with_exchange["r1_i"] == nh_without_exchange["r1_i"]
     assert hn_with_exchange["r1_s"] == hn_without_exchange["r1_s"]
+
+
+@pytest.mark.parametrize(("tauc", "s2"), ((0.0, 0.9), (4.0, 0.0)))
+def test_model_free_exact_zero_limits_produce_zero_rates(
+    tauc: float,
+    s2: float,
+) -> None:
+    rates = rate_functions["nh"](799.708, tauc, s2, 0.0)
+    assert all(rate == 0.0 for rate in rates.values())

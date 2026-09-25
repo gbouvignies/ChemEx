@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from types import SimpleNamespace
+
+import pytest
 
 from chemex.configuration.conditions import Conditions
 from chemex.models.factory import model_factory
@@ -15,21 +18,28 @@ def setup_module() -> None:
     register_kinetic_settings()
 
 
-def test_2st_residue_specific_matches_legacy_alias() -> None:
+def test_2st_rs_modifier_preserves_settings_except_kinetic_scope() -> None:
     conditions = Conditions()
 
+    base_settings = model_factory.create("2st", conditions)
     settings = model_factory.create_for_model(ModelSpec.from_name("2st.rs"), conditions)
-    legacy_settings = model_factory.create("2st_rs", conditions)
 
-    assert settings.keys() == legacy_settings.keys()
+    assert settings.keys() == base_settings.keys()
 
-    for key in settings:
-        assert settings[key].name_setting == legacy_settings[key].name_setting
-        assert settings[key].value == legacy_settings[key].value
-        assert settings[key].min == legacy_settings[key].min
-        assert settings[key].max == legacy_settings[key].max
-        assert settings[key].vary == legacy_settings[key].vary
-        assert settings[key].expr == legacy_settings[key].expr
+    for key, base in base_settings.items():
+        modified = settings[key]
+        assert modified.name_setting == replace(
+            base.name_setting,
+            spin_system_part="g",
+        )
+        assert modified.value == base.value
+        assert modified.min == base.min
+        assert modified.max == base.max
+        assert modified.vary == base.vary
+        assert modified.expr == base.expr
+        assert modified.supports_estimation == base.supports_estimation
+        assert modified.report_only == base.report_only
+        assert modified.model_owned == base.model_owned
 
 
 def test_three_state_models_become_residue_specific_with_rs_suffix() -> None:
@@ -55,6 +65,35 @@ def test_hd_models_keep_d2o_global_with_rs_suffix() -> None:
 
     for key in ("kdh", "phi", "kab", "kba", "pa", "pb"):
         assert settings[key].name_setting.spin_system_part == "g"
+
+
+@pytest.mark.parametrize(
+    "name",
+    ("3st_binding_cs", "3st_monomer_dimer_trimer", "3st_eyring_linear"),
+)
+def test_rs_changes_only_eligible_kinetic_scope_across_families(name: str) -> None:
+    conditions = Conditions(temperature=25.0, p_total=1e-3, l_total=2e-3)
+    base = model_factory.create(name, conditions)
+    residue_specific = model_factory.create_for_model(
+        ModelSpec.from_name(f"{name}.rs"),
+        conditions,
+    )
+
+    assert base.keys() == residue_specific.keys()
+    for key, setting in base.items():
+        modified = residue_specific[key]
+        assert modified.name_setting.name == setting.name_setting.name
+        assert (
+            modified.name_setting.conditions_part
+            == setting.name_setting.conditions_part
+        )
+        assert modified.name_setting.spin_system_part == "g"
+        assert modified.value == setting.value
+        assert modified.min == setting.min
+        assert modified.max == setting.max
+        assert modified.vary == setting.vary
+        assert modified.expr == setting.expr
+        assert modified.report_only == setting.report_only
 
 
 def test_parameter_factory_uses_residue_specific_model_settings() -> None:
