@@ -67,13 +67,17 @@ class Conditions(BaseModel, frozen=True):
 
     @property
     def search_keys(self) -> set[Hashable]:
-        """Create a set of hashable search keys based on conditions."""
+        """Index specified conditions by field as well as value."""
         return {
-            self.h_larmor_frq,
-            self.temperature,
-            self.p_total,
-            self.l_total,
-            self.d2o,
+            (field, value)
+            for field, value in (
+                ("h_larmor_frq", self.h_larmor_frq),
+                ("temperature", self.temperature),
+                ("p_total", self.p_total),
+                ("l_total", self.l_total),
+                ("d2o", self.d2o),
+            )
+            if value is not None
         }
 
     def _conditions_list(self) -> list[tuple[str, str]]:
