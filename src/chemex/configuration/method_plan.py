@@ -243,31 +243,9 @@ class GridSearch:
 
 
 @dataclass(frozen=True, slots=True)
-class DeRange:
-    scale: SearchScale
-    low: float
-    high: float
-
-    def render(self) -> str:
-        return (
-            f"{self.scale.value}({render_number(self.low)}, {render_number(self.high)})"
-        )
-
-
-@dataclass(frozen=True, slots=True)
-class DeCoordinate:
-    selector: ParameterSelector
-    range: DeRange
-    source: SourceRef = field(compare=False, repr=False)
-
-    def render(self) -> str:
-        return f"[{self.selector.render()}] = {self.range.render()}"
-
-
-@dataclass(frozen=True, slots=True)
-class DeSearch:
-    seed: int
-    coordinates: tuple[DeCoordinate, ...]
+class ProfilePreparation:
+    hold: tuple[ParameterSelector, ...]
+    mirror: tuple[ParameterSelector, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -330,7 +308,7 @@ class StepPlan:
     selection: ProfileSelection = ProfileSelection()
     roles_from: str | None = None
     role_actions: tuple[RoleAction, ...] = ()
-    search: GridSearch | DeSearch | None = None
+    search: GridSearch | ProfilePreparation | None = None
     statistics: StatisticsPlan | None = None
 
 
@@ -367,20 +345,9 @@ class MethodPlan:
                     f"  {json.dumps(axis.render())}," for axis in step.search.axes
                 )
                 lines.append("]")
-            elif isinstance(step.search, DeSearch):
-                lines.extend(
-                    (
-                        "",
-                        f"[{_toml_key(step.name)}.SEARCH.DE]",
-                        f"SEED = {step.search.seed}",
-                        "COORDINATES = [",
-                    )
-                )
-                lines.extend(
-                    f"  {json.dumps(coordinate.render())},"
-                    for coordinate in step.search.coordinates
-                )
-                lines.append("]")
+            elif isinstance(step.search, ProfilePreparation):
+                lines.extend(("", f"[{_toml_key(step.name)}.SEARCH.PROFILE]"))
+                lines.extend(_render_preparation(step.search))
             lines.extend(_render_statistics(step.name, step.statistics))
         return "\n".join(lines) + "\n"
 
@@ -464,3 +431,14 @@ def _render_mcmc(step_key: str, request: McmcRequest) -> list[str]:
     if request.workers is not None:
         lines.append(f"# V1_ONLY_WORKERS = {request.workers}")
     return lines
+
+
+def _render_preparation(preparation: ProfilePreparation) -> list[str]:
+    return [
+        f"{key} = [{', '.join(json.dumps(item.render()) for item in selectors)}]"
+        for key, selectors in (
+            ("HOLD", preparation.hold),
+            ("MIRROR", preparation.mirror),
+        )
+        if selectors
+    ]

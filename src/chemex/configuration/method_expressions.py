@@ -12,8 +12,6 @@ from chemex.configuration.method_plan import (
     BinaryExpression,
     Constraint,
     ConstraintExpression,
-    DeCoordinate,
-    DeRange,
     GridAxis,
     GridRange,
     GridValues,
@@ -480,33 +478,6 @@ def parse_strict_grid_axis(text: str, source: SourceRef) -> GridAxis:
         )
     scale = SearchScale.LINEAR if function == "lin" else SearchScale.LOGARITHMIC
     return GridAxis(selector, GridRange(scale, low, high, count), entry_source)
-
-
-def parse_strict_de_coordinate(text: str, source: SourceRef) -> DeCoordinate:
-    leading = len(text) - len(text.lstrip())
-    text = text.strip()
-    entry_source = _span_source(source, leading, leading + len(text))
-    selector_text, selector_source, function, arguments = _search_parts(
-        text, entry_source
-    )
-    if function not in {"lin", "log"} or len(arguments) != 2:
-        raise MethodFormatError(
-            "DE accepts only lin(low, high) or log(low, high)",
-            entry_source,
-        )
-    low, high = _search_numbers(arguments, entry_source)
-    if low >= high:
-        raise MethodFormatError("DE range must satisfy low < high", entry_source)
-    if function == "log" and low <= 0.0:
-        raise MethodFormatError(
-            "Logarithmic DE endpoints must be positive", entry_source
-        )
-    scale = SearchScale.LINEAR if function == "lin" else SearchScale.LOGARITHMIC
-    return DeCoordinate(
-        parse_strict_selector(selector_text, selector_source),
-        DeRange(scale, low, high),
-        entry_source,
-    )
 
 
 def parse_legacy_grid_axis(text: str, source: SourceRef) -> GridAxis:

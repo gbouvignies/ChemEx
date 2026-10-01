@@ -40,12 +40,11 @@ from chemex.evaluation.native import (
     EvaluationFrame,
 )
 from chemex.experiments.builder import build_experiments
-from chemex.optimize.de_direct_trf import DeSearchInvocation, execute_de_search
 from chemex.optimize.direct_trf import OptimizationProblem, canonical_chi_square
 from chemex.optimize.method_compiler import (
-    DeSearchInstruction,
     FitStep,
     GridSearchInstruction,
+    ProfilePreparationInstruction,
     compile_method_plan,
 )
 from chemex.optimize.native_deterministic import _build_invocation
@@ -139,7 +138,7 @@ def build_context(case: str) -> Context:
             [
                 example
                 / "Methods"
-                / ("method_de.toml" if case == "dcest" else "method_grid.toml")
+                / ("method_profile.toml" if case == "dcest" else "method_grid.toml")
             ]
         )
         step = compile_method_plan(plan, model, experiments).steps[0]
@@ -151,11 +150,20 @@ def build_context(case: str) -> Context:
             session.analysis_values.snapshot()
         )
         if case == "dcest":
-            if not isinstance(step.search, DeSearchInstruction):
-                raise RuntimeError("Expected shipped DE search")
+            if not isinstance(step.search, ProfilePreparationInstruction):
+                raise RuntimeError("Expected shipped PROFILE preparation")
+            ranges = {
+                "PB": (0.001, 0.2, "log"),
+                "PC": (0.001, 0.2, "log"),
+                "KEX_AB": (10.0, 5000.0, "log"),
+                "KEX_AC": (10.0, 5000.0, "log"),
+                "DW_AB": (-15.0, 15.0, "lin"),
+                "DW_AC": (-15.0, 15.0, "lin"),
+            }
             coordinates = tuple(
-                (key, lo, hi, str(scale))
-                for key, lo, hi, scale in step.search.coordinates
+                (key, *ranges[model.definitions[key].name])
+                for key in parameterization.independent_ids
+                if model.definitions[key].name in ranges
             )
         else:
             if not isinstance(step.search, GridSearchInstruction):
@@ -458,36 +466,8 @@ def run_case(case: str, exponent: int, seed: int, nuisance_budget: int):
                         polished[polish_key] = refine(context, records[index]["vector"])
         result[mode] = {"records": records, "selections": selections}
     result["polished"] = polished
-    invocation = DeSearchInvocation.for_product_problem(
-        root, search_coordinates=context.coordinates, root_seed=seed
-    )
-    de, de_trace = measured(
-        context,
-        lambda: execute_de_search(
-            root, invocation, context.parameterization, context.engine
-        ),
-    )
-    de_refinement = (
-        refine(context, de.best_candidate.full_vector)
-        if de.restart_eligible and de.best_candidate is not None
-        else None
-    )
-    result["de"] = {
-        "seconds": de_trace["seconds"],
-        "model_calculations": de_trace["model_calculations"],
-        "terminal": de.terminal.value,
-        "requests": de.counters.objective_requests_accepted,
-        "evaluations": de.counters.objective_evaluations_completed,
-        "profile_evaluations_upper": de.counters.objective_evaluations_completed
-        * len(context.engine.plan.profiles),
-        "search_chi2": None
-        if de.best_candidate is None
-        else de.best_candidate.chi_square,
-        "refinement": de_refinement,
-    }
-    print(
-        case, "DE", None if de_refinement is None else de_refinement["chi2"], flush=True
-    )
+    # SEARCH.DE was retired after these measurements. Historical comparisons
+    # remain in basin_discovery_results.json and the dedicated research commit.
     return result
 
 

@@ -1,5 +1,10 @@
 # Issue #712: basin discovery on current ChemEx
 
+This is the retained historical research report. The production follow-up and
+request-budget qualification are in [profile_preparation.md](profile_preparation.md).
+The original DE implementation and runnable comparison are preserved at research
+commit `88d8a5bd`; current production retires DE.
+
 Research date: 2026-10-01. This is exploratory evidence and a prototype, **not a
 production search feature, numerical oracle, or performance gate**.
 
@@ -48,7 +53,7 @@ The prototype reuses these current authorities:
 - [profiled GRID](../src/chemex/optimize/profiled_grid.py): exact dependency
   factors after holding outer coordinates, factor-local TRF, and fresh
   factor/root objective validation;
-- [selected-coordinate DE](../src/chemex/optimize/de_direct_trf.py) and
+- [selected-coordinate DE](https://github.com/gbouvignies/ChemEx/blob/88d8a5bdcb0afef754ebef4f2afd431e867bd4fe/src/chemex/optimize/de_direct_trf.py) and
   [production dispatch](../src/chemex/optimize/native_deterministic.py): declared
   coordinates vary, nuisance coordinates remain at step-start values, and the
   best search vector initializes complete TRF;

@@ -19,7 +19,7 @@ FORMAT_VERSION = 2
 
 The empty step performs one bounded trust-region reflective (TRF) fit using the
 parameter model's baseline roles and all profiles. V2 has no `FITMETHOD`; when
-neither `SEARCH.GRID` nor `SEARCH.DE` is present, full-coordinate TRF is
+neither `SEARCH.GRID` nor `SEARCH.PROFILE` is present, full-coordinate TRF is
 implicit.
 
 ## The v2 mental model
@@ -32,7 +32,7 @@ Each step has six straightforward rules:
 3. A later matching action replaces the parameter's complete earlier role.
 4. Numerical starting values automatically come from the latest successfully
    committed fit, independently of `ROLES_FROM`.
-5. `SEARCH.GRID` or `SEARCH.DE` chooses an optional deterministic search;
+5. `SEARCH.GRID` or `SEARCH.PROFILE` chooses an optional grid or starting-state preparation;
    otherwise ChemEx runs the implicit full TRF directly.
 6. `STATISTICS` analyzes the committed deterministic result and never changes
    its central parameter values.
@@ -41,7 +41,7 @@ Steps execute in declaration order. Results are written under the step name for
 multi-step methods.
 
 Before fitting, ChemEx checks every step against the loaded profiles. If a
-later step has an invalid role, constraint, or active GRID/DE target, no step
+later step has an invalid role, constraint, or active GRID/PROFILE target, no step
 runs and no existing results are cleared. This changes the failure timing for
 multi-step methods: an invalid later step no longer leaves commits from valid
 earlier steps. Starting values are still read when each step begins, so a later
@@ -49,7 +49,7 @@ valid step sees values committed by earlier steps.
 
 A step selecting no profiles is reported as skipped and produces no fit or
 statistics. Its selectors and constraints must still be valid against the
-parameter model. A globally valid GRID or DE declaration in that step does
+parameter model. A globally valid GRID or PROFILE declaration in that step does
 not need an active fit coordinate, because the step has no active profiles.
 
 ## Ordered parameter roles
@@ -169,9 +169,9 @@ EXCLUDE = [12, 18]
 | --- | --- | --- |
 | No `SEARCH` | The committed start is suitable | Runs one full-coordinate TRF |
 | `SEARCH.GRID` | A profiled chi-square landscape is scientifically useful | Holds the GRID coordinates at each point, optimizes the other fitted coordinates, and commits one coherent joint grid solution |
-| `SEARCH.DE` | A few basin-defining coordinates need broad stochastic coverage | Searches only those coordinates, then seeds exactly one normal full-coordinate TRF |
+| `SEARCH.PROFILE` | Held coupling values let nuisance fits or DW branches prepare a useful start | Prepares one validated start, then runs one normal complete/grouped TRF |
 
-GRID and DE never change parameter roles. Their targets must resolve to final
+GRID and PROFILE never change parameter roles. Their targets must resolve to final
 independent `FIT` coordinates.
 
 ### GRID
@@ -225,38 +225,55 @@ GRID step. Requested MC, BS, BSN, or MCMC analyses still start from the accepted
 GRID state; a following ordinary Direct step is the normal route to local
 covariance uncertainty.
 
-### Selected-coordinate DE
+### Factor-local starting-state preparation
 
 ```toml
 FORMAT_VERSION = 2
-
-[STEP]
-ROLES = [{ FIT = ["PB", "KEX_AB", "DW_AB"] }]
-
-[STEP.SEARCH.DE]
-SEED = 597
-COORDINATES = [
-  "[PB] = log(0.001, 0.20)",
-  "[KEX_AB] = log(100.0, 5000.0)",
-]
+[STEP.SEARCH.PROFILE]
+HOLD = ["PB", "KEX_AB"]
+MIRROR = ["DW_AB"]
 ```
 
-Each DE coordinate must resolve to exactly one final fitted coordinate and use
-`lin(low, high)` or `log(low, high)`. Ranges must be finite, ordered, within the
-physical parameter bounds, and positive for logarithmic searches. `SEED` is a
-required unsigned 64-bit integer.
+`HOLD` selects fitted coordinates temporarily held at their current committed
+values. ChemEx discovers exact objective factors through the dependency graph
+and optimizes nuisance coordinates independently only where independence is
+proven. It reconstructs and freshly validates one complete starting state.
+All normal `FIT` coordinates, including those in `HOLD`, are then released for
+one ordinary complete/grouped native TRF. Only that normally converged final
+TRF supplies reported parameters, uncertainty, statistics, and the commit.
+Normal TRF without preparation remains the default.
 
-During DE, other fitted coordinates such as `DW_AB` remain at the committed
-step-start values. The best eligible DE candidate initializes one fresh TRF
-that releases the complete final `FIT` set. Only that TRF can be accepted,
-committed, or used for uncertainty and statistics. DE failure does not fall back
-to direct TRF.
+`MIRROR` selects fitted constant `DW_AB` and/or `DW_AC` coordinates. After a
+successful normal nuisance fit, ChemEx tries other signs of its fitted endpoint
+DW magnitudes, retaining the other nuisance endpoint values. Zero original
+starts are supported; a fitted endpoint that stays exactly zero supplies no
+alternate magnitude. No physical magnitude is fabricated from safety bounds.
+Multiple selected DW signs are combined within each connected factor; signs
+across independent factors never form a Cartesian product. No experiment/model
+sign symmetry is assumed. Temperature-polynomial `.tc` DW coefficients and
+other DW parameterizations are not supported by `MIRROR`.
 
-Use GRID to inspect exact profiled chi-square landscapes. Use DE when a small
-set of coordinates needs stochastic basin exploration before one complete
-continuous fit. See the shipped
-three-state DCEST example at
-`examples/Experiments/DCEST_15N_3States/Methods/method_de.toml`.
+Both fields use ordinary parameter selectors. Broad selectors are projected
+onto the selected profiles; each must retain an active independent `FIT`
+coordinate. `HOLD` and `MIRROR` must be disjoint. Either may be omitted, but at
+least one must be nonempty. `SEARCH.GRID` and `SEARCH.PROFILE` are alternatives.
+
+Each nuisance attempt has a separate internal objective-request budget. Failed
+alternate trials retain successful normal endpoints. A failed normal nuisance
+fit retains that factor's original values; unsuccessful complete reconstruction
+restores the original root start. ChemEx reports incomplete preparation and
+continues with the ordinary final TRF. Preparation is bounded, optional, and
+non-authoritative; it does not guarantee a global minimum.
+
+The three-state example is
+`examples/Experiments/DCEST_15N_3States/Methods/method_profile.toml`.
+The research measured no benefit from branch trials for that particular DCEST
+start; the example illustrates syntax rather than promising improvement.
+
+`SEARCH.DE` has been retired. Remove its table to use ordinary TRF, or replace
+it with `SEARCH.PROFILE` when structured nuisance/endpoint-sign preparation is
+scientifically appropriate. Its former ranges and seed have no PROFILE
+counterparts. Legacy DE tables receive a targeted migration diagnostic.
 
 ## Statistical analyses
 
@@ -380,7 +397,7 @@ only v2 local fit.
 
 ## Outputs
 
-GRID results are written under `Grid/`. Selected-coordinate DE is an initializer
-and creates no separate result tree. MC, BS, BSN, and MCMC outputs are written
+GRID results are written under `Grid/`. PROFILE prepares a start and creates
+no separate result tree. MC, BS, BSN, and MCMC outputs are written
 under their corresponding `Statistics/` subdirectories. See
 [Outputs](outputs.mdx) for the complete layout and diagnostics.

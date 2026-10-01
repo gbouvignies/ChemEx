@@ -14,7 +14,6 @@ from chemex.configuration.method_plan import (
     ConstrainAction,
     Constraint,
     ConstraintExpression,
-    DeSearch,
     FitAction,
     FixAction,
     GridAxis,
@@ -23,6 +22,7 @@ from chemex.configuration.method_plan import (
     MethodFormatError,
     MethodPlan,
     ParameterSelector,
+    ProfilePreparation,
     SearchScale,
     SelectorExpression,
     SourceRef,
@@ -72,16 +72,6 @@ class _ResolvedConstraint:
 
 
 @dataclass(frozen=True, slots=True)
-class ResolvedDeCoordinate:
-    """One canonical DE coordinate resolved to a stable independent parameter ID."""
-
-    param_id: str
-    low: float
-    high: float
-    scale: SearchScale
-
-
-@dataclass(frozen=True, slots=True)
 class ResolvedGridAxis:
     """One GRID declaration resolved inside the current active FIT scope."""
 
@@ -104,7 +94,7 @@ class ResolvedMethodStep:
     roles: Mapping[str, ParameterRole]
     constraints: Mapping[str, CompiledConstraint]
     grid_axes: tuple[MatchedGridAxis, ...] = ()
-    de_coordinates: tuple[ResolvedDeCoordinate, ...] = ()
+    preparation: tuple[tuple[str, ...], tuple[str, ...]] = ((), ())
 
 
 def _param_name(definition: ParamDefinition) -> ParamName:
@@ -271,11 +261,14 @@ def _method_selectors(
         if isinstance(search, GridSearch):
             for axis in search.axes:
                 yield axis.selector, _source(axis.selector, axis.source)
-        elif isinstance(search, DeSearch):
-            for coordinate in search.coordinates:
+        elif isinstance(search, ProfilePreparation):
+            for selector in (*search.hold, *search.mirror):
                 yield (
-                    coordinate.selector,
-                    _source(coordinate.selector, coordinate.source),
+                    selector,
+                    _source(
+                        selector,
+                        SourceRef(Path("<method-plan>"), step.name, "SEARCH.PROFILE"),
+                    ),
                 )
 
 
@@ -712,62 +705,44 @@ def resolve_grid_axes(
     )
 
 
-def _validate_de(
-    search: DeSearch,
+def _validate_preparation(
+    search: ProfilePreparation,
     roles: dict[str, ParameterRole],
     model: SealedParameterModel,
-) -> tuple[ResolvedDeCoordinate, ...]:
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
     seen: set[str] = set()
-    resolved = resolve_de_coordinates(search, model)
-    for coordinate, resolved_coordinate in zip(
-        search.coordinates,
-        resolved,
-        strict=True,
-    ):
-        param_id = resolved_coordinate.param_id
-        if roles[param_id] is not ParameterRole.FIT:
-            raise MethodFormatError(
-                f"DE target {param_id} is not a final independent FIT coordinate",
-                coordinate.source,
+    resolved: list[tuple[str, ...]] = []
+    for field, selectors in (("HOLD", search.hold), ("MIRROR", search.mirror)):
+        ids: list[str] = []
+        for selector in selectors:
+            source = _source(
+                selector,
+                SourceRef(Path("<method-plan>"), "", f"SEARCH.PROFILE.{field}"),
             )
-        if param_id in seen:
-            raise MethodFormatError(
-                f"Duplicate DE coordinate {param_id}", coordinate.source
-            )
-        seen.add(param_id)
-        _check_bounds(
-            param_id,
-            (resolved_coordinate.low, resolved_coordinate.high),
-            model,
-            coordinate.source,
-        )
-    return resolved
-
-
-def resolve_de_coordinates(
-    search: DeSearch,
-    model: SealedParameterModel,
-) -> tuple[ResolvedDeCoordinate, ...]:
-    """Resolve validated canonical DE coordinates to stable parameter IDs."""
-    resolved: list[ResolvedDeCoordinate] = []
-    for coordinate in search.coordinates:
-        matches = _matches(coordinate.selector, model, coordinate.source)
-        _reject_protected(matches, model, coordinate.source, "DE")
-        if len(matches) != 1:
-            raise MethodFormatError(
-                "Each DE entry must resolve to exactly one final independent "
-                f"FIT coordinate; matched {len(matches)}",
-                coordinate.source,
-            )
-        resolved.append(
-            ResolvedDeCoordinate(
-                matches[0],
-                coordinate.range.low,
-                coordinate.range.high,
-                coordinate.range.scale,
-            )
-        )
-    return tuple(resolved)
+            matches = _matches(selector, model, source)
+            _reject_protected(matches, model, source, "PROFILE")
+            for key in matches:
+                if roles[key] is not ParameterRole.FIT:
+                    raise MethodFormatError(
+                        f"PROFILE target {key} is not a final independent FIT coordinate",
+                        source,
+                    )
+                if key in seen:
+                    raise MethodFormatError(
+                        f"Duplicate or overlapping PROFILE target {key}", source
+                    )
+                if field == "MIRROR" and (
+                    model.definitions[key].name not in {"DW_AB", "DW_AC"}
+                    or "tc" in model.model_name.split(".")
+                ):
+                    raise MethodFormatError(
+                        "MIRROR supports only qualified constant DW_AB/DW_AC coordinates",
+                        source,
+                    )
+                seen.add(key)
+                ids.append(key)
+        resolved.append(tuple(ids))
+    return resolved[0], resolved[1]
 
 
 def resolve_method_plan(
@@ -815,11 +790,11 @@ def resolve_method_plan(
         constraints_by_step[step.name] = constraints
         ordinals_by_step[step.name] = ordinal
         grid_axes: tuple[MatchedGridAxis, ...] = ()
-        de_coordinates: tuple[ResolvedDeCoordinate, ...] = ()
+        preparation: tuple[tuple[str, ...], tuple[str, ...]] = ((), ())
         if isinstance(step.search, GridSearch):
             grid_axes = _validate_grid(step.search, roles, model)
-        elif isinstance(step.search, DeSearch):
-            de_coordinates = _validate_de(step.search, roles, model)
+        elif isinstance(step.search, ProfilePreparation):
+            preparation = _validate_preparation(step.search, roles, model)
         resolved_steps.append(
             ResolvedMethodStep(
                 MappingProxyType(roles),
@@ -827,7 +802,7 @@ def resolve_method_plan(
                     {param_id: item.compiled for param_id, item in constraints.items()}
                 ),
                 grid_axes,
-                de_coordinates,
+                preparation,
             )
         )
     return tuple(resolved_steps)
@@ -835,3 +810,26 @@ def resolve_method_plan(
 
 def validate_method_plan(plan: MethodPlan, model: SealedParameterModel) -> None:
     resolve_method_plan(plan, model)
+
+
+def project_preparation(
+    search: ProfilePreparation,
+    resolved: tuple[tuple[str, ...], tuple[str, ...]],
+    model: SealedParameterModel,
+    final_fit_ids: tuple[str, ...],
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Project broad declarations while requiring each selector to remain active."""
+    active = frozenset(final_fit_ids)
+    for selector in (*search.hold, *search.mirror):
+        source = _source(
+            selector, SourceRef(Path("<method-plan>"), "", "SEARCH.PROFILE")
+        )
+        if not active.intersection(_matches(selector, model, source)):
+            raise MethodFormatError(
+                "PROFILE selector has no active final independent FIT coordinate",
+                source,
+            )
+    hold, mirror = resolved
+    return tuple(key for key in final_fit_ids if key in hold), tuple(
+        key for key in final_fit_ids if key in mirror
+    )

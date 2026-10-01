@@ -23,13 +23,8 @@ from chemex.messages import (
     UncertaintyProgressReporter,
     console,
     print_minimizing,
-    print_running_de,
-)
-from chemex.optimize.de_direct_trf import (
-    DeSearchExecution,
-    DeSearchInvocation,
-    DeSearchTerminal,
-    execute_de_search,
+    print_profile_preparation,
+    print_profile_preparation_result,
 )
 from chemex.optimize.deterministic_uncertainty import (
     AcceptedDeterministicFitFacts,
@@ -58,10 +53,11 @@ from chemex.optimize.grouped_direct_trf import (
 )
 from chemex.optimize.helper import execute_post_fit
 from chemex.optimize.method_compiler import (
-    DeSearchInstruction,
     GridSearchInstruction,
+    ProfilePreparationInstruction,
     SearchInstruction,
 )
+from chemex.optimize.profile_preparation import prepare_profile_start
 from chemex.optimize.profiled_grid import (
     ProfiledGridOutcome,
     execute_profiled_grid,
@@ -88,8 +84,7 @@ _TRF_OBJECTIVE_REQUESTS_PER_DIMENSION = 2000
 
 
 type DeterministicTerminalRecord = (
-    DeSearchExecution
-    | EvaluationFailure
+    EvaluationFailure
     | FitCommitOperation
     | GroupedDirectTrfOutcome
     | ProfiledGridOutcome
@@ -363,42 +358,6 @@ def _build_invocation(
     return invocation
 
 
-def _run_product_de_search(
-    search: DeSearchInstruction,
-    problem: OptimizationProblem,
-    parameterization: ActiveParameterization,
-    engine: EvaluationEngine,
-) -> OptimizationProblem:
-    invocation = DeSearchInvocation.for_product_problem(
-        problem,
-        search_coordinates=search.coordinates,
-        root_seed=search.seed,
-    )
-    print_running_de()
-    outcome = execute_de_search(problem, invocation, parameterization, engine)
-    if outcome.terminal is DeSearchTerminal.INTERRUPTED:
-        raise KeyboardInterrupt("Selected-coordinate DE search interrupted")
-    candidate = outcome.best_candidate
-    if not outcome.restart_eligible or candidate is None:
-        failure = outcome.failure
-        if (
-            outcome.terminal is DeSearchTerminal.BUDGET_EXHAUSTED
-            and failure is not None
-        ):
-            raise NativeDeterministicAnalysisError(
-                "Selected-coordinate DE search produced no eligible candidate.",
-                reason="The objective-evaluation budget was exhausted.",
-                outcome=outcome,
-                failures=(failure,),
-            )
-        raise NativeDeterministicInternalError(
-            "Selected-coordinate DE search produced no eligible candidate",
-            outcome=outcome,
-            failures=() if failure is None else (failure,),
-        )
-    return problem.restart_from(candidate.full_vector)
-
-
 def _fit_component_labels(
     decomposition: FitDecomposition,
     parameter_model: SealedParameterModel,
@@ -439,7 +398,7 @@ def _commit_resolved_continuity_if_changed(
     )
 
 
-def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product dispatcher
+def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/PROFILE product dispatcher
     experiments: Experiments,
     path: Path,
     plot: str,
@@ -529,15 +488,17 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/DE product disp
         configuration,
         starting_snapshot,
     )
-    if isinstance(search, DeSearchInstruction):
-        if run_info is not None:
-            run_info.record_stochastic_operation(step_name, "de", search.seed)
-        problem = _run_product_de_search(
-            search,
-            problem,
-            parameterization,
-            engine,
+    if isinstance(search, ProfilePreparationInstruction):
+        print_profile_preparation()
+        preparation = prepare_profile_start(
+            problem, search.hold_ids, search.mirror_ids, parameterization, engine
         )
+        print_profile_preparation_result(
+            preparation.incomplete,
+            len(preparation.fallback_factors),
+            preparation.root_fallback,
+        )
+        problem = problem.restart_from(preparation.vector)
     decomposition = FitDecomposition.from_root(problem, parameterization, engine)
     if isinstance(search, GridSearchInstruction):
         grid_axes: Mapping[str, tuple[float, ...]] | None = {

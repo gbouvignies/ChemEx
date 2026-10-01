@@ -7,13 +7,23 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
 
 ## [Unreleased]
 
+### Added
+- Optional `SEARCH.PROFILE` prepares one validated TRF start using exact
+  factor-local nuisance fits with temporarily held `HOLD` coordinates and
+  endpoint-derived constant-DW `MIRROR` trials. Preparation has bounded work,
+  reports failures, and falls back to original values; only the final normal
+  complete/grouped TRF can be accepted or committed.
+
 ### Changed
+- **Breaking Method interface:** Retired selected-coordinate `SEARCH.DE`.
+  Remove its table for ordinary TRF, or use `SEARCH.PROFILE` for structured
+  nuisance/branch preparation. DE ranges and seeds are no longer supported.
 - **Breaking model selection:** Removed the legacy `2st_rs` kinetic-model name.
   Use the composable `2st.rs` spelling instead.
 - ChemEx now validates and compiles every Method Step against the loaded
   profiles before fitting or clearing prior results. An invalid later step
   rejects the run before earlier steps can commit or create `run_info/`.
-  A step selecting no profiles is reported as skipped; its valid GRID or DE
+  A step selecting no profiles is reported as skipped; its valid GRID or PROFILE
   declaration needs no active fit coordinate. Fit results for valid, nonempty
   steps are unchanged.
 

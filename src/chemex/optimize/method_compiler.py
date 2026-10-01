@@ -5,22 +5,21 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from chemex.configuration.method_plan import (
-    DeSearch,
     GridSearch,
-    MethodFormatError,
     MethodPlan,
+    ProfilePreparation,
     ProfileSelection,
     StatisticsPlan,
 )
 from chemex.configuration.method_validation import (
     ResolvedGridAxis,
     project_grid_axes,
+    project_preparation,
     resolve_method_plan,
 )
 from chemex.containers.experiment import Experiment, project_profile_selection
 from chemex.containers.experiments import Experiments
 from chemex.containers.profile import Profile
-from chemex.optimize.de_direct_trf import DeCoordinateSemantics
 from chemex.parameters.parameterization import (
     SealedParameterModel,
     StaticParameterization,
@@ -46,12 +45,12 @@ class GridSearchInstruction:
 
 
 @dataclass(frozen=True, slots=True)
-class DeSearchInstruction:
-    coordinates: tuple[tuple[str, float, float, DeCoordinateSemantics], ...]
-    seed: int
+class ProfilePreparationInstruction:
+    hold_ids: tuple[str, ...]
+    mirror_ids: tuple[str, ...]
 
 
-type SearchInstruction = GridSearchInstruction | DeSearchInstruction | None
+type SearchInstruction = GridSearchInstruction | ProfilePreparationInstruction | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,33 +130,11 @@ def compile_method_plan(
                 final_fit_ids=parameterization.fit_ids,
             )
             search = GridSearchInstruction(axes)
-        elif isinstance(step.search, DeSearch):
-            active_fit = frozenset(parameterization.fit_ids)
-            for declaration, coordinate in zip(
-                step.search.coordinates, meaning.de_coordinates, strict=True
-            ):
-                if coordinate.param_id not in active_fit:
-                    raise MethodFormatError(
-                        f"DE target {coordinate.param_id} has no active final "
-                        "independent FIT coordinate",
-                        declaration.source,
-                    )
-            search = DeSearchInstruction(
-                tuple(
-                    (
-                        coordinate.param_id,
-                        coordinate.low,
-                        coordinate.high,
-                        (
-                            DeCoordinateSemantics.LINEAR
-                            if coordinate.scale.value == "lin"
-                            else DeCoordinateSemantics.LOG
-                        ),
-                    )
-                    for coordinate in meaning.de_coordinates
-                ),
-                step.search.seed,
+        elif isinstance(step.search, ProfilePreparation):
+            hold, mirror = project_preparation(
+                step.search, meaning.preparation, model, parameterization.fit_ids
             )
+            search = ProfilePreparationInstruction(hold, mirror)
         steps.append(
             FitStep(
                 step.name,

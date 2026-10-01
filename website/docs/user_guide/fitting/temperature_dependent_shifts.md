@@ -77,7 +77,7 @@ TREF = 20.0
 `TREF` is shared across all residues, nuclei, fields, concentrations, Experiment
 Types, and temperatures in that analysis. It cannot be residue-, nucleus-, or
 condition-scoped, and it cannot have fitting bounds or a grid step. Method Plan
-`FIT`, `FIX`, `CONSTRAIN`, `GRID`, and DE-coordinate operations cannot target it.
+`FIT`, `FIX`, `CONSTRAIN`, `GRID`, and PROFILE operations cannot target it.
 
 The coefficients retain their normal spin/nucleus and state-pair scope but omit
 temperature and magnetic field. Consequently one coefficient line is shared by

@@ -8,18 +8,18 @@ import pytest
 from chemex.configuration.method_input import prepare_method_plan
 from chemex.configuration.method_plan import (
     ConstrainAction,
-    DeSearch,
     FitAction,
     FixAction,
     FormatOrigin,
     MethodFormatError,
     MethodPlan,
+    ProfilePreparation,
     ProfileSelection,
     StepPlan,
 )
 from chemex.configuration.method_validation import (
-    resolve_de_coordinates,
     resolve_grid_axes,
+    resolve_method_plan,
 )
 from chemex.configuration.methods import Method, Statistics, read_method_plan
 from chemex.parameters.parameterization import (
@@ -435,44 +435,6 @@ AXES = ["[PB] = values(0.01, 0.02, 0.05)"]
     )
 
 
-def test_v2_de_parses_only_seeded_two_argument_coordinate_ranges(
-    tmp_path: Path,
-) -> None:
-    method = _write(
-        tmp_path / "de.toml",
-        """
-FORMAT_VERSION = 2
-[STEP.SEARCH.DE]
-SEED = 597
-COORDINATES = [
-  "[PB] = log(0.01, 0.20)",
-  "[KEX_AB] = lin(100, 5000)",
-]
-""",
-    )
-
-    search = read_method_plan([method]).steps[0].search
-
-    assert isinstance(search, DeSearch)
-    assert search.seed == 597
-    assert tuple(coordinate.render() for coordinate in search.coordinates) == (
-        "[PB] = log(0.01, 0.2)",
-        "[KEX_AB] = lin(100.0, 5000.0)",
-    )
-
-    invalid = _write(
-        tmp_path / "invalid-de.toml",
-        """
-FORMAT_VERSION = 2
-[STEP.SEARCH.DE]
-SEED = 1
-COORDINATES = ["[PB] = values(0.01, 0.20)"]
-""",
-    )
-    with pytest.raises(MethodFormatError, match="DE accepts only lin"):
-        read_method_plan([invalid])
-
-
 def test_v2_compact_and_expanded_statistics_normalize_to_typed_requests(
     tmp_path: Path,
 ) -> None:
@@ -715,61 +677,6 @@ AXES = ["[PB] = LOG(0.01, 0.2, 3)"]
     assert "[STEP.STATISTICS.MC]\nREPLICATES = 10" in rendered
 
 
-def test_de_validation_requires_one_final_independent_fit_coordinate(
-    tmp_path: Path,
-) -> None:
-    model = _parameter_model(
-        ParamDefinition("pb-600", "PB", "", (("h_larmor_frq", 600.0),), 0.1, 0.0, 1.0),
-        ParamDefinition("pb-800", "PB", "", (("h_larmor_frq", 800.0),), 0.1, 0.0, 1.0),
-    )
-    broad = _write(
-        tmp_path / "broad-de.toml",
-        """
-FORMAT_VERSION = 2
-[STEP]
-ROLES = [{ FIT = ["PB"] }]
-[STEP.SEARCH.DE]
-SEED = 1
-COORDINATES = ["[PB] = lin(0.01, 0.2)"]
-""",
-    )
-    with pytest.raises(MethodFormatError, match="exactly one.*matched 2"):
-        read_method_plan([broad]).validate(model)
-
-    exact = _write(
-        tmp_path / "exact-de.toml",
-        """
-FORMAT_VERSION = 2
-[STEP]
-ROLES = [{ FIT = ["PB"] }]
-[STEP.SEARCH.DE]
-SEED = 1
-COORDINATES = ["[PB, B0->600MHz] = lin(0.01, 0.2)"]
-""",
-    )
-    read_method_plan([exact]).validate(model)
-
-
-def test_de_validation_rejects_ranges_outside_physical_bounds(tmp_path: Path) -> None:
-    model = _parameter_model(
-        ParamDefinition("pb", "PB", "", (), 0.1, 0.0, 1.0),
-    )
-    method = _write(
-        tmp_path / "out-of-bounds-de.toml",
-        """
-FORMAT_VERSION = 2
-[STEP]
-ROLES = [{ FIT = ["PB"] }]
-[STEP.SEARCH.DE]
-SEED = 597
-COORDINATES = ["[PB] = lin(0.1, 1.1)"]
-""",
-    )
-
-    with pytest.raises(MethodFormatError, match="outside physical bounds"):
-        read_method_plan([method]).validate(model)
-
-
 def test_representative_multistep_v1_and_v2_workflows_are_structurally_equivalent(
     tmp_path: Path,
 ) -> None:
@@ -834,8 +741,12 @@ def test_all_shipped_methods_use_canonical_v2_and_parse() -> None:
         assert plan.format_origin is FormatOrigin.V2
         assert plan.render() == method.read_text(encoding="utf-8")
 
-    de_example = next(path for path in methods if path.name == "method_de.toml")
-    assert isinstance(read_method_plan([de_example]).steps[0].search, DeSearch)
+    profile_example = next(
+        path for path in methods if path.name == "method_profile.toml"
+    )
+    assert isinstance(
+        read_method_plan([profile_example]).steps[0].search, ProfilePreparation
+    )
 
 
 def test_method_plan_is_deeply_immutable(tmp_path: Path) -> None:
@@ -1156,7 +1067,7 @@ AXES = [
     assert tuple(axis.declaration_ordinal for axis in resolved) == (0, 1)
 
 
-@pytest.mark.parametrize("search_kind", ("GRID", "DE"))
+@pytest.mark.parametrize("search_kind", ("GRID", "PROFILE"))
 def test_search_condition_selector_matches_its_named_field(
     tmp_path: Path,
     search_kind: str,
@@ -1183,26 +1094,23 @@ def test_search_condition_selector_matches_its_named_field(
             10.0,
         ),
     )
-    field = "AXES" if search_kind == "GRID" else "COORDINATES"
+    field = "AXES" if search_kind == "GRID" else "HOLD"
     coordinate = (
         "[KEX_AB, [P]->2e-4] = lin(1, 3, 3)"
         if search_kind == "GRID"
-        else "[KEX_AB, [P]->2e-4] = lin(1, 3)"
+        else "KEX_AB, [P]->2e-4"
     )
     method = _write(
         tmp_path / "condition-search.toml",
         f"FORMAT_VERSION = 2\n[STEP.SEARCH.{search_kind}]\n"
-        f'{field} = ["{coordinate}"]\n'
-        f"{'SEED = 1' if search_kind == 'DE' else ''}\n",
+        f'{field} = ["{coordinate}"]\n',
     )
     plan = read_method_plan([method])
     plan.validate(model)
     search = plan.steps[0].search
 
-    if isinstance(search, DeSearch):
-        resolved_ids = tuple(
-            item.param_id for item in resolve_de_coordinates(search, model)
-        )
+    if isinstance(search, ProfilePreparation):
+        resolved_ids = resolve_method_plan(plan, model)[0].preparation[0]
     else:
         assert search is not None
         resolved_ids = tuple(

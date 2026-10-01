@@ -811,9 +811,24 @@ def print_running_grid() -> None:
     console.print(Text("  • Running the grid search..."))
 
 
-def print_running_de() -> None:
-    """Inform the user that selected-coordinate basin search is in progress."""
-    console.print(Text("  • Running selected-coordinate DE search..."))
+def print_profile_preparation() -> None:
+    """Announce optional, non-authoritative nuisance preparation."""
+    console.print(Text("  • Preparing factor-local nuisance/DW starts..."))
+
+
+def print_profile_preparation_result(
+    incomplete: bool, fallback_factors: int, root_fallback: bool
+) -> None:
+    """Surface incomplete attempts without claiming successful profiling."""
+    if incomplete:
+        detail = (
+            "original root start restored"
+            if root_fallback
+            else f"{fallback_factors} factor(s) kept original values"
+        )
+        console.print(
+            Text(f"  • Preparation incomplete ({detail}); continuing with full TRF.")
+        )
 
 
 def print_running_statistics(name: str) -> None:

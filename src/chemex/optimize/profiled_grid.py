@@ -400,6 +400,7 @@ def _fit_factor_point(
     progress_observer: ContextualProgressObserver | None,
     factor_count: int,
     point_count: int,
+    nuisance_start_items: tuple[tuple[str, float], ...] = (),
 ) -> ProfiledGridPoint:
     child = problem.derive_profiled_grid_point(
         factor_identity=factor.identity,
@@ -407,6 +408,7 @@ def _fit_factor_point(
         projected_plan_identity=child_engine.plan.identity,
         grid_items=axis_items,
         controlled_ids=factor.nuisance_ids,
+        nuisance_start_items=nuisance_start_items,
     )
     invocation = DirectTrfInvocation.for_problem(
         child,
@@ -558,31 +560,13 @@ def _validate_selected_factor_evidence(
     return None
 
 
-def execute_profiled_grid(  # noqa: C901 - closed factor/point lifecycle dispatcher
+def build_profiled_factors(
     problem: OptimizationProblem,
-    axes: Mapping[str, Sequence[float]],
+    grid_ids: tuple[str, ...],
     parameterization: ActiveParameterization,
     engine: EvaluationEngine,
-    *,
-    objective_request_budget: int,
-    cancellation: CancellationToken | None = None,
-    progress_observer: ContextualProgressObserver | None = None,
-) -> ProfiledGridOutcome:
-    """Evaluate exact factor-local profiled grids and accept one root aggregate."""
-    problem.validate_parameterization(parameterization)
-    if engine.plan.identity != problem.evaluation_plan_identity:
-        raise ProfiledGridConstructionError(
-            "Profiled GRID evaluator belongs to another root problem"
-        )
-    ordered_axes = {
-        param_id: tuple(float(value) for value in values)
-        for param_id, values in axes.items()
-    }
-    grid_ids = tuple(ordered_axes)
-    if not grid_ids or not set(grid_ids).issubset(problem.controlled_ids):
-        raise ProfiledGridConstructionError(
-            "Profiled GRID axes must be active final FIT coordinates"
-        )
+) -> tuple[ProfiledGridFactor, ...]:
+    """Prove exact nuisance factors, retaining conservative affine coupling."""
     dependencies = _profile_dependencies(problem, parameterization, engine)
     factors = discover_profiled_grid_factors(
         dependencies,
@@ -622,6 +606,35 @@ def execute_profiled_grid(  # noqa: C901 - closed factor/point lifecycle dispatc
                 ),
             ),
         )
+    return factors
+
+
+def execute_profiled_grid(  # noqa: C901 - closed factor/point lifecycle dispatcher
+    problem: OptimizationProblem,
+    axes: Mapping[str, Sequence[float]],
+    parameterization: ActiveParameterization,
+    engine: EvaluationEngine,
+    *,
+    objective_request_budget: int,
+    cancellation: CancellationToken | None = None,
+    progress_observer: ContextualProgressObserver | None = None,
+) -> ProfiledGridOutcome:
+    """Evaluate exact factor-local profiled grids and accept one root aggregate."""
+    problem.validate_parameterization(parameterization)
+    if engine.plan.identity != problem.evaluation_plan_identity:
+        raise ProfiledGridConstructionError(
+            "Profiled GRID evaluator belongs to another root problem"
+        )
+    ordered_axes = {
+        param_id: tuple(float(value) for value in values)
+        for param_id, values in axes.items()
+    }
+    grid_ids = tuple(ordered_axes)
+    if not grid_ids or not set(grid_ids).issubset(problem.controlled_ids):
+        raise ProfiledGridConstructionError(
+            "Profiled GRID axes must be active final FIT coordinates"
+        )
+    factors = build_profiled_factors(problem, grid_ids, parameterization, engine)
     token = CancellationToken() if cancellation is None else cancellation
     factor_results: list[ProfiledGridFactorResult] = []
     for factor in factors:
