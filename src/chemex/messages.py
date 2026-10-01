@@ -817,7 +817,10 @@ def print_profile_preparation() -> None:
 
 
 def print_profile_preparation_result(
-    incomplete: bool, fallback_factors: int, root_fallback: bool
+    incomplete: bool,
+    fallback_factors: int,
+    root_fallback: bool,
+    failures: tuple[str, ...] = (),
 ) -> None:
     """Surface incomplete attempts without claiming successful profiling."""
     if incomplete:
@@ -829,6 +832,8 @@ def print_profile_preparation_result(
         console.print(
             Text(f"  • Preparation incomplete ({detail}); continuing with full TRF.")
         )
+        for failure in dict.fromkeys(failures):
+            console.print(Text(f"    {failure}"))
 
 
 def print_running_statistics(name: str) -> None:

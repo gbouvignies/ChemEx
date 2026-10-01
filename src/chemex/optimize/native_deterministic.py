@@ -497,6 +497,11 @@ def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/PROFILE product
             preparation.incomplete,
             len(preparation.fallback_factors),
             preparation.root_fallback,
+            tuple(
+                point.failure
+                for point in preparation.attempts
+                if point.failure is not None
+            ),
         )
         problem = problem.restart_from(preparation.vector)
     decomposition = FitDecomposition.from_root(problem, parameterization, engine)

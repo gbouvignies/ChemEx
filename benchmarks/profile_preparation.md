@@ -79,6 +79,65 @@ still costs roughly 90 seconds on this machine. A universal 1000 cap is faster
 for that attempt but markedly slower overall for the useful CEST workflow.
 This is an explicit tradeoff, not a claim that all preparation is cheap.
 
+## Follow-up: bounded MIRROR cardinality and alternate budgets
+
+MIRROR now permits at most **two selected coordinates per connected factor**,
+including selected coordinates whose fitted endpoint is zero. The guard runs
+before sign enumeration; thus a qualified factor has at most three alternate
+trials. Oversized factors retain their successful normal endpoint, record a
+failed preparation branch request with the explicit diagnostic, skip all sign
+trials, and continue to fresh root validation and the authoritative final TRF.
+The runtime reports failure reasons. There is no silent truncation or root sign
+product. Twenty independent single-DW factors remain forty local fits.
+
+Normal nuisance preparation retains `min(600*(nvars+1),3000)`. Alternate-only
+caps of 100, 200, 500, 1000 and 3000 were compared on the same real-data starts.
+The follow-up rows are retained under `alternate_cap_comparison` in the JSON;
+normal budgets, local/end-state values, actual objective requests, model counts
+and times are retained. Final TRF is run again only when the reconstructed
+vector differs; reused final measurements are explicitly marked.
+
+| Case | Alternate cap | Preparation requests | Failed alternate fits | Prep seconds | Final χ² |
+|---|---:|---:|---:|---:|---:|
+| CPMG | 100 / 200 / 500 / 1000 / 3000 | 183 | 0 | ~0.14 | 429.6700333 |
+| CEST | 100 | 3109 | 1 | 15.94 | 1460.0390471 |
+| CEST | 200 | 3209 | 1 | 17.17 | 1460.0390471 |
+| CEST | 500 | 3394 | 0 | 19.91 | 1460.0390471 |
+| CEST | 1000 / 3000 | 3394 | 0 | ~20.0 | 1460.0390471 |
+| DCEST | 100 | 389 | 2 | 12.33 | 1008.6594658 |
+| DCEST | 200 | 589 | 2 | 18.26 | 1008.6594658 |
+| DCEST | 500 | 799 | 0 | 24.87 | 1008.6594758 |
+| DCEST | 1000 / 3000 | 799 | 0 | ~25.0 | 1008.6594758 |
+
+**Selected alternate cap: 500 requests.** This is the smallest tested cap
+preserving every qualified successful local branch endpoint. CPMG's useful
+alternates finish within 100; the longest successful CEST alternate takes 385
+requests, and the longest DCEST alternate takes 323. The 100/200 caps save work
+in the cases where branches add no measured benefit, and successful-normal
+fallback preserves their useful complete basin. The 500 cap conservatively
+preserves the qualified branch evidence while reducing the maximum work of
+an alternate sixfold compared with the previous 3000 ceiling. It does not save
+work on these already-converged branches; this is a worst-case bound reduction.
+No small timing difference is treated as meaningful, and the DCEST final
+~1e-5 variation is not a distinct basin.
+
+With at most two selected mirrors, each factor costs at most one normal attempt
+(up to 3000 requests) plus three alternates (up to 1500 requests together),
+excluding fresh materialization evaluations. Final TRF has its existing budget.
+The difficult DCEST normal attempt can still take ~90 seconds at 3000 requests;
+the smaller alternate cap does not change that normal-fit limitation.
+
+Follow-up validation: **99 tests passed** across preparation (including real
+CPMG/CEST/DCEST), GRID, Method/compiler, zero-valued oversized selections,
+additive independent factors, rejected connected factors, reporting and branch
+budget exhaustion. Ruff/formatting, ty and diff checks pass. The complete suite
+was not repeated for this focused follow-up; the initial complete-suite results
+and confirmed main-branch failures remain documented below.
+
+Current total production diff from main: **473 added, 1693 removed; net −1220**.
+The follow-up itself changes 38 source lines net and updates the existing
+benchmark runner/traces, preparation tests, Method docs and changelog.
+
 ## Scientific and acceptance semantics
 
 `SEARCH.PROFILE` uses `HOLD` and `MIRROR` selectors, with no ranges or seed.
@@ -110,9 +169,9 @@ global optimizer or online learning is justified by these cases.
 
 ## Validation and change size
 
-Production source diff: **435 lines added, 1693 removed; net −1258** (including
+Initial production source diff: **435 lines added, 1693 removed; net −1258** (including
 blank lines and docstrings, excluding tests, research artifacts and docs).
-The new preparation module is 201 lines. No public solver options or generic
+The initial preparation module was 201 lines. No public solver options or generic
 restart/candidate framework were introduced.
 
 Focused checks covered Method/compiler, GRID, native direct/grouped TRF,

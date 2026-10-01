@@ -248,7 +248,11 @@ successful normal nuisance fit, ChemEx tries other signs of its fitted endpoint
 DW magnitudes, retaining the other nuisance endpoint values. Zero original
 starts are supported; a fitted endpoint that stays exactly zero supplies no
 alternate magnitude. No physical magnitude is fabricated from safety bounds.
-Multiple selected DW signs are combined within each connected factor; signs
+At most two selected MIRROR coordinates are qualified within each connected
+factor, giving at most three alternate sign trials. The limit counts selected
+coordinates even when their fitted values are zero. A factor exceeding this
+limit keeps its successful normal nuisance endpoint, skips its sign trials,
+and reports the unsupported selection before continuing with full TRF. Signs
 across independent factors never form a Cartesian product. No experiment/model
 sign symmetry is assumed. Temperature-polynomial `.tc` DW coefficients and
 other DW parameterizations are not supported by `MIRROR`.
@@ -258,7 +262,10 @@ onto the selected profiles; each must retain an active independent `FIT`
 coordinate. `HOLD` and `MIRROR` must be disjoint. Either may be omitted, but at
 least one must be nonempty. `SEARCH.GRID` and `SEARCH.PROFILE` are alternatives.
 
-Each nuisance attempt has a separate internal objective-request budget. Failed
+Normal nuisance fits retain the internal `min(600 × (nvars + 1), 3000)`
+objective-request budget. Alternate sign trials have a smaller 500-request cap;
+the final authoritative TRF budget is unchanged. These are request ceilings,
+not wall-clock timeouts or user tuning options. Failed
 alternate trials retain successful normal endpoints. A failed normal nuisance
 fit retains that factor's original values; unsuccessful complete reconstruction
 restores the original root start. ChemEx reports incomplete preparation and

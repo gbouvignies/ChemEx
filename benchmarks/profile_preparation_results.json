@@ -5286,5 +5286,3197 @@
       "passed": 4,
       "seconds": 2.08
     }
+  },
+  "alternate_cap_comparison": [
+    {
+      "case": "cpmg",
+      "alternate_cap": 100,
+      "normal_cap": 3000,
+      "preparation": {
+        "seconds": 0.14263495900013368,
+        "model_calculations": 306,
+        "requests": 183,
+        "evaluations": 183,
+        "profile_evaluations_upper": 366,
+        "local_refinements": 10,
+        "calls": [
+          {
+            "requests": 20,
+            "evaluations": 20,
+            "profile_evaluations_upper": 40,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_15N",
+              "__R2_A_15N_500_0MHZ",
+              "__R2_A_15N_800_0MHZ"
+            ],
+            "start": [
+              2.0,
+              4.5551345598138235,
+              5.274540394660508
+            ],
+            "chi2": 63.52519383603199
+          },
+          {
+            "requests": 12,
+            "evaluations": 12,
+            "profile_evaluations_upper": 24,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_15N",
+              "__R2_A_15N_500_0MHZ",
+              "__R2_A_15N_800_0MHZ"
+            ],
+            "start": [
+              -1.969631251135373,
+              3.9803869902568505,
+              6.265029601826201
+            ],
+            "chi2": 63.18096779682004
+          },
+          {
+            "requests": 31,
+            "evaluations": 31,
+            "profile_evaluations_upper": 62,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_31N",
+              "__R2_A_31N_500_0MHZ",
+              "__R2_A_31N_800_0MHZ"
+            ],
+            "start": [
+              2.0,
+              4.5551345598138235,
+              5.274540394660508
+            ],
+            "chi2": 153.3722448200528
+          },
+          {
+            "requests": 12,
+            "evaluations": 12,
+            "profile_evaluations_upper": 24,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_31N",
+              "__R2_A_31N_500_0MHZ",
+              "__R2_A_31N_800_0MHZ"
+            ],
+            "start": [
+              -1.9642383233788931,
+              5.815960865007757,
+              7.877093867901306
+            ],
+            "chi2": 150.7317671740578
+          },
+          {
+            "requests": 20,
+            "evaluations": 20,
+            "profile_evaluations_upper": 40,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_33N",
+              "__R2_A_33N_500_0MHZ",
+              "__R2_A_33N_800_0MHZ"
+            ],
+            "start": [
+              2.0,
+              4.5551345598138235,
+              5.274540394660508
+            ],
+            "chi2": 85.56881465407028
+          },
+          {
+            "requests": 12,
+            "evaluations": 12,
+            "profile_evaluations_upper": 24,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_33N",
+              "__R2_A_33N_500_0MHZ",
+              "__R2_A_33N_800_0MHZ"
+            ],
+            "start": [
+              -1.800240162201103,
+              4.0046615285183025,
+              6.152223368180412
+            ],
+            "chi2": 85.50528988200757
+          },
+          {
+            "requests": 28,
+            "evaluations": 28,
+            "profile_evaluations_upper": 56,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_34N",
+              "__R2_A_34N_500_0MHZ",
+              "__R2_A_34N_800_0MHZ"
+            ],
+            "start": [
+              2.0,
+              4.5551345598138235,
+              5.274540394660508
+            ],
+            "chi2": 73.64239263562256
+          },
+          {
+            "requests": 16,
+            "evaluations": 16,
+            "profile_evaluations_upper": 32,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_34N",
+              "__R2_A_34N_500_0MHZ",
+              "__R2_A_34N_800_0MHZ"
+            ],
+            "start": [
+              -3.5416483913362056,
+              4.144628907635136,
+              5.8323194295237375
+            ],
+            "chi2": 72.09467003454745
+          },
+          {
+            "requests": 20,
+            "evaluations": 20,
+            "profile_evaluations_upper": 40,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_37N",
+              "__R2_A_37N_500_0MHZ",
+              "__R2_A_37N_800_0MHZ"
+            ],
+            "start": [
+              2.0,
+              4.5551345598138235,
+              5.274540394660508
+            ],
+            "chi2": 88.99225344740688
+          },
+          {
+            "requests": 12,
+            "evaluations": 12,
+            "profile_evaluations_upper": 24,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_37N",
+              "__R2_A_37N_500_0MHZ",
+              "__R2_A_37N_800_0MHZ"
+            ],
+            "start": [
+              -1.6744622571098677,
+              3.654519928870604,
+              5.2866898714627935
+            ],
+            "chi2": 88.60692513963502
+          }
+        ]
+      },
+      "fallback_factors": [],
+      "root_fallback": false,
+      "incomplete": false,
+      "failed_attempts": 0,
+      "final": {
+        "seconds": 0.12214020900137257,
+        "model_calculations": 270,
+        "requests": 90,
+        "evaluations": 90,
+        "profile_evaluations_upper": 900,
+        "local_refinements": 1,
+        "calls": [
+          {
+            "requests": 90,
+            "evaluations": 90,
+            "profile_evaluations_upper": 900,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_15N",
+              "__DW_AB_31N",
+              "__DW_AB_33N",
+              "__DW_AB_34N",
+              "__DW_AB_37N",
+              "__KEX_AB",
+              "__PB",
+              "__R2_A_15N_500_0MHZ",
+              "__R2_A_15N_800_0MHZ",
+              "__R2_A_31N_500_0MHZ",
+              "__R2_A_31N_800_0MHZ",
+              "__R2_A_33N_500_0MHZ",
+              "__R2_A_33N_800_0MHZ",
+              "__R2_A_34N_500_0MHZ",
+              "__R2_A_34N_800_0MHZ",
+              "__R2_A_37N_500_0MHZ",
+              "__R2_A_37N_800_0MHZ"
+            ],
+            "start": [
+              -1.9700153743229585,
+              -1.9684616982562715,
+              -1.8001772188185716,
+              -3.5303582713097152,
+              -1.675611547533888,
+              400.0,
+              0.07,
+              3.976444739799578,
+              6.255249736726038,
+              5.800288431460345,
+              7.8940113174535576,
+              4.004137033567727,
+              6.156076515155316,
+              4.171178812888639,
+              5.8588458390249665,
+              3.6516512391430624,
+              5.2797909557200775
+            ],
+            "chi2": 429.6700333172931
+          }
+        ],
+        "terminal": "accepted",
+        "chi2": 429.6700333172931,
+        "vector": [
+          -2.0018229502244798,
+          -1.9988087307411846,
+          -1.8213502303372369,
+          -3.6175683215094465,
+          -1.694729260155378,
+          383.0687728955269,
+          0.07009423389538129,
+          3.9784459046300618,
+          6.3211118413775225,
+          5.80398072778135,
+          7.977305951407912,
+          4.0176534614616575,
+          6.236732151242962,
+          4.181824400510117,
+          6.0109008597706275,
+          3.6606630590540243,
+          5.35158673770291
+        ]
+      },
+      "reused_final_measurement": false
+    },
+    {
+      "case": "cpmg",
+      "alternate_cap": 200,
+      "normal_cap": 3000,
+      "preparation": {
+        "seconds": 0.14089325000168174,
+        "model_calculations": 306,
+        "requests": 183,
+        "evaluations": 183,
+        "profile_evaluations_upper": 366,
+        "local_refinements": 10,
+        "calls": [
+          {
+            "requests": 20,
+            "evaluations": 20,
+            "profile_evaluations_upper": 40,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_15N",
+              "__R2_A_15N_500_0MHZ",
+              "__R2_A_15N_800_0MHZ"
+            ],
+            "start": [
+              2.0,
+              4.5551345598138235,
+              5.274540394660508
+            ],
+            "chi2": 63.52519383603199
+          },
+          {
+            "requests": 12,
+            "evaluations": 12,
+            "profile_evaluations_upper": 24,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_15N",
+              "__R2_A_15N_500_0MHZ",
+              "__R2_A_15N_800_0MHZ"
+            ],
+            "start": [
+              -1.969631251135373,
+              3.9803869902568505,
+              6.265029601826201
+            ],
+            "chi2": 63.18096779682004
+          },
+          {
+            "requests": 31,
+            "evaluations": 31,
+            "profile_evaluations_upper": 62,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_31N",
+              "__R2_A_31N_500_0MHZ",
+              "__R2_A_31N_800_0MHZ"
+            ],
+            "start": [
+              2.0,
+              4.5551345598138235,
+              5.274540394660508
+            ],
+            "chi2": 153.3722448200528
+          },
+          {
+            "requests": 12,
+            "evaluations": 12,
+            "profile_evaluations_upper": 24,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_31N",
+              "__R2_A_31N_500_0MHZ",
+              "__R2_A_31N_800_0MHZ"
+            ],
+            "start": [
+              -1.9642383233788931,
+              5.815960865007757,
+              7.877093867901306
+            ],
+            "chi2": 150.7317671740578
+          },
+          {
+            "requests": 20,
+            "evaluations": 20,
+            "profile_evaluations_upper": 40,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_33N",
+              "__R2_A_33N_500_0MHZ",
+              "__R2_A_33N_800_0MHZ"
+            ],
+            "start": [
+              2.0,
+              4.5551345598138235,
+              5.274540394660508
+            ],
+            "chi2": 85.56881465407028
+          },
+          {
+            "requests": 12,
+            "evaluations": 12,
+            "profile_evaluations_upper": 24,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_33N",
+              "__R2_A_33N_500_0MHZ",
+              "__R2_A_33N_800_0MHZ"
+            ],
+            "start": [
+              -1.800240162201103,
+              4.0046615285183025,
+              6.152223368180412
+            ],
+            "chi2": 85.50528988200757
+          },
+          {
+            "requests": 28,
+            "evaluations": 28,
+            "profile_evaluations_upper": 56,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_34N",
+              "__R2_A_34N_500_0MHZ",
+              "__R2_A_34N_800_0MHZ"
+            ],
+            "start": [
+              2.0,
+              4.5551345598138235,
+              5.274540394660508
+            ],
+            "chi2": 73.64239263562256
+          },
+          {
+            "requests": 16,
+            "evaluations": 16,
+            "profile_evaluations_upper": 32,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_34N",
+              "__R2_A_34N_500_0MHZ",
+              "__R2_A_34N_800_0MHZ"
+            ],
+            "start": [
+              -3.5416483913362056,
+              4.144628907635136,
+              5.8323194295237375
+            ],
+            "chi2": 72.09467003454745
+          },
+          {
+            "requests": 20,
+            "evaluations": 20,
+            "profile_evaluations_upper": 40,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_37N",
+              "__R2_A_37N_500_0MHZ",
+              "__R2_A_37N_800_0MHZ"
+            ],
+            "start": [
+              2.0,
+              4.5551345598138235,
+              5.274540394660508
+            ],
+            "chi2": 88.99225344740688
+          },
+          {
+            "requests": 12,
+            "evaluations": 12,
+            "profile_evaluations_upper": 24,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_37N",
+              "__R2_A_37N_500_0MHZ",
+              "__R2_A_37N_800_0MHZ"
+            ],
+            "start": [
+              -1.6744622571098677,
+              3.654519928870604,
+              5.2866898714627935
+            ],
+            "chi2": 88.60692513963502
+          }
+        ]
+      },
+      "fallback_factors": [],
+      "root_fallback": false,
+      "incomplete": false,
+      "failed_attempts": 0,
+      "final": {
+        "seconds": 0.12214020900137257,
+        "model_calculations": 270,
+        "requests": 90,
+        "evaluations": 90,
+        "profile_evaluations_upper": 900,
+        "local_refinements": 1,
+        "calls": [
+          {
+            "requests": 90,
+            "evaluations": 90,
+            "profile_evaluations_upper": 900,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_15N",
+              "__DW_AB_31N",
+              "__DW_AB_33N",
+              "__DW_AB_34N",
+              "__DW_AB_37N",
+              "__KEX_AB",
+              "__PB",
+              "__R2_A_15N_500_0MHZ",
+              "__R2_A_15N_800_0MHZ",
+              "__R2_A_31N_500_0MHZ",
+              "__R2_A_31N_800_0MHZ",
+              "__R2_A_33N_500_0MHZ",
+              "__R2_A_33N_800_0MHZ",
+              "__R2_A_34N_500_0MHZ",
+              "__R2_A_34N_800_0MHZ",
+              "__R2_A_37N_500_0MHZ",
+              "__R2_A_37N_800_0MHZ"
+            ],
+            "start": [
+              -1.9700153743229585,
+              -1.9684616982562715,
+              -1.8001772188185716,
+              -3.5303582713097152,
+              -1.675611547533888,
+              400.0,
+              0.07,
+              3.976444739799578,
+              6.255249736726038,
+              5.800288431460345,
+              7.8940113174535576,
+              4.004137033567727,
+              6.156076515155316,
+              4.171178812888639,
+              5.8588458390249665,
+              3.6516512391430624,
+              5.2797909557200775
+            ],
+            "chi2": 429.6700333172931
+          }
+        ],
+        "terminal": "accepted",
+        "chi2": 429.6700333172931,
+        "vector": [
+          -2.0018229502244798,
+          -1.9988087307411846,
+          -1.8213502303372369,
+          -3.6175683215094465,
+          -1.694729260155378,
+          383.0687728955269,
+          0.07009423389538129,
+          3.9784459046300618,
+          6.3211118413775225,
+          5.80398072778135,
+          7.977305951407912,
+          4.0176534614616575,
+          6.236732151242962,
+          4.181824400510117,
+          6.0109008597706275,
+          3.6606630590540243,
+          5.35158673770291
+        ]
+      },
+      "reused_final_measurement": true
+    },
+    {
+      "case": "cpmg",
+      "alternate_cap": 500,
+      "normal_cap": 3000,
+      "preparation": {
+        "seconds": 0.13911337499666843,
+        "model_calculations": 306,
+        "requests": 183,
+        "evaluations": 183,
+        "profile_evaluations_upper": 366,
+        "local_refinements": 10,
+        "calls": [
+          {
+            "requests": 20,
+            "evaluations": 20,
+            "profile_evaluations_upper": 40,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_15N",
+              "__R2_A_15N_500_0MHZ",
+              "__R2_A_15N_800_0MHZ"
+            ],
+            "start": [
+              2.0,
+              4.5551345598138235,
+              5.274540394660508
+            ],
+            "chi2": 63.52519383603199
+          },
+          {
+            "requests": 12,
+            "evaluations": 12,
+            "profile_evaluations_upper": 24,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_15N",
+              "__R2_A_15N_500_0MHZ",
+              "__R2_A_15N_800_0MHZ"
+            ],
+            "start": [
+              -1.969631251135373,
+              3.9803869902568505,
+              6.265029601826201
+            ],
+            "chi2": 63.18096779682004
+          },
+          {
+            "requests": 31,
+            "evaluations": 31,
+            "profile_evaluations_upper": 62,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_31N",
+              "__R2_A_31N_500_0MHZ",
+              "__R2_A_31N_800_0MHZ"
+            ],
+            "start": [
+              2.0,
+              4.5551345598138235,
+              5.274540394660508
+            ],
+            "chi2": 153.3722448200528
+          },
+          {
+            "requests": 12,
+            "evaluations": 12,
+            "profile_evaluations_upper": 24,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_31N",
+              "__R2_A_31N_500_0MHZ",
+              "__R2_A_31N_800_0MHZ"
+            ],
+            "start": [
+              -1.9642383233788931,
+              5.815960865007757,
+              7.877093867901306
+            ],
+            "chi2": 150.7317671740578
+          },
+          {
+            "requests": 20,
+            "evaluations": 20,
+            "profile_evaluations_upper": 40,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_33N",
+              "__R2_A_33N_500_0MHZ",
+              "__R2_A_33N_800_0MHZ"
+            ],
+            "start": [
+              2.0,
+              4.5551345598138235,
+              5.274540394660508
+            ],
+            "chi2": 85.56881465407028
+          },
+          {
+            "requests": 12,
+            "evaluations": 12,
+            "profile_evaluations_upper": 24,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_33N",
+              "__R2_A_33N_500_0MHZ",
+              "__R2_A_33N_800_0MHZ"
+            ],
+            "start": [
+              -1.800240162201103,
+              4.0046615285183025,
+              6.152223368180412
+            ],
+            "chi2": 85.50528988200757
+          },
+          {
+            "requests": 28,
+            "evaluations": 28,
+            "profile_evaluations_upper": 56,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_34N",
+              "__R2_A_34N_500_0MHZ",
+              "__R2_A_34N_800_0MHZ"
+            ],
+            "start": [
+              2.0,
+              4.5551345598138235,
+              5.274540394660508
+            ],
+            "chi2": 73.64239263562256
+          },
+          {
+            "requests": 16,
+            "evaluations": 16,
+            "profile_evaluations_upper": 32,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_34N",
+              "__R2_A_34N_500_0MHZ",
+              "__R2_A_34N_800_0MHZ"
+            ],
+            "start": [
+              -3.5416483913362056,
+              4.144628907635136,
+              5.8323194295237375
+            ],
+            "chi2": 72.09467003454745
+          },
+          {
+            "requests": 20,
+            "evaluations": 20,
+            "profile_evaluations_upper": 40,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_37N",
+              "__R2_A_37N_500_0MHZ",
+              "__R2_A_37N_800_0MHZ"
+            ],
+            "start": [
+              2.0,
+              4.5551345598138235,
+              5.274540394660508
+            ],
+            "chi2": 88.99225344740688
+          },
+          {
+            "requests": 12,
+            "evaluations": 12,
+            "profile_evaluations_upper": 24,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_37N",
+              "__R2_A_37N_500_0MHZ",
+              "__R2_A_37N_800_0MHZ"
+            ],
+            "start": [
+              -1.6744622571098677,
+              3.654519928870604,
+              5.2866898714627935
+            ],
+            "chi2": 88.60692513963502
+          }
+        ]
+      },
+      "fallback_factors": [],
+      "root_fallback": false,
+      "incomplete": false,
+      "failed_attempts": 0,
+      "final": {
+        "seconds": 0.12214020900137257,
+        "model_calculations": 270,
+        "requests": 90,
+        "evaluations": 90,
+        "profile_evaluations_upper": 900,
+        "local_refinements": 1,
+        "calls": [
+          {
+            "requests": 90,
+            "evaluations": 90,
+            "profile_evaluations_upper": 900,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_15N",
+              "__DW_AB_31N",
+              "__DW_AB_33N",
+              "__DW_AB_34N",
+              "__DW_AB_37N",
+              "__KEX_AB",
+              "__PB",
+              "__R2_A_15N_500_0MHZ",
+              "__R2_A_15N_800_0MHZ",
+              "__R2_A_31N_500_0MHZ",
+              "__R2_A_31N_800_0MHZ",
+              "__R2_A_33N_500_0MHZ",
+              "__R2_A_33N_800_0MHZ",
+              "__R2_A_34N_500_0MHZ",
+              "__R2_A_34N_800_0MHZ",
+              "__R2_A_37N_500_0MHZ",
+              "__R2_A_37N_800_0MHZ"
+            ],
+            "start": [
+              -1.9700153743229585,
+              -1.9684616982562715,
+              -1.8001772188185716,
+              -3.5303582713097152,
+              -1.675611547533888,
+              400.0,
+              0.07,
+              3.976444739799578,
+              6.255249736726038,
+              5.800288431460345,
+              7.8940113174535576,
+              4.004137033567727,
+              6.156076515155316,
+              4.171178812888639,
+              5.8588458390249665,
+              3.6516512391430624,
+              5.2797909557200775
+            ],
+            "chi2": 429.6700333172931
+          }
+        ],
+        "terminal": "accepted",
+        "chi2": 429.6700333172931,
+        "vector": [
+          -2.0018229502244798,
+          -1.9988087307411846,
+          -1.8213502303372369,
+          -3.6175683215094465,
+          -1.694729260155378,
+          383.0687728955269,
+          0.07009423389538129,
+          3.9784459046300618,
+          6.3211118413775225,
+          5.80398072778135,
+          7.977305951407912,
+          4.0176534614616575,
+          6.236732151242962,
+          4.181824400510117,
+          6.0109008597706275,
+          3.6606630590540243,
+          5.35158673770291
+        ]
+      },
+      "reused_final_measurement": true
+    },
+    {
+      "case": "cpmg",
+      "alternate_cap": 1000,
+      "normal_cap": 3000,
+      "preparation": {
+        "seconds": 0.14253170899974066,
+        "model_calculations": 306,
+        "requests": 183,
+        "evaluations": 183,
+        "profile_evaluations_upper": 366,
+        "local_refinements": 10,
+        "calls": [
+          {
+            "requests": 20,
+            "evaluations": 20,
+            "profile_evaluations_upper": 40,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_15N",
+              "__R2_A_15N_500_0MHZ",
+              "__R2_A_15N_800_0MHZ"
+            ],
+            "start": [
+              2.0,
+              4.5551345598138235,
+              5.274540394660508
+            ],
+            "chi2": 63.52519383603199
+          },
+          {
+            "requests": 12,
+            "evaluations": 12,
+            "profile_evaluations_upper": 24,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_15N",
+              "__R2_A_15N_500_0MHZ",
+              "__R2_A_15N_800_0MHZ"
+            ],
+            "start": [
+              -1.969631251135373,
+              3.9803869902568505,
+              6.265029601826201
+            ],
+            "chi2": 63.18096779682004
+          },
+          {
+            "requests": 31,
+            "evaluations": 31,
+            "profile_evaluations_upper": 62,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_31N",
+              "__R2_A_31N_500_0MHZ",
+              "__R2_A_31N_800_0MHZ"
+            ],
+            "start": [
+              2.0,
+              4.5551345598138235,
+              5.274540394660508
+            ],
+            "chi2": 153.3722448200528
+          },
+          {
+            "requests": 12,
+            "evaluations": 12,
+            "profile_evaluations_upper": 24,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_31N",
+              "__R2_A_31N_500_0MHZ",
+              "__R2_A_31N_800_0MHZ"
+            ],
+            "start": [
+              -1.9642383233788931,
+              5.815960865007757,
+              7.877093867901306
+            ],
+            "chi2": 150.7317671740578
+          },
+          {
+            "requests": 20,
+            "evaluations": 20,
+            "profile_evaluations_upper": 40,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_33N",
+              "__R2_A_33N_500_0MHZ",
+              "__R2_A_33N_800_0MHZ"
+            ],
+            "start": [
+              2.0,
+              4.5551345598138235,
+              5.274540394660508
+            ],
+            "chi2": 85.56881465407028
+          },
+          {
+            "requests": 12,
+            "evaluations": 12,
+            "profile_evaluations_upper": 24,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_33N",
+              "__R2_A_33N_500_0MHZ",
+              "__R2_A_33N_800_0MHZ"
+            ],
+            "start": [
+              -1.800240162201103,
+              4.0046615285183025,
+              6.152223368180412
+            ],
+            "chi2": 85.50528988200757
+          },
+          {
+            "requests": 28,
+            "evaluations": 28,
+            "profile_evaluations_upper": 56,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_34N",
+              "__R2_A_34N_500_0MHZ",
+              "__R2_A_34N_800_0MHZ"
+            ],
+            "start": [
+              2.0,
+              4.5551345598138235,
+              5.274540394660508
+            ],
+            "chi2": 73.64239263562256
+          },
+          {
+            "requests": 16,
+            "evaluations": 16,
+            "profile_evaluations_upper": 32,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_34N",
+              "__R2_A_34N_500_0MHZ",
+              "__R2_A_34N_800_0MHZ"
+            ],
+            "start": [
+              -3.5416483913362056,
+              4.144628907635136,
+              5.8323194295237375
+            ],
+            "chi2": 72.09467003454745
+          },
+          {
+            "requests": 20,
+            "evaluations": 20,
+            "profile_evaluations_upper": 40,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_37N",
+              "__R2_A_37N_500_0MHZ",
+              "__R2_A_37N_800_0MHZ"
+            ],
+            "start": [
+              2.0,
+              4.5551345598138235,
+              5.274540394660508
+            ],
+            "chi2": 88.99225344740688
+          },
+          {
+            "requests": 12,
+            "evaluations": 12,
+            "profile_evaluations_upper": 24,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_37N",
+              "__R2_A_37N_500_0MHZ",
+              "__R2_A_37N_800_0MHZ"
+            ],
+            "start": [
+              -1.6744622571098677,
+              3.654519928870604,
+              5.2866898714627935
+            ],
+            "chi2": 88.60692513963502
+          }
+        ]
+      },
+      "fallback_factors": [],
+      "root_fallback": false,
+      "incomplete": false,
+      "failed_attempts": 0,
+      "final": {
+        "seconds": 0.12214020900137257,
+        "model_calculations": 270,
+        "requests": 90,
+        "evaluations": 90,
+        "profile_evaluations_upper": 900,
+        "local_refinements": 1,
+        "calls": [
+          {
+            "requests": 90,
+            "evaluations": 90,
+            "profile_evaluations_upper": 900,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_15N",
+              "__DW_AB_31N",
+              "__DW_AB_33N",
+              "__DW_AB_34N",
+              "__DW_AB_37N",
+              "__KEX_AB",
+              "__PB",
+              "__R2_A_15N_500_0MHZ",
+              "__R2_A_15N_800_0MHZ",
+              "__R2_A_31N_500_0MHZ",
+              "__R2_A_31N_800_0MHZ",
+              "__R2_A_33N_500_0MHZ",
+              "__R2_A_33N_800_0MHZ",
+              "__R2_A_34N_500_0MHZ",
+              "__R2_A_34N_800_0MHZ",
+              "__R2_A_37N_500_0MHZ",
+              "__R2_A_37N_800_0MHZ"
+            ],
+            "start": [
+              -1.9700153743229585,
+              -1.9684616982562715,
+              -1.8001772188185716,
+              -3.5303582713097152,
+              -1.675611547533888,
+              400.0,
+              0.07,
+              3.976444739799578,
+              6.255249736726038,
+              5.800288431460345,
+              7.8940113174535576,
+              4.004137033567727,
+              6.156076515155316,
+              4.171178812888639,
+              5.8588458390249665,
+              3.6516512391430624,
+              5.2797909557200775
+            ],
+            "chi2": 429.6700333172931
+          }
+        ],
+        "terminal": "accepted",
+        "chi2": 429.6700333172931,
+        "vector": [
+          -2.0018229502244798,
+          -1.9988087307411846,
+          -1.8213502303372369,
+          -3.6175683215094465,
+          -1.694729260155378,
+          383.0687728955269,
+          0.07009423389538129,
+          3.9784459046300618,
+          6.3211118413775225,
+          5.80398072778135,
+          7.977305951407912,
+          4.0176534614616575,
+          6.236732151242962,
+          4.181824400510117,
+          6.0109008597706275,
+          3.6606630590540243,
+          5.35158673770291
+        ]
+      },
+      "reused_final_measurement": true
+    },
+    {
+      "case": "cpmg",
+      "alternate_cap": 3000,
+      "normal_cap": 3000,
+      "preparation": {
+        "seconds": 0.1466671669986681,
+        "model_calculations": 306,
+        "requests": 183,
+        "evaluations": 183,
+        "profile_evaluations_upper": 366,
+        "local_refinements": 10,
+        "calls": [
+          {
+            "requests": 20,
+            "evaluations": 20,
+            "profile_evaluations_upper": 40,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_15N",
+              "__R2_A_15N_500_0MHZ",
+              "__R2_A_15N_800_0MHZ"
+            ],
+            "start": [
+              2.0,
+              4.5551345598138235,
+              5.274540394660508
+            ],
+            "chi2": 63.52519383603199
+          },
+          {
+            "requests": 12,
+            "evaluations": 12,
+            "profile_evaluations_upper": 24,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_15N",
+              "__R2_A_15N_500_0MHZ",
+              "__R2_A_15N_800_0MHZ"
+            ],
+            "start": [
+              -1.969631251135373,
+              3.9803869902568505,
+              6.265029601826201
+            ],
+            "chi2": 63.18096779682004
+          },
+          {
+            "requests": 31,
+            "evaluations": 31,
+            "profile_evaluations_upper": 62,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_31N",
+              "__R2_A_31N_500_0MHZ",
+              "__R2_A_31N_800_0MHZ"
+            ],
+            "start": [
+              2.0,
+              4.5551345598138235,
+              5.274540394660508
+            ],
+            "chi2": 153.3722448200528
+          },
+          {
+            "requests": 12,
+            "evaluations": 12,
+            "profile_evaluations_upper": 24,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_31N",
+              "__R2_A_31N_500_0MHZ",
+              "__R2_A_31N_800_0MHZ"
+            ],
+            "start": [
+              -1.9642383233788931,
+              5.815960865007757,
+              7.877093867901306
+            ],
+            "chi2": 150.7317671740578
+          },
+          {
+            "requests": 20,
+            "evaluations": 20,
+            "profile_evaluations_upper": 40,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_33N",
+              "__R2_A_33N_500_0MHZ",
+              "__R2_A_33N_800_0MHZ"
+            ],
+            "start": [
+              2.0,
+              4.5551345598138235,
+              5.274540394660508
+            ],
+            "chi2": 85.56881465407028
+          },
+          {
+            "requests": 12,
+            "evaluations": 12,
+            "profile_evaluations_upper": 24,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_33N",
+              "__R2_A_33N_500_0MHZ",
+              "__R2_A_33N_800_0MHZ"
+            ],
+            "start": [
+              -1.800240162201103,
+              4.0046615285183025,
+              6.152223368180412
+            ],
+            "chi2": 85.50528988200757
+          },
+          {
+            "requests": 28,
+            "evaluations": 28,
+            "profile_evaluations_upper": 56,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_34N",
+              "__R2_A_34N_500_0MHZ",
+              "__R2_A_34N_800_0MHZ"
+            ],
+            "start": [
+              2.0,
+              4.5551345598138235,
+              5.274540394660508
+            ],
+            "chi2": 73.64239263562256
+          },
+          {
+            "requests": 16,
+            "evaluations": 16,
+            "profile_evaluations_upper": 32,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_34N",
+              "__R2_A_34N_500_0MHZ",
+              "__R2_A_34N_800_0MHZ"
+            ],
+            "start": [
+              -3.5416483913362056,
+              4.144628907635136,
+              5.8323194295237375
+            ],
+            "chi2": 72.09467003454745
+          },
+          {
+            "requests": 20,
+            "evaluations": 20,
+            "profile_evaluations_upper": 40,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_37N",
+              "__R2_A_37N_500_0MHZ",
+              "__R2_A_37N_800_0MHZ"
+            ],
+            "start": [
+              2.0,
+              4.5551345598138235,
+              5.274540394660508
+            ],
+            "chi2": 88.99225344740688
+          },
+          {
+            "requests": 12,
+            "evaluations": 12,
+            "profile_evaluations_upper": 24,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_37N",
+              "__R2_A_37N_500_0MHZ",
+              "__R2_A_37N_800_0MHZ"
+            ],
+            "start": [
+              -1.6744622571098677,
+              3.654519928870604,
+              5.2866898714627935
+            ],
+            "chi2": 88.60692513963502
+          }
+        ]
+      },
+      "fallback_factors": [],
+      "root_fallback": false,
+      "incomplete": false,
+      "failed_attempts": 0,
+      "final": {
+        "seconds": 0.12214020900137257,
+        "model_calculations": 270,
+        "requests": 90,
+        "evaluations": 90,
+        "profile_evaluations_upper": 900,
+        "local_refinements": 1,
+        "calls": [
+          {
+            "requests": 90,
+            "evaluations": 90,
+            "profile_evaluations_upper": 900,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_15N",
+              "__DW_AB_31N",
+              "__DW_AB_33N",
+              "__DW_AB_34N",
+              "__DW_AB_37N",
+              "__KEX_AB",
+              "__PB",
+              "__R2_A_15N_500_0MHZ",
+              "__R2_A_15N_800_0MHZ",
+              "__R2_A_31N_500_0MHZ",
+              "__R2_A_31N_800_0MHZ",
+              "__R2_A_33N_500_0MHZ",
+              "__R2_A_33N_800_0MHZ",
+              "__R2_A_34N_500_0MHZ",
+              "__R2_A_34N_800_0MHZ",
+              "__R2_A_37N_500_0MHZ",
+              "__R2_A_37N_800_0MHZ"
+            ],
+            "start": [
+              -1.9700153743229585,
+              -1.9684616982562715,
+              -1.8001772188185716,
+              -3.5303582713097152,
+              -1.675611547533888,
+              400.0,
+              0.07,
+              3.976444739799578,
+              6.255249736726038,
+              5.800288431460345,
+              7.8940113174535576,
+              4.004137033567727,
+              6.156076515155316,
+              4.171178812888639,
+              5.8588458390249665,
+              3.6516512391430624,
+              5.2797909557200775
+            ],
+            "chi2": 429.6700333172931
+          }
+        ],
+        "terminal": "accepted",
+        "chi2": 429.6700333172931,
+        "vector": [
+          -2.0018229502244798,
+          -1.9988087307411846,
+          -1.8213502303372369,
+          -3.6175683215094465,
+          -1.694729260155378,
+          383.0687728955269,
+          0.07009423389538129,
+          3.9784459046300618,
+          6.3211118413775225,
+          5.80398072778135,
+          7.977305951407912,
+          4.0176534614616575,
+          6.236732151242962,
+          4.181824400510117,
+          6.0109008597706275,
+          3.6606630590540243,
+          5.35158673770291
+        ]
+      },
+      "reused_final_measurement": true
+    },
+    {
+      "case": "cest",
+      "alternate_cap": 100,
+      "normal_cap": 3000,
+      "preparation": {
+        "seconds": 15.935175083999638,
+        "model_calculations": 3206,
+        "requests": 3109,
+        "evaluations": 3109,
+        "profile_evaluations_upper": 3195,
+        "local_refinements": 6,
+        "calls": [
+          {
+            "requests": 41,
+            "evaluations": 41,
+            "profile_evaluations_upper": 82,
+            "terminal": "success",
+            "ids": [
+              "__CS_A_L18CB",
+              "__DW_AB_L18CB",
+              "__R1_A_L18CB_598_8MHZ",
+              "__R2_A_L18CB_598_8MHZ"
+            ],
+            "start": [
+              44.67565,
+              -2.5,
+              3.5,
+              15.0
+            ],
+            "chi2": 134.61428741632074
+          },
+          {
+            "requests": 45,
+            "evaluations": 45,
+            "profile_evaluations_upper": 90,
+            "terminal": "success",
+            "ids": [
+              "__CS_A_L18CB",
+              "__DW_AB_L18CB",
+              "__R1_A_L18CB_598_8MHZ",
+              "__R2_A_L18CB_598_8MHZ"
+            ],
+            "start": [
+              44.67824614995394,
+              2.9295452778735998,
+              10.66265391901884,
+              23.777971658706637
+            ],
+            "chi2": 2886.0515179036747
+          },
+          {
+            "requests": 2802,
+            "evaluations": 2802,
+            "profile_evaluations_upper": 2802,
+            "terminal": "success",
+            "ids": [
+              "__CS_A_L18CD1",
+              "__DW_AB_L18CD1",
+              "__R1_A_L18CD1_598_8MHZ",
+              "__R2_A_L18CD1_598_8MHZ"
+            ],
+            "start": [
+              24.95129,
+              0.01,
+              3.5,
+              15.0
+            ],
+            "chi2": 1310.5481640278806
+          },
+          {
+            "requests": 80,
+            "evaluations": 80,
+            "profile_evaluations_upper": 80,
+            "terminal": "success",
+            "ids": [
+              "__CS_A_L18CD1",
+              "__DW_AB_L18CD1",
+              "__R1_A_L18CD1_598_8MHZ",
+              "__R2_A_L18CD1_598_8MHZ"
+            ],
+            "start": [
+              24.921468156136694,
+              -0.20913340531002575,
+              4.847053968076467,
+              5.762758485943809
+            ],
+            "chi2": 1729.9898982485493
+          },
+          {
+            "requests": 41,
+            "evaluations": 41,
+            "profile_evaluations_upper": 41,
+            "terminal": "success",
+            "ids": [
+              "__CS_A_K25CA",
+              "__DW_AB_K25CA",
+              "__R1_A_K25CA_598_8MHZ",
+              "__R2_A_K25CA_598_8MHZ"
+            ],
+            "start": [
+              54.6762,
+              1.5,
+              3.5,
+              15.0
+            ],
+            "chi2": 70.9861989613131
+          },
+          {
+            "requests": 100,
+            "evaluations": 100,
+            "profile_evaluations_upper": 100,
+            "terminal": "solver_unsuccessful",
+            "ids": [
+              "__CS_A_K25CA",
+              "__DW_AB_K25CA",
+              "__R1_A_K25CA_598_8MHZ",
+              "__R2_A_K25CA_598_8MHZ"
+            ],
+            "start": [
+              54.67585371758198,
+              -1.7400059835053157,
+              13.403605180731976,
+              29.509477186244833
+            ],
+            "chi2": null
+          }
+        ]
+      },
+      "fallback_factors": [],
+      "root_fallback": false,
+      "incomplete": true,
+      "failed_attempts": 1,
+      "final": {
+        "seconds": 5.250258584001131,
+        "model_calculations": 760,
+        "requests": 396,
+        "evaluations": 396,
+        "profile_evaluations_upper": 1584,
+        "local_refinements": 1,
+        "calls": [
+          {
+            "requests": 396,
+            "evaluations": 396,
+            "profile_evaluations_upper": 1584,
+            "terminal": "success",
+            "ids": [
+              "__CS_A_L18CB",
+              "__CS_A_L18CD1",
+              "__CS_A_K25CA",
+              "__DW_AB_L18CB",
+              "__DW_AB_L18CD1",
+              "__DW_AB_K25CA",
+              "__KEX_AB",
+              "__PB",
+              "__R1_A_L18CB_598_8MHZ",
+              "__R1_A_L18CD1_598_8MHZ",
+              "__R1_A_K25CA_598_8MHZ",
+              "__R2_A_L18CB_598_8MHZ",
+              "__R2_A_L18CD1_598_8MHZ",
+              "__R2_A_K25CA_598_8MHZ"
+            ],
+            "start": [
+              44.67824614995394,
+              24.921468156136694,
+              54.67585371758198,
+              -2.9295452778735998,
+              0.20913340531002575,
+              1.7400059835053157,
+              116.0,
+              0.0583,
+              10.66265391901884,
+              4.847053968076467,
+              13.403605180731976,
+              23.777971658706637,
+              5.762758485943809,
+              29.509477186244833
+            ],
+            "chi2": 1460.039047089854
+          }
+        ],
+        "terminal": "accepted",
+        "chi2": 1460.039047089854,
+        "vector": [
+          44.66943970272855,
+          24.912614546646772,
+          54.68654786601262,
+          -2.897697491637056,
+          0.2100453395013383,
+          1.6824208347243736,
+          23.297259136725003,
+          0.20695482462490825,
+          10.658734540003264,
+          4.8465880418351075,
+          13.39406525523724,
+          29.110483512922137,
+          6.015594412777343,
+          34.880346139153495
+        ]
+      },
+      "reused_final_measurement": false
+    },
+    {
+      "case": "cest",
+      "alternate_cap": 200,
+      "normal_cap": 3000,
+      "preparation": {
+        "seconds": 17.169773084002372,
+        "model_calculations": 3306,
+        "requests": 3209,
+        "evaluations": 3209,
+        "profile_evaluations_upper": 3295,
+        "local_refinements": 6,
+        "calls": [
+          {
+            "requests": 41,
+            "evaluations": 41,
+            "profile_evaluations_upper": 82,
+            "terminal": "success",
+            "ids": [
+              "__CS_A_L18CB",
+              "__DW_AB_L18CB",
+              "__R1_A_L18CB_598_8MHZ",
+              "__R2_A_L18CB_598_8MHZ"
+            ],
+            "start": [
+              44.67565,
+              -2.5,
+              3.5,
+              15.0
+            ],
+            "chi2": 134.61428741632074
+          },
+          {
+            "requests": 45,
+            "evaluations": 45,
+            "profile_evaluations_upper": 90,
+            "terminal": "success",
+            "ids": [
+              "__CS_A_L18CB",
+              "__DW_AB_L18CB",
+              "__R1_A_L18CB_598_8MHZ",
+              "__R2_A_L18CB_598_8MHZ"
+            ],
+            "start": [
+              44.67824614995394,
+              2.9295452778735998,
+              10.66265391901884,
+              23.777971658706637
+            ],
+            "chi2": 2886.0515179036747
+          },
+          {
+            "requests": 2802,
+            "evaluations": 2802,
+            "profile_evaluations_upper": 2802,
+            "terminal": "success",
+            "ids": [
+              "__CS_A_L18CD1",
+              "__DW_AB_L18CD1",
+              "__R1_A_L18CD1_598_8MHZ",
+              "__R2_A_L18CD1_598_8MHZ"
+            ],
+            "start": [
+              24.95129,
+              0.01,
+              3.5,
+              15.0
+            ],
+            "chi2": 1310.5481640278806
+          },
+          {
+            "requests": 80,
+            "evaluations": 80,
+            "profile_evaluations_upper": 80,
+            "terminal": "success",
+            "ids": [
+              "__CS_A_L18CD1",
+              "__DW_AB_L18CD1",
+              "__R1_A_L18CD1_598_8MHZ",
+              "__R2_A_L18CD1_598_8MHZ"
+            ],
+            "start": [
+              24.921468156136694,
+              -0.20913340531002575,
+              4.847053968076467,
+              5.762758485943809
+            ],
+            "chi2": 1729.9898982485493
+          },
+          {
+            "requests": 41,
+            "evaluations": 41,
+            "profile_evaluations_upper": 41,
+            "terminal": "success",
+            "ids": [
+              "__CS_A_K25CA",
+              "__DW_AB_K25CA",
+              "__R1_A_K25CA_598_8MHZ",
+              "__R2_A_K25CA_598_8MHZ"
+            ],
+            "start": [
+              54.6762,
+              1.5,
+              3.5,
+              15.0
+            ],
+            "chi2": 70.9861989613131
+          },
+          {
+            "requests": 200,
+            "evaluations": 200,
+            "profile_evaluations_upper": 200,
+            "terminal": "solver_unsuccessful",
+            "ids": [
+              "__CS_A_K25CA",
+              "__DW_AB_K25CA",
+              "__R1_A_K25CA_598_8MHZ",
+              "__R2_A_K25CA_598_8MHZ"
+            ],
+            "start": [
+              54.67585371758198,
+              -1.7400059835053157,
+              13.403605180731976,
+              29.509477186244833
+            ],
+            "chi2": null
+          }
+        ]
+      },
+      "fallback_factors": [],
+      "root_fallback": false,
+      "incomplete": true,
+      "failed_attempts": 1,
+      "final": {
+        "seconds": 5.250258584001131,
+        "model_calculations": 760,
+        "requests": 396,
+        "evaluations": 396,
+        "profile_evaluations_upper": 1584,
+        "local_refinements": 1,
+        "calls": [
+          {
+            "requests": 396,
+            "evaluations": 396,
+            "profile_evaluations_upper": 1584,
+            "terminal": "success",
+            "ids": [
+              "__CS_A_L18CB",
+              "__CS_A_L18CD1",
+              "__CS_A_K25CA",
+              "__DW_AB_L18CB",
+              "__DW_AB_L18CD1",
+              "__DW_AB_K25CA",
+              "__KEX_AB",
+              "__PB",
+              "__R1_A_L18CB_598_8MHZ",
+              "__R1_A_L18CD1_598_8MHZ",
+              "__R1_A_K25CA_598_8MHZ",
+              "__R2_A_L18CB_598_8MHZ",
+              "__R2_A_L18CD1_598_8MHZ",
+              "__R2_A_K25CA_598_8MHZ"
+            ],
+            "start": [
+              44.67824614995394,
+              24.921468156136694,
+              54.67585371758198,
+              -2.9295452778735998,
+              0.20913340531002575,
+              1.7400059835053157,
+              116.0,
+              0.0583,
+              10.66265391901884,
+              4.847053968076467,
+              13.403605180731976,
+              23.777971658706637,
+              5.762758485943809,
+              29.509477186244833
+            ],
+            "chi2": 1460.039047089854
+          }
+        ],
+        "terminal": "accepted",
+        "chi2": 1460.039047089854,
+        "vector": [
+          44.66943970272855,
+          24.912614546646772,
+          54.68654786601262,
+          -2.897697491637056,
+          0.2100453395013383,
+          1.6824208347243736,
+          23.297259136725003,
+          0.20695482462490825,
+          10.658734540003264,
+          4.8465880418351075,
+          13.39406525523724,
+          29.110483512922137,
+          6.015594412777343,
+          34.880346139153495
+        ]
+      },
+      "reused_final_measurement": true
+    },
+    {
+      "case": "cest",
+      "alternate_cap": 500,
+      "normal_cap": 3000,
+      "preparation": {
+        "seconds": 19.91315433300042,
+        "model_calculations": 3492,
+        "requests": 3394,
+        "evaluations": 3394,
+        "profile_evaluations_upper": 3480,
+        "local_refinements": 6,
+        "calls": [
+          {
+            "requests": 41,
+            "evaluations": 41,
+            "profile_evaluations_upper": 82,
+            "terminal": "success",
+            "ids": [
+              "__CS_A_L18CB",
+              "__DW_AB_L18CB",
+              "__R1_A_L18CB_598_8MHZ",
+              "__R2_A_L18CB_598_8MHZ"
+            ],
+            "start": [
+              44.67565,
+              -2.5,
+              3.5,
+              15.0
+            ],
+            "chi2": 134.61428741632074
+          },
+          {
+            "requests": 45,
+            "evaluations": 45,
+            "profile_evaluations_upper": 90,
+            "terminal": "success",
+            "ids": [
+              "__CS_A_L18CB",
+              "__DW_AB_L18CB",
+              "__R1_A_L18CB_598_8MHZ",
+              "__R2_A_L18CB_598_8MHZ"
+            ],
+            "start": [
+              44.67824614995394,
+              2.9295452778735998,
+              10.66265391901884,
+              23.777971658706637
+            ],
+            "chi2": 2886.0515179036747
+          },
+          {
+            "requests": 2802,
+            "evaluations": 2802,
+            "profile_evaluations_upper": 2802,
+            "terminal": "success",
+            "ids": [
+              "__CS_A_L18CD1",
+              "__DW_AB_L18CD1",
+              "__R1_A_L18CD1_598_8MHZ",
+              "__R2_A_L18CD1_598_8MHZ"
+            ],
+            "start": [
+              24.95129,
+              0.01,
+              3.5,
+              15.0
+            ],
+            "chi2": 1310.5481640278806
+          },
+          {
+            "requests": 80,
+            "evaluations": 80,
+            "profile_evaluations_upper": 80,
+            "terminal": "success",
+            "ids": [
+              "__CS_A_L18CD1",
+              "__DW_AB_L18CD1",
+              "__R1_A_L18CD1_598_8MHZ",
+              "__R2_A_L18CD1_598_8MHZ"
+            ],
+            "start": [
+              24.921468156136694,
+              -0.20913340531002575,
+              4.847053968076467,
+              5.762758485943809
+            ],
+            "chi2": 1729.9898982485493
+          },
+          {
+            "requests": 41,
+            "evaluations": 41,
+            "profile_evaluations_upper": 41,
+            "terminal": "success",
+            "ids": [
+              "__CS_A_K25CA",
+              "__DW_AB_K25CA",
+              "__R1_A_K25CA_598_8MHZ",
+              "__R2_A_K25CA_598_8MHZ"
+            ],
+            "start": [
+              54.6762,
+              1.5,
+              3.5,
+              15.0
+            ],
+            "chi2": 70.9861989613131
+          },
+          {
+            "requests": 385,
+            "evaluations": 385,
+            "profile_evaluations_upper": 385,
+            "terminal": "success",
+            "ids": [
+              "__CS_A_K25CA",
+              "__DW_AB_K25CA",
+              "__R1_A_K25CA_598_8MHZ",
+              "__R2_A_K25CA_598_8MHZ"
+            ],
+            "start": [
+              54.67585371758198,
+              -1.7400059835053157,
+              13.403605180731976,
+              29.509477186244833
+            ],
+            "chi2": 1132.105831906457
+          }
+        ]
+      },
+      "fallback_factors": [],
+      "root_fallback": false,
+      "incomplete": false,
+      "failed_attempts": 0,
+      "final": {
+        "seconds": 5.250258584001131,
+        "model_calculations": 760,
+        "requests": 396,
+        "evaluations": 396,
+        "profile_evaluations_upper": 1584,
+        "local_refinements": 1,
+        "calls": [
+          {
+            "requests": 396,
+            "evaluations": 396,
+            "profile_evaluations_upper": 1584,
+            "terminal": "success",
+            "ids": [
+              "__CS_A_L18CB",
+              "__CS_A_L18CD1",
+              "__CS_A_K25CA",
+              "__DW_AB_L18CB",
+              "__DW_AB_L18CD1",
+              "__DW_AB_K25CA",
+              "__KEX_AB",
+              "__PB",
+              "__R1_A_L18CB_598_8MHZ",
+              "__R1_A_L18CD1_598_8MHZ",
+              "__R1_A_K25CA_598_8MHZ",
+              "__R2_A_L18CB_598_8MHZ",
+              "__R2_A_L18CD1_598_8MHZ",
+              "__R2_A_K25CA_598_8MHZ"
+            ],
+            "start": [
+              44.67824614995394,
+              24.921468156136694,
+              54.67585371758198,
+              -2.9295452778735998,
+              0.20913340531002575,
+              1.7400059835053157,
+              116.0,
+              0.0583,
+              10.66265391901884,
+              4.847053968076467,
+              13.403605180731976,
+              23.777971658706637,
+              5.762758485943809,
+              29.509477186244833
+            ],
+            "chi2": 1460.039047089854
+          }
+        ],
+        "terminal": "accepted",
+        "chi2": 1460.039047089854,
+        "vector": [
+          44.66943970272855,
+          24.912614546646772,
+          54.68654786601262,
+          -2.897697491637056,
+          0.2100453395013383,
+          1.6824208347243736,
+          23.297259136725003,
+          0.20695482462490825,
+          10.658734540003264,
+          4.8465880418351075,
+          13.39406525523724,
+          29.110483512922137,
+          6.015594412777343,
+          34.880346139153495
+        ]
+      },
+      "reused_final_measurement": true
+    },
+    {
+      "case": "cest",
+      "alternate_cap": 1000,
+      "normal_cap": 3000,
+      "preparation": {
+        "seconds": 20.051916541000537,
+        "model_calculations": 3492,
+        "requests": 3394,
+        "evaluations": 3394,
+        "profile_evaluations_upper": 3480,
+        "local_refinements": 6,
+        "calls": [
+          {
+            "requests": 41,
+            "evaluations": 41,
+            "profile_evaluations_upper": 82,
+            "terminal": "success",
+            "ids": [
+              "__CS_A_L18CB",
+              "__DW_AB_L18CB",
+              "__R1_A_L18CB_598_8MHZ",
+              "__R2_A_L18CB_598_8MHZ"
+            ],
+            "start": [
+              44.67565,
+              -2.5,
+              3.5,
+              15.0
+            ],
+            "chi2": 134.61428741632074
+          },
+          {
+            "requests": 45,
+            "evaluations": 45,
+            "profile_evaluations_upper": 90,
+            "terminal": "success",
+            "ids": [
+              "__CS_A_L18CB",
+              "__DW_AB_L18CB",
+              "__R1_A_L18CB_598_8MHZ",
+              "__R2_A_L18CB_598_8MHZ"
+            ],
+            "start": [
+              44.67824614995394,
+              2.9295452778735998,
+              10.66265391901884,
+              23.777971658706637
+            ],
+            "chi2": 2886.0515179036747
+          },
+          {
+            "requests": 2802,
+            "evaluations": 2802,
+            "profile_evaluations_upper": 2802,
+            "terminal": "success",
+            "ids": [
+              "__CS_A_L18CD1",
+              "__DW_AB_L18CD1",
+              "__R1_A_L18CD1_598_8MHZ",
+              "__R2_A_L18CD1_598_8MHZ"
+            ],
+            "start": [
+              24.95129,
+              0.01,
+              3.5,
+              15.0
+            ],
+            "chi2": 1310.5481640278806
+          },
+          {
+            "requests": 80,
+            "evaluations": 80,
+            "profile_evaluations_upper": 80,
+            "terminal": "success",
+            "ids": [
+              "__CS_A_L18CD1",
+              "__DW_AB_L18CD1",
+              "__R1_A_L18CD1_598_8MHZ",
+              "__R2_A_L18CD1_598_8MHZ"
+            ],
+            "start": [
+              24.921468156136694,
+              -0.20913340531002575,
+              4.847053968076467,
+              5.762758485943809
+            ],
+            "chi2": 1729.9898982485493
+          },
+          {
+            "requests": 41,
+            "evaluations": 41,
+            "profile_evaluations_upper": 41,
+            "terminal": "success",
+            "ids": [
+              "__CS_A_K25CA",
+              "__DW_AB_K25CA",
+              "__R1_A_K25CA_598_8MHZ",
+              "__R2_A_K25CA_598_8MHZ"
+            ],
+            "start": [
+              54.6762,
+              1.5,
+              3.5,
+              15.0
+            ],
+            "chi2": 70.9861989613131
+          },
+          {
+            "requests": 385,
+            "evaluations": 385,
+            "profile_evaluations_upper": 385,
+            "terminal": "success",
+            "ids": [
+              "__CS_A_K25CA",
+              "__DW_AB_K25CA",
+              "__R1_A_K25CA_598_8MHZ",
+              "__R2_A_K25CA_598_8MHZ"
+            ],
+            "start": [
+              54.67585371758198,
+              -1.7400059835053157,
+              13.403605180731976,
+              29.509477186244833
+            ],
+            "chi2": 1132.105831906457
+          }
+        ]
+      },
+      "fallback_factors": [],
+      "root_fallback": false,
+      "incomplete": false,
+      "failed_attempts": 0,
+      "final": {
+        "seconds": 5.250258584001131,
+        "model_calculations": 760,
+        "requests": 396,
+        "evaluations": 396,
+        "profile_evaluations_upper": 1584,
+        "local_refinements": 1,
+        "calls": [
+          {
+            "requests": 396,
+            "evaluations": 396,
+            "profile_evaluations_upper": 1584,
+            "terminal": "success",
+            "ids": [
+              "__CS_A_L18CB",
+              "__CS_A_L18CD1",
+              "__CS_A_K25CA",
+              "__DW_AB_L18CB",
+              "__DW_AB_L18CD1",
+              "__DW_AB_K25CA",
+              "__KEX_AB",
+              "__PB",
+              "__R1_A_L18CB_598_8MHZ",
+              "__R1_A_L18CD1_598_8MHZ",
+              "__R1_A_K25CA_598_8MHZ",
+              "__R2_A_L18CB_598_8MHZ",
+              "__R2_A_L18CD1_598_8MHZ",
+              "__R2_A_K25CA_598_8MHZ"
+            ],
+            "start": [
+              44.67824614995394,
+              24.921468156136694,
+              54.67585371758198,
+              -2.9295452778735998,
+              0.20913340531002575,
+              1.7400059835053157,
+              116.0,
+              0.0583,
+              10.66265391901884,
+              4.847053968076467,
+              13.403605180731976,
+              23.777971658706637,
+              5.762758485943809,
+              29.509477186244833
+            ],
+            "chi2": 1460.039047089854
+          }
+        ],
+        "terminal": "accepted",
+        "chi2": 1460.039047089854,
+        "vector": [
+          44.66943970272855,
+          24.912614546646772,
+          54.68654786601262,
+          -2.897697491637056,
+          0.2100453395013383,
+          1.6824208347243736,
+          23.297259136725003,
+          0.20695482462490825,
+          10.658734540003264,
+          4.8465880418351075,
+          13.39406525523724,
+          29.110483512922137,
+          6.015594412777343,
+          34.880346139153495
+        ]
+      },
+      "reused_final_measurement": true
+    },
+    {
+      "case": "cest",
+      "alternate_cap": 3000,
+      "normal_cap": 3000,
+      "preparation": {
+        "seconds": 19.958354584003246,
+        "model_calculations": 3492,
+        "requests": 3394,
+        "evaluations": 3394,
+        "profile_evaluations_upper": 3480,
+        "local_refinements": 6,
+        "calls": [
+          {
+            "requests": 41,
+            "evaluations": 41,
+            "profile_evaluations_upper": 82,
+            "terminal": "success",
+            "ids": [
+              "__CS_A_L18CB",
+              "__DW_AB_L18CB",
+              "__R1_A_L18CB_598_8MHZ",
+              "__R2_A_L18CB_598_8MHZ"
+            ],
+            "start": [
+              44.67565,
+              -2.5,
+              3.5,
+              15.0
+            ],
+            "chi2": 134.61428741632074
+          },
+          {
+            "requests": 45,
+            "evaluations": 45,
+            "profile_evaluations_upper": 90,
+            "terminal": "success",
+            "ids": [
+              "__CS_A_L18CB",
+              "__DW_AB_L18CB",
+              "__R1_A_L18CB_598_8MHZ",
+              "__R2_A_L18CB_598_8MHZ"
+            ],
+            "start": [
+              44.67824614995394,
+              2.9295452778735998,
+              10.66265391901884,
+              23.777971658706637
+            ],
+            "chi2": 2886.0515179036747
+          },
+          {
+            "requests": 2802,
+            "evaluations": 2802,
+            "profile_evaluations_upper": 2802,
+            "terminal": "success",
+            "ids": [
+              "__CS_A_L18CD1",
+              "__DW_AB_L18CD1",
+              "__R1_A_L18CD1_598_8MHZ",
+              "__R2_A_L18CD1_598_8MHZ"
+            ],
+            "start": [
+              24.95129,
+              0.01,
+              3.5,
+              15.0
+            ],
+            "chi2": 1310.5481640278806
+          },
+          {
+            "requests": 80,
+            "evaluations": 80,
+            "profile_evaluations_upper": 80,
+            "terminal": "success",
+            "ids": [
+              "__CS_A_L18CD1",
+              "__DW_AB_L18CD1",
+              "__R1_A_L18CD1_598_8MHZ",
+              "__R2_A_L18CD1_598_8MHZ"
+            ],
+            "start": [
+              24.921468156136694,
+              -0.20913340531002575,
+              4.847053968076467,
+              5.762758485943809
+            ],
+            "chi2": 1729.9898982485493
+          },
+          {
+            "requests": 41,
+            "evaluations": 41,
+            "profile_evaluations_upper": 41,
+            "terminal": "success",
+            "ids": [
+              "__CS_A_K25CA",
+              "__DW_AB_K25CA",
+              "__R1_A_K25CA_598_8MHZ",
+              "__R2_A_K25CA_598_8MHZ"
+            ],
+            "start": [
+              54.6762,
+              1.5,
+              3.5,
+              15.0
+            ],
+            "chi2": 70.9861989613131
+          },
+          {
+            "requests": 385,
+            "evaluations": 385,
+            "profile_evaluations_upper": 385,
+            "terminal": "success",
+            "ids": [
+              "__CS_A_K25CA",
+              "__DW_AB_K25CA",
+              "__R1_A_K25CA_598_8MHZ",
+              "__R2_A_K25CA_598_8MHZ"
+            ],
+            "start": [
+              54.67585371758198,
+              -1.7400059835053157,
+              13.403605180731976,
+              29.509477186244833
+            ],
+            "chi2": 1132.105831906457
+          }
+        ]
+      },
+      "fallback_factors": [],
+      "root_fallback": false,
+      "incomplete": false,
+      "failed_attempts": 0,
+      "final": {
+        "seconds": 5.250258584001131,
+        "model_calculations": 760,
+        "requests": 396,
+        "evaluations": 396,
+        "profile_evaluations_upper": 1584,
+        "local_refinements": 1,
+        "calls": [
+          {
+            "requests": 396,
+            "evaluations": 396,
+            "profile_evaluations_upper": 1584,
+            "terminal": "success",
+            "ids": [
+              "__CS_A_L18CB",
+              "__CS_A_L18CD1",
+              "__CS_A_K25CA",
+              "__DW_AB_L18CB",
+              "__DW_AB_L18CD1",
+              "__DW_AB_K25CA",
+              "__KEX_AB",
+              "__PB",
+              "__R1_A_L18CB_598_8MHZ",
+              "__R1_A_L18CD1_598_8MHZ",
+              "__R1_A_K25CA_598_8MHZ",
+              "__R2_A_L18CB_598_8MHZ",
+              "__R2_A_L18CD1_598_8MHZ",
+              "__R2_A_K25CA_598_8MHZ"
+            ],
+            "start": [
+              44.67824614995394,
+              24.921468156136694,
+              54.67585371758198,
+              -2.9295452778735998,
+              0.20913340531002575,
+              1.7400059835053157,
+              116.0,
+              0.0583,
+              10.66265391901884,
+              4.847053968076467,
+              13.403605180731976,
+              23.777971658706637,
+              5.762758485943809,
+              29.509477186244833
+            ],
+            "chi2": 1460.039047089854
+          }
+        ],
+        "terminal": "accepted",
+        "chi2": 1460.039047089854,
+        "vector": [
+          44.66943970272855,
+          24.912614546646772,
+          54.68654786601262,
+          -2.897697491637056,
+          0.2100453395013383,
+          1.6824208347243736,
+          23.297259136725003,
+          0.20695482462490825,
+          10.658734540003264,
+          4.8465880418351075,
+          13.39406525523724,
+          29.110483512922137,
+          6.015594412777343,
+          34.880346139153495
+        ]
+      },
+      "reused_final_measurement": true
+    },
+    {
+      "case": "dcest",
+      "alternate_cap": 100,
+      "normal_cap": 3000,
+      "preparation": {
+        "seconds": 12.329009749999386,
+        "model_calculations": 1185,
+        "requests": 389,
+        "evaluations": 389,
+        "profile_evaluations_upper": 1167,
+        "local_refinements": 4,
+        "calls": [
+          {
+            "requests": 91,
+            "evaluations": 91,
+            "profile_evaluations_upper": 273,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_K19N",
+              "__DW_AC_K19N",
+              "__R1_A_K19N_700_2MHZ",
+              "__R2_A_K19N_700_2MHZ",
+              "__R2_B_K19N_700_2MHZ",
+              "__R2_C_K19N_700_2MHZ"
+            ],
+            "start": [
+              2.51,
+              -1.97,
+              1.9320429987656067,
+              6.243680351282124,
+              6.243680351282124,
+              6.243680351282124
+            ],
+            "chi2": 1661.4660997332926
+          },
+          {
+            "requests": 98,
+            "evaluations": 98,
+            "profile_evaluations_upper": 294,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_K19N",
+              "__DW_AC_K19N",
+              "__R1_A_K19N_700_2MHZ",
+              "__R2_A_K19N_700_2MHZ",
+              "__R2_B_K19N_700_2MHZ",
+              "__R2_C_K19N_700_2MHZ"
+            ],
+            "start": [
+              -2.5071900162984777,
+              -1.9643366881083075,
+              1.4220320166887432,
+              7.186238685084342,
+              15.619362592546922,
+              5.369384287633428e-27
+            ],
+            "chi2": 9522.233021768698
+          },
+          {
+            "requests": 100,
+            "evaluations": 100,
+            "profile_evaluations_upper": 300,
+            "terminal": "solver_unsuccessful",
+            "ids": [
+              "__DW_AB_K19N",
+              "__DW_AC_K19N",
+              "__R1_A_K19N_700_2MHZ",
+              "__R2_A_K19N_700_2MHZ",
+              "__R2_B_K19N_700_2MHZ",
+              "__R2_C_K19N_700_2MHZ"
+            ],
+            "start": [
+              -2.5071900162984777,
+              1.9643366881083075,
+              1.4220320166887432,
+              7.186238685084342,
+              15.619362592546922,
+              5.369384287633428e-27
+            ],
+            "chi2": null
+          },
+          {
+            "requests": 100,
+            "evaluations": 100,
+            "profile_evaluations_upper": 300,
+            "terminal": "solver_unsuccessful",
+            "ids": [
+              "__DW_AB_K19N",
+              "__DW_AC_K19N",
+              "__R1_A_K19N_700_2MHZ",
+              "__R2_A_K19N_700_2MHZ",
+              "__R2_B_K19N_700_2MHZ",
+              "__R2_C_K19N_700_2MHZ"
+            ],
+            "start": [
+              2.5071900162984777,
+              1.9643366881083075,
+              1.4220320166887432,
+              7.186238685084342,
+              15.619362592546922,
+              5.369384287633428e-27
+            ],
+            "chi2": null
+          }
+        ]
+      },
+      "fallback_factors": [],
+      "root_fallback": false,
+      "incomplete": true,
+      "failed_attempts": 2,
+      "final": {
+        "seconds": 6.277489041996887,
+        "model_calculations": 612,
+        "requests": 201,
+        "evaluations": 201,
+        "profile_evaluations_upper": 603,
+        "local_refinements": 1,
+        "calls": [
+          {
+            "requests": 201,
+            "evaluations": 201,
+            "profile_evaluations_upper": 603,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_K19N",
+              "__DW_AC_K19N",
+              "__KEX_AB",
+              "__KEX_AC",
+              "__PB",
+              "__PC",
+              "__R1_A_K19N_700_2MHZ",
+              "__R2_A_K19N_700_2MHZ",
+              "__R2_B_K19N_700_2MHZ",
+              "__R2_C_K19N_700_2MHZ"
+            ],
+            "start": [
+              2.5071900162984777,
+              -1.9643366881083075,
+              10.0,
+              10.0,
+              0.03,
+              0.03,
+              1.4220320166887432,
+              7.186238685084342,
+              15.619362592546922,
+              5.369384287633428e-27
+            ],
+            "chi2": 1008.6594658176635
+          }
+        ],
+        "terminal": "accepted",
+        "chi2": 1008.6594658176635,
+        "vector": [
+          2.513686400174945,
+          -1.9664967572650116,
+          5.23251690442789,
+          2.944157922001984e-12,
+          0.07892031113317532,
+          0.10426232911020387,
+          1.4190623250621357,
+          7.735168208707286,
+          6.3791259328158185,
+          13.703775993785555
+        ]
+      },
+      "reused_final_measurement": false
+    },
+    {
+      "case": "dcest",
+      "alternate_cap": 200,
+      "normal_cap": 3000,
+      "preparation": {
+        "seconds": 18.260723499999585,
+        "model_calculations": 1785,
+        "requests": 589,
+        "evaluations": 589,
+        "profile_evaluations_upper": 1767,
+        "local_refinements": 4,
+        "calls": [
+          {
+            "requests": 91,
+            "evaluations": 91,
+            "profile_evaluations_upper": 273,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_K19N",
+              "__DW_AC_K19N",
+              "__R1_A_K19N_700_2MHZ",
+              "__R2_A_K19N_700_2MHZ",
+              "__R2_B_K19N_700_2MHZ",
+              "__R2_C_K19N_700_2MHZ"
+            ],
+            "start": [
+              2.51,
+              -1.97,
+              1.9320429987656067,
+              6.243680351282124,
+              6.243680351282124,
+              6.243680351282124
+            ],
+            "chi2": 1661.4660997332926
+          },
+          {
+            "requests": 98,
+            "evaluations": 98,
+            "profile_evaluations_upper": 294,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_K19N",
+              "__DW_AC_K19N",
+              "__R1_A_K19N_700_2MHZ",
+              "__R2_A_K19N_700_2MHZ",
+              "__R2_B_K19N_700_2MHZ",
+              "__R2_C_K19N_700_2MHZ"
+            ],
+            "start": [
+              -2.5071900162984777,
+              -1.9643366881083075,
+              1.4220320166887432,
+              7.186238685084342,
+              15.619362592546922,
+              5.369384287633428e-27
+            ],
+            "chi2": 9522.233021768698
+          },
+          {
+            "requests": 200,
+            "evaluations": 200,
+            "profile_evaluations_upper": 600,
+            "terminal": "solver_unsuccessful",
+            "ids": [
+              "__DW_AB_K19N",
+              "__DW_AC_K19N",
+              "__R1_A_K19N_700_2MHZ",
+              "__R2_A_K19N_700_2MHZ",
+              "__R2_B_K19N_700_2MHZ",
+              "__R2_C_K19N_700_2MHZ"
+            ],
+            "start": [
+              -2.5071900162984777,
+              1.9643366881083075,
+              1.4220320166887432,
+              7.186238685084342,
+              15.619362592546922,
+              5.369384287633428e-27
+            ],
+            "chi2": null
+          },
+          {
+            "requests": 200,
+            "evaluations": 200,
+            "profile_evaluations_upper": 600,
+            "terminal": "solver_unsuccessful",
+            "ids": [
+              "__DW_AB_K19N",
+              "__DW_AC_K19N",
+              "__R1_A_K19N_700_2MHZ",
+              "__R2_A_K19N_700_2MHZ",
+              "__R2_B_K19N_700_2MHZ",
+              "__R2_C_K19N_700_2MHZ"
+            ],
+            "start": [
+              2.5071900162984777,
+              1.9643366881083075,
+              1.4220320166887432,
+              7.186238685084342,
+              15.619362592546922,
+              5.369384287633428e-27
+            ],
+            "chi2": null
+          }
+        ]
+      },
+      "fallback_factors": [],
+      "root_fallback": false,
+      "incomplete": true,
+      "failed_attempts": 2,
+      "final": {
+        "seconds": 6.277489041996887,
+        "model_calculations": 612,
+        "requests": 201,
+        "evaluations": 201,
+        "profile_evaluations_upper": 603,
+        "local_refinements": 1,
+        "calls": [
+          {
+            "requests": 201,
+            "evaluations": 201,
+            "profile_evaluations_upper": 603,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_K19N",
+              "__DW_AC_K19N",
+              "__KEX_AB",
+              "__KEX_AC",
+              "__PB",
+              "__PC",
+              "__R1_A_K19N_700_2MHZ",
+              "__R2_A_K19N_700_2MHZ",
+              "__R2_B_K19N_700_2MHZ",
+              "__R2_C_K19N_700_2MHZ"
+            ],
+            "start": [
+              2.5071900162984777,
+              -1.9643366881083075,
+              10.0,
+              10.0,
+              0.03,
+              0.03,
+              1.4220320166887432,
+              7.186238685084342,
+              15.619362592546922,
+              5.369384287633428e-27
+            ],
+            "chi2": 1008.6594658176635
+          }
+        ],
+        "terminal": "accepted",
+        "chi2": 1008.6594658176635,
+        "vector": [
+          2.513686400174945,
+          -1.9664967572650116,
+          5.23251690442789,
+          2.944157922001984e-12,
+          0.07892031113317532,
+          0.10426232911020387,
+          1.4190623250621357,
+          7.735168208707286,
+          6.3791259328158185,
+          13.703775993785555
+        ]
+      },
+      "reused_final_measurement": true
+    },
+    {
+      "case": "dcest",
+      "alternate_cap": 500,
+      "normal_cap": 3000,
+      "preparation": {
+        "seconds": 24.8683409999976,
+        "model_calculations": 2421,
+        "requests": 799,
+        "evaluations": 799,
+        "profile_evaluations_upper": 2397,
+        "local_refinements": 4,
+        "calls": [
+          {
+            "requests": 91,
+            "evaluations": 91,
+            "profile_evaluations_upper": 273,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_K19N",
+              "__DW_AC_K19N",
+              "__R1_A_K19N_700_2MHZ",
+              "__R2_A_K19N_700_2MHZ",
+              "__R2_B_K19N_700_2MHZ",
+              "__R2_C_K19N_700_2MHZ"
+            ],
+            "start": [
+              2.51,
+              -1.97,
+              1.9320429987656067,
+              6.243680351282124,
+              6.243680351282124,
+              6.243680351282124
+            ],
+            "chi2": 1661.4660997332926
+          },
+          {
+            "requests": 98,
+            "evaluations": 98,
+            "profile_evaluations_upper": 294,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_K19N",
+              "__DW_AC_K19N",
+              "__R1_A_K19N_700_2MHZ",
+              "__R2_A_K19N_700_2MHZ",
+              "__R2_B_K19N_700_2MHZ",
+              "__R2_C_K19N_700_2MHZ"
+            ],
+            "start": [
+              -2.5071900162984777,
+              -1.9643366881083075,
+              1.4220320166887432,
+              7.186238685084342,
+              15.619362592546922,
+              5.369384287633428e-27
+            ],
+            "chi2": 9522.233021768698
+          },
+          {
+            "requests": 323,
+            "evaluations": 323,
+            "profile_evaluations_upper": 969,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_K19N",
+              "__DW_AC_K19N",
+              "__R1_A_K19N_700_2MHZ",
+              "__R2_A_K19N_700_2MHZ",
+              "__R2_B_K19N_700_2MHZ",
+              "__R2_C_K19N_700_2MHZ"
+            ],
+            "start": [
+              -2.5071900162984777,
+              1.9643366881083075,
+              1.4220320166887432,
+              7.186238685084342,
+              15.619362592546922,
+              5.369384287633428e-27
+            ],
+            "chi2": 1661.46609790926
+          },
+          {
+            "requests": 287,
+            "evaluations": 287,
+            "profile_evaluations_upper": 861,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_K19N",
+              "__DW_AC_K19N",
+              "__R1_A_K19N_700_2MHZ",
+              "__R2_A_K19N_700_2MHZ",
+              "__R2_B_K19N_700_2MHZ",
+              "__R2_C_K19N_700_2MHZ"
+            ],
+            "start": [
+              2.5071900162984777,
+              1.9643366881083075,
+              1.4220320166887432,
+              7.186238685084342,
+              15.619362592546922,
+              5.369384287633428e-27
+            ],
+            "chi2": 2531.371020403273
+          }
+        ]
+      },
+      "fallback_factors": [],
+      "root_fallback": false,
+      "incomplete": false,
+      "failed_attempts": 0,
+      "final": {
+        "seconds": 6.145311915999628,
+        "model_calculations": 603,
+        "requests": 198,
+        "evaluations": 198,
+        "profile_evaluations_upper": 594,
+        "local_refinements": 1,
+        "calls": [
+          {
+            "requests": 198,
+            "evaluations": 198,
+            "profile_evaluations_upper": 594,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_K19N",
+              "__DW_AC_K19N",
+              "__KEX_AB",
+              "__KEX_AC",
+              "__PB",
+              "__PC",
+              "__R1_A_K19N_700_2MHZ",
+              "__R2_A_K19N_700_2MHZ",
+              "__R2_B_K19N_700_2MHZ",
+              "__R2_C_K19N_700_2MHZ"
+            ],
+            "start": [
+              -1.9643347984380806,
+              2.507187103346803,
+              10.0,
+              10.0,
+              0.03,
+              0.03,
+              1.4220324769913162,
+              7.1862379190411465,
+              7.347631939778573e-35,
+              15.618687763092304
+            ],
+            "chi2": 1008.6594758312854
+          }
+        ],
+        "terminal": "accepted",
+        "chi2": 1008.6594758312854,
+        "vector": [
+          -1.9664930202797637,
+          2.51368666544598,
+          9.816012786913698e-12,
+          5.233013357794826,
+          0.10426585745355378,
+          0.07891223149076237,
+          1.4190618818013294,
+          7.735137921806287,
+          13.703858659405704,
+          6.3811372316997454
+        ]
+      },
+      "reused_final_measurement": false
+    },
+    {
+      "case": "dcest",
+      "alternate_cap": 1000,
+      "normal_cap": 3000,
+      "preparation": {
+        "seconds": 25.018261875000462,
+        "model_calculations": 2421,
+        "requests": 799,
+        "evaluations": 799,
+        "profile_evaluations_upper": 2397,
+        "local_refinements": 4,
+        "calls": [
+          {
+            "requests": 91,
+            "evaluations": 91,
+            "profile_evaluations_upper": 273,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_K19N",
+              "__DW_AC_K19N",
+              "__R1_A_K19N_700_2MHZ",
+              "__R2_A_K19N_700_2MHZ",
+              "__R2_B_K19N_700_2MHZ",
+              "__R2_C_K19N_700_2MHZ"
+            ],
+            "start": [
+              2.51,
+              -1.97,
+              1.9320429987656067,
+              6.243680351282124,
+              6.243680351282124,
+              6.243680351282124
+            ],
+            "chi2": 1661.4660997332926
+          },
+          {
+            "requests": 98,
+            "evaluations": 98,
+            "profile_evaluations_upper": 294,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_K19N",
+              "__DW_AC_K19N",
+              "__R1_A_K19N_700_2MHZ",
+              "__R2_A_K19N_700_2MHZ",
+              "__R2_B_K19N_700_2MHZ",
+              "__R2_C_K19N_700_2MHZ"
+            ],
+            "start": [
+              -2.5071900162984777,
+              -1.9643366881083075,
+              1.4220320166887432,
+              7.186238685084342,
+              15.619362592546922,
+              5.369384287633428e-27
+            ],
+            "chi2": 9522.233021768698
+          },
+          {
+            "requests": 323,
+            "evaluations": 323,
+            "profile_evaluations_upper": 969,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_K19N",
+              "__DW_AC_K19N",
+              "__R1_A_K19N_700_2MHZ",
+              "__R2_A_K19N_700_2MHZ",
+              "__R2_B_K19N_700_2MHZ",
+              "__R2_C_K19N_700_2MHZ"
+            ],
+            "start": [
+              -2.5071900162984777,
+              1.9643366881083075,
+              1.4220320166887432,
+              7.186238685084342,
+              15.619362592546922,
+              5.369384287633428e-27
+            ],
+            "chi2": 1661.46609790926
+          },
+          {
+            "requests": 287,
+            "evaluations": 287,
+            "profile_evaluations_upper": 861,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_K19N",
+              "__DW_AC_K19N",
+              "__R1_A_K19N_700_2MHZ",
+              "__R2_A_K19N_700_2MHZ",
+              "__R2_B_K19N_700_2MHZ",
+              "__R2_C_K19N_700_2MHZ"
+            ],
+            "start": [
+              2.5071900162984777,
+              1.9643366881083075,
+              1.4220320166887432,
+              7.186238685084342,
+              15.619362592546922,
+              5.369384287633428e-27
+            ],
+            "chi2": 2531.371020403273
+          }
+        ]
+      },
+      "fallback_factors": [],
+      "root_fallback": false,
+      "incomplete": false,
+      "failed_attempts": 0,
+      "final": {
+        "seconds": 6.145311915999628,
+        "model_calculations": 603,
+        "requests": 198,
+        "evaluations": 198,
+        "profile_evaluations_upper": 594,
+        "local_refinements": 1,
+        "calls": [
+          {
+            "requests": 198,
+            "evaluations": 198,
+            "profile_evaluations_upper": 594,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_K19N",
+              "__DW_AC_K19N",
+              "__KEX_AB",
+              "__KEX_AC",
+              "__PB",
+              "__PC",
+              "__R1_A_K19N_700_2MHZ",
+              "__R2_A_K19N_700_2MHZ",
+              "__R2_B_K19N_700_2MHZ",
+              "__R2_C_K19N_700_2MHZ"
+            ],
+            "start": [
+              -1.9643347984380806,
+              2.507187103346803,
+              10.0,
+              10.0,
+              0.03,
+              0.03,
+              1.4220324769913162,
+              7.1862379190411465,
+              7.347631939778573e-35,
+              15.618687763092304
+            ],
+            "chi2": 1008.6594758312854
+          }
+        ],
+        "terminal": "accepted",
+        "chi2": 1008.6594758312854,
+        "vector": [
+          -1.9664930202797637,
+          2.51368666544598,
+          9.816012786913698e-12,
+          5.233013357794826,
+          0.10426585745355378,
+          0.07891223149076237,
+          1.4190618818013294,
+          7.735137921806287,
+          13.703858659405704,
+          6.3811372316997454
+        ]
+      },
+      "reused_final_measurement": true
+    },
+    {
+      "case": "dcest",
+      "alternate_cap": 3000,
+      "normal_cap": 3000,
+      "preparation": {
+        "seconds": 24.96926949999761,
+        "model_calculations": 2421,
+        "requests": 799,
+        "evaluations": 799,
+        "profile_evaluations_upper": 2397,
+        "local_refinements": 4,
+        "calls": [
+          {
+            "requests": 91,
+            "evaluations": 91,
+            "profile_evaluations_upper": 273,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_K19N",
+              "__DW_AC_K19N",
+              "__R1_A_K19N_700_2MHZ",
+              "__R2_A_K19N_700_2MHZ",
+              "__R2_B_K19N_700_2MHZ",
+              "__R2_C_K19N_700_2MHZ"
+            ],
+            "start": [
+              2.51,
+              -1.97,
+              1.9320429987656067,
+              6.243680351282124,
+              6.243680351282124,
+              6.243680351282124
+            ],
+            "chi2": 1661.4660997332926
+          },
+          {
+            "requests": 98,
+            "evaluations": 98,
+            "profile_evaluations_upper": 294,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_K19N",
+              "__DW_AC_K19N",
+              "__R1_A_K19N_700_2MHZ",
+              "__R2_A_K19N_700_2MHZ",
+              "__R2_B_K19N_700_2MHZ",
+              "__R2_C_K19N_700_2MHZ"
+            ],
+            "start": [
+              -2.5071900162984777,
+              -1.9643366881083075,
+              1.4220320166887432,
+              7.186238685084342,
+              15.619362592546922,
+              5.369384287633428e-27
+            ],
+            "chi2": 9522.233021768698
+          },
+          {
+            "requests": 323,
+            "evaluations": 323,
+            "profile_evaluations_upper": 969,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_K19N",
+              "__DW_AC_K19N",
+              "__R1_A_K19N_700_2MHZ",
+              "__R2_A_K19N_700_2MHZ",
+              "__R2_B_K19N_700_2MHZ",
+              "__R2_C_K19N_700_2MHZ"
+            ],
+            "start": [
+              -2.5071900162984777,
+              1.9643366881083075,
+              1.4220320166887432,
+              7.186238685084342,
+              15.619362592546922,
+              5.369384287633428e-27
+            ],
+            "chi2": 1661.46609790926
+          },
+          {
+            "requests": 287,
+            "evaluations": 287,
+            "profile_evaluations_upper": 861,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_K19N",
+              "__DW_AC_K19N",
+              "__R1_A_K19N_700_2MHZ",
+              "__R2_A_K19N_700_2MHZ",
+              "__R2_B_K19N_700_2MHZ",
+              "__R2_C_K19N_700_2MHZ"
+            ],
+            "start": [
+              2.5071900162984777,
+              1.9643366881083075,
+              1.4220320166887432,
+              7.186238685084342,
+              15.619362592546922,
+              5.369384287633428e-27
+            ],
+            "chi2": 2531.371020403273
+          }
+        ]
+      },
+      "fallback_factors": [],
+      "root_fallback": false,
+      "incomplete": false,
+      "failed_attempts": 0,
+      "final": {
+        "seconds": 6.145311915999628,
+        "model_calculations": 603,
+        "requests": 198,
+        "evaluations": 198,
+        "profile_evaluations_upper": 594,
+        "local_refinements": 1,
+        "calls": [
+          {
+            "requests": 198,
+            "evaluations": 198,
+            "profile_evaluations_upper": 594,
+            "terminal": "success",
+            "ids": [
+              "__DW_AB_K19N",
+              "__DW_AC_K19N",
+              "__KEX_AB",
+              "__KEX_AC",
+              "__PB",
+              "__PC",
+              "__R1_A_K19N_700_2MHZ",
+              "__R2_A_K19N_700_2MHZ",
+              "__R2_B_K19N_700_2MHZ",
+              "__R2_C_K19N_700_2MHZ"
+            ],
+            "start": [
+              -1.9643347984380806,
+              2.507187103346803,
+              10.0,
+              10.0,
+              0.03,
+              0.03,
+              1.4220324769913162,
+              7.1862379190411465,
+              7.347631939778573e-35,
+              15.618687763092304
+            ],
+            "chi2": 1008.6594758312854
+          }
+        ],
+        "terminal": "accepted",
+        "chi2": 1008.6594758312854,
+        "vector": [
+          -1.9664930202797637,
+          2.51368666544598,
+          9.816012786913698e-12,
+          5.233013357794826,
+          0.10426585745355378,
+          0.07891223149076237,
+          1.4190618818013294,
+          7.735137921806287,
+          13.703858659405704,
+          6.3811372316997454
+        ]
+      },
+      "reused_final_measurement": true
+    }
+  ],
+  "alternate_cap_followup": {
+    "measured_parent": "d64838debdfcfdfbbbab45505d535b1e585e5595",
+    "command": "uv run --no-sync python benchmarks/profile_preparation.py --alternate-caps --output /tmp/chemex-alternate-caps.json",
+    "normal_policy": "min(600*(nvars+1),3000)",
+    "alternate_cap": 500,
+    "max_selected_mirrors_per_factor": 2,
+    "focused_validation": {
+      "passed": 99,
+      "seconds": 33.55,
+      "command": "uv run --no-sync pytest -q tests/test_profile_preparation.py tests/test_profiled_grid.py tests/test_method_compiler_architecture.py tests/configuration/test_method_plan.py"
+    },
+    "environment": {
+      "python": "3.13.13 (main, May 10 2026, 19:20:37) [Clang 22.1.3 ]",
+      "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+      "numpy": "2.5.1",
+      "scipy": "1.18.0",
+      "native_threads": 1
+    },
+    "note": "Final TRF measurements reused only for identical reconstructed vectors, explicitly marked in rows."
   }
 }

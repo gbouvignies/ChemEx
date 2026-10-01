@@ -11,6 +11,8 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
 - Optional `SEARCH.PROFILE` prepares one validated TRF start using exact
   factor-local nuisance fits with temporarily held `HOLD` coordinates and
   endpoint-derived constant-DW `MIRROR` trials. Preparation has bounded work,
+  limits MIRROR to two selected coordinates per connected factor and caps each
+  alternate sign trial at 500 objective requests (normal nuisance cap 3000),
   reports failures, and falls back to original values; only the final normal
   complete/grouped TRF can be accepted or committed.
 

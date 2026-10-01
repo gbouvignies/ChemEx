@@ -303,7 +303,7 @@ def test_preparation_cannot_commit_if_final_trf_fails(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    "factor_count,dw_count,expected", ((20, 1, 40), (1, 2, 4), (2, 0, 2))
+    "factor_count,dw_count,expected", ((20, 1, 40), (1, 2, 4), (2, 0, 2), (1, 3, 2))
 )
 def test_factor_execution_is_additive_and_connected_combinations_are_local(
     factor_count: int, dw_count: int, expected: int
@@ -331,9 +331,11 @@ def test_factor_execution_is_additive_and_connected_combinations_are_local(
         plan=SimpleNamespace(identity="plan"), project_profiles=lambda _: None
     )
     calls = []
+    budgets = []
 
     def endpoint(_root, factor, _engine, _par, ordinal, held, **kwargs):
         calls.append(kwargs["nuisance_start_items"])
+        budgets.append(kwargs["objective_request_budget"])
         values = tuple(
             (key, 0.0 if dw_count == 0 else 2.2) for key in factor.nuisance_ids
         )
@@ -349,8 +351,16 @@ def test_factor_execution_is_additive_and_connected_combinations_are_local(
     ):
         result = prepare_profile_start(root, ("g",), mirror, None, engine)
     assert len(result.attempts) == expected
-    assert len(calls) == expected
-    if dw_count:
+    assert len(calls) == (1 if dw_count > 2 else expected)
+    if dw_count > 2:
+        assert result.incomplete
+        assert "at most two" in result.attempts[-1].failure
+        assert result.attempts[0].status is ProfiledGridPointStatus.SUCCESS
+    elif dw_count:
+        assert budgets[0] == preparation.preparation_request_budget(max(dw_count, 1))
+        assert budgets[1] == preparation.preparation_request_budget(
+            max(dw_count, 1), alternate=True
+        )
         assert any(any(value == -2.2 for _, value in start) for start in calls)
 
 
@@ -360,6 +370,8 @@ def test_budget_is_separate_from_full_trf_and_dimension_limited() -> None:
     _, _, _, _, root, _ = _qualification_fit()
     assert preparation.preparation_request_budget(4) == 3000
     assert preparation.preparation_request_budget(50) == 3000
+    assert preparation.preparation_request_budget(4, alternate=True) == 500
+    assert preparation.preparation_request_budget(50, alternate=True) == 500
     assert _objective_request_budget(root) == 2000 * (
         max(1, len(root.controlled_ids)) + 1
     )
@@ -422,3 +434,96 @@ def test_unavailable_factor_proof_restores_original_start_for_final_trf() -> Non
         )
     assert result.incomplete and result.root_fallback
     assert result.vector == context.problem.start
+
+
+@pytest.mark.parametrize("values", ((0.0, 0.0, 0.0), (1.0, -2.0, 3.0)))
+def test_three_requested_mirrors_rejected_before_sign_enumeration(values) -> None:
+    endpoint = tuple(zip(("ab1", "ab2", "ac"), values, strict=True))
+    with (
+        patch.object(
+            preparation, "product", side_effect=AssertionError("unbounded enumeration")
+        ),
+        pytest.raises(
+            DirectTrfConstructionError, match="at most two.*connected factor"
+        ),
+    ):
+        mirrored_endpoints(endpoint, ("ab1", "ab2", "ac"))
+
+
+def test_unqualified_factor_keeps_normal_endpoint_and_reports_reason(capsys) -> None:
+    from chemex.messages import print_profile_preparation_result
+
+    normal = ProfiledGridPoint(
+        0,
+        (),
+        ProfiledGridPointStatus.SUCCESS,
+        1.0,
+        (("a", 2.0), ("b", -3.0), ("c", 4.0)),
+        10,
+    )
+    attempts = [normal]
+    assert preparation._factor_branch_starts(normal, ("a", "b", "c"), attempts) == ()
+    assert attempts[0] is normal
+    assert len(attempts) == 2
+    failure = attempts[1].failure
+    assert failure is not None and "at most two" in failure
+    print_profile_preparation_result(True, 0, False, (failure,))
+    assert "at most two coordinates per connected factor" in capsys.readouterr().out
+
+
+def test_alternate_budget_exhaustion_preserves_normal_endpoint_and_work_bound() -> None:
+    context = build_context("cpmg")
+    hold, mirror = _coordinates(context)
+    budget = preparation.preparation_request_budget
+    with patch.object(
+        preparation,
+        "preparation_request_budget",
+        side_effect=lambda n, *, alternate=False: 1 if alternate else budget(n),
+    ):
+        result = prepare_profile_start(
+            context.problem, hold, mirror, context.parameterization, context.engine
+        )
+    assert (
+        result.incomplete and not result.fallback_factors and not result.root_fallback
+    )
+    assert len(result.attempts) == 10
+    for normal, alternate in zip(
+        result.attempts[::2], result.attempts[1::2], strict=True
+    ):
+        assert normal.status is ProfiledGridPointStatus.SUCCESS
+        assert alternate.status is ProfiledGridPointStatus.FAILED
+        assert alternate.objective_evaluations <= 1
+        assert (
+            dict(
+                zip(context.problem.controlled_ids, result.vector, strict=True)
+            ).items()
+            >= dict(normal.nuisance_items).items()
+        )
+
+
+def test_real_connected_factor_over_limit_preserves_normal_and_final_trf() -> None:
+    context = build_context("cpmg")
+    _, mirror = _coordinates(context)
+    assert len(mirror) == 5
+    # Without holding coupling coordinates these five DWs share one factor.
+    with patch.object(
+        preparation, "product", side_effect=AssertionError("unqualified sign product")
+    ):
+        result = prepare_profile_start(
+            context.problem, (), mirror, context.parameterization, context.engine
+        )
+    assert (
+        result.incomplete and not result.fallback_factors and not result.root_fallback
+    )
+    assert len(result.attempts) == 2
+    normal, rejected = result.attempts
+    assert normal.status is ProfiledGridPointStatus.SUCCESS
+    assert dict(normal.nuisance_items) == dict(
+        zip(context.problem.controlled_ids, result.vector, strict=True)
+    )
+    assert rejected.status is ProfiledGridPointStatus.FAILED
+    assert rejected.objective_evaluations == 0
+    assert "at most two" in rejected.failure
+    final = refine(context, result.vector)
+    assert final["terminal"] == "accepted"
+    assert final["chi2"] == pytest.approx(434.5551945, abs=1e-3)

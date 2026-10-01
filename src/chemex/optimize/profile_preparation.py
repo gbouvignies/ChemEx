@@ -24,16 +24,21 @@ from chemex.optimize.profiled_grid import (
 from chemex.parameters.parameterization import ActiveParameterization
 
 
-def preparation_request_budget(nvars: int) -> int:
+def preparation_request_budget(nvars: int, *, alternate: bool = False) -> int:
     """Limit actual objective requests separately from authoritative refinement."""
-    return min(600 * (nvars + 1), 3000)
+    return min(600 * (nvars + 1), 500 if alternate else 3000)
 
 
 def mirrored_endpoints(
     endpoint: tuple[tuple[str, float], ...], mirror_ids: tuple[str, ...]
 ) -> tuple[tuple[tuple[str, float], ...], ...]:
     """Enumerate signs of nonzero fitted magnitudes inside one proven factor."""
-    active = tuple(key for key, value in endpoint if key in mirror_ids and value != 0.0)
+    selected = tuple(key for key, _ in endpoint if key in mirror_ids)
+    if len(selected) > 2:
+        raise DirectTrfConstructionError(
+            "MIRROR supports at most two coordinates per connected factor"
+        )
+    active = tuple(key for key, value in endpoint if key in selected and value != 0.0)
     values = dict(endpoint)
     starts = []
     for signs in product((-1.0, 1.0), repeat=len(active)):
@@ -119,7 +124,7 @@ def prepare_profile_start(
             continue
         # Always branch from the normal successful endpoint, never from an
         # earlier alternate or from numerical safety bounds.
-        for start in mirrored_endpoints(best.nuisance_items, mirror_ids):
+        for start in _factor_branch_starts(best, mirror_ids, attempts):
             point = _fit_preparation_factor(
                 problem,
                 factor,
@@ -130,6 +135,7 @@ def prepare_profile_start(
                 token,
                 attempts,
                 len(factors),
+                alternate=True,
             )
             if (
                 point.status is ProfiledGridPointStatus.SUCCESS
@@ -169,6 +175,8 @@ def _fit_preparation_factor(
     token: CancellationToken,
     attempts: list[ProfiledGridPoint],
     factor_count: int,
+    *,
+    alternate: bool = False,
 ) -> ProfiledGridPoint:
     ordinal = len(attempts)
     try:
@@ -180,7 +188,7 @@ def _fit_preparation_factor(
             ordinal,
             held,
             objective_request_budget=preparation_request_budget(
-                len(factor.nuisance_ids)
+                len(factor.nuisance_ids), alternate=alternate
             ),
             cancellation=token,
             progress_observer=None,
@@ -199,3 +207,23 @@ def _fit_preparation_factor(
         raise KeyboardInterrupt("Profile preparation interrupted")
     attempts.append(point)
     return point
+
+
+def _factor_branch_starts(
+    normal: ProfiledGridPoint,
+    mirror_ids: tuple[str, ...],
+    attempts: list[ProfiledGridPoint],
+) -> tuple[tuple[tuple[str, float], ...], ...]:
+    """Reject unqualified combinatorics without discarding a valid normal fit."""
+    try:
+        return mirrored_endpoints(normal.nuisance_items, mirror_ids)
+    except DirectTrfConstructionError as error:
+        attempts.append(
+            ProfiledGridPoint(
+                len(attempts),
+                normal.axis_items,
+                ProfiledGridPointStatus.FAILED,
+                failure=str(error),
+            )
+        )
+        return ()
