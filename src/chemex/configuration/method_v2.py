@@ -182,11 +182,11 @@ def _grid_search(value: object, filename: Path, name: str) -> GridSearch:
 def _profile_preparation(
     value: object, filename: Path, name: str
 ) -> ProfilePreparation:
-    source = SourceRef(filename, name, "SEARCH.PROFILE")
-    settings = _mapping(value, {"hold", "mirror"}, source)
+    source = SourceRef(filename, name, "SEARCH.PREPARE")
+    settings = _mapping(value, {"hold", "try_dw_signs"}, source)
     selectors = {}
-    for key in ("hold", "mirror"):
-        field = f"SEARCH.PROFILE.{key.upper()}"
+    for key in ("hold", "try_dw_signs"):
+        field = f"SEARCH.PREPARE.{key.upper()}"
         selectors[key] = tuple(
             _selector(text, SourceRef(filename, name, field, index))
             for index, text in enumerate(
@@ -195,28 +195,28 @@ def _profile_preparation(
         )
     if not any(selectors.values()):
         raise MethodFormatError(
-            "SEARCH.PROFILE requires HOLD or MIRROR selectors", source
+            "SEARCH.PREPARE requires HOLD or TRY_DW_SIGNS selectors", source
         )
-    return ProfilePreparation(selectors["hold"], selectors["mirror"])
+    return ProfilePreparation(selectors["hold"], selectors["try_dw_signs"])
 
 
 def _search(
     value: object, filename: Path, name: str
 ) -> GridSearch | ProfilePreparation:
     source = SourceRef(filename, name, "SEARCH")
-    settings = _mapping(value, {"grid", "profile", "de"}, source)
+    settings = _mapping(value, {"grid", "prepare", "de"}, source)
     if "de" in settings:
         raise MethodFormatError(
-            "SEARCH.DE has been retired; use SEARCH.PROFILE for structured nuisance/branch refinement.",
+            "SEARCH.DE has been retired. Use the normal fit directly, or use SEARCH.PREPARE to improve starting values or try alternative DW signs before fitting.",
             SourceRef(filename, name, "SEARCH.DE"),
         )
     if len(settings) != 1:
         raise MethodFormatError(
-            "SEARCH must contain exactly one of GRID or PROFILE", source
+            "SEARCH must contain exactly one of GRID or PREPARE", source
         )
     if "grid" in settings:
         return _grid_search(settings["grid"], filename, name)
-    return _profile_preparation(settings["profile"], filename, name)
+    return _profile_preparation(settings["prepare"], filename, name)
 
 
 def _role_action(

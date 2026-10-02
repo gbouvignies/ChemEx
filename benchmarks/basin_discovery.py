@@ -138,7 +138,7 @@ def build_context(case: str) -> Context:
             [
                 example
                 / "Methods"
-                / ("method_profile.toml" if case == "dcest" else "method_grid.toml")
+                / ("method_prepare.toml" if case == "dcest" else "method_grid.toml")
             ]
         )
         step = compile_method_plan(plan, model, experiments).steps[0]
@@ -151,7 +151,7 @@ def build_context(case: str) -> Context:
         )
         if case == "dcest":
             if not isinstance(step.search, ProfilePreparationInstruction):
-                raise RuntimeError("Expected shipped PROFILE preparation")
+                raise RuntimeError("Expected shipped starting-value preparation")
             ranges = {
                 "PB": (0.001, 0.2, "log"),
                 "PC": (0.001, 0.2, "log"),

@@ -1150,7 +1150,7 @@ def test_empty_profile_step_does_not_require_an_active_fit_coordinate(
 [EMPTY]
 INCLUDE = ["K999"]
 
-[EMPTY.SEARCH.PROFILE]
+[EMPTY.SEARCH.PREPARE]
 HOLD = ["R1A_A, NUC->G2N-H"]
 
 [NEXT]
@@ -1346,7 +1346,7 @@ ROLES = [{ FIX = ["PB", "KEX_AB"] }]
 [SECOND]
 INCLUDE = ["G2N-HN"]
 
-[SECOND.SEARCH.PROFILE]
+[SECOND.SEARCH.PREPARE]
 HOLD = ["R1A_A, NUC->H3N-H"]
 """,
         encoding="utf-8",
@@ -1357,7 +1357,9 @@ HOLD = ["R1A_A, NUC->H3N-H"]
     preserved.write_text("previous run\n", encoding="utf-8")
     session = AnalysisSession.create()
 
-    with pytest.raises(MethodFormatError, match="no active final independent FIT"):
+    with pytest.raises(
+        MethodFormatError, match="does not select any active independent FIT"
+    ):
         run(
             _fit_arguments(output, method, include=("G2N-HN", "H3N-HN")),
             session=session,

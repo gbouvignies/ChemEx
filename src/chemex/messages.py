@@ -813,7 +813,7 @@ def print_running_grid() -> None:
 
 def print_profile_preparation() -> None:
     """Announce optional, non-authoritative nuisance preparation."""
-    console.print(Text("  • Preparing factor-local nuisance/DW starts..."))
+    console.print(Text("  • Improving starting values before fitting..."))
 
 
 def print_profile_preparation_result(
@@ -825,15 +825,22 @@ def print_profile_preparation_result(
     """Surface incomplete attempts without claiming successful profiling."""
     if incomplete:
         detail = (
-            "original root start restored"
+            "original starting values restored"
             if root_fallback
-            else f"{fallback_factors} factor(s) kept original values"
+            else f"{fallback_factors} local fit(s) kept original starting values"
         )
         console.print(
-            Text(f"  • Preparation incomplete ({detail}); continuing with full TRF.")
+            Text(
+                f"  • Starting-value preparation was only partly completed ({detail}); continuing with the normal final fit."
+            )
         )
         for failure in dict.fromkeys(failures):
-            console.print(Text(f"    {failure}"))
+            explanation = (
+                "A preliminary fit did not converge within its work limit."
+                if "objective_budget_exhausted" in failure
+                else failure
+            )
+            console.print(Text(f"    {explanation}"))
 
 
 def print_running_statistics(name: str) -> None:

@@ -36,7 +36,7 @@ def mirrored_endpoints(
     selected = tuple(key for key, _ in endpoint if key in mirror_ids)
     if len(selected) > 2:
         raise DirectTrfConstructionError(
-            "MIRROR supports at most two coordinates per connected factor"
+            "TRY_DW_SIGNS supports at most two selected DW parameters within the same coupled fit; the sign search was skipped"
         )
     active = tuple(key for key, value in endpoint if key in selected and value != 0.0)
     values = dict(endpoint)

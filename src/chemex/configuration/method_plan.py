@@ -346,7 +346,7 @@ class MethodPlan:
                 )
                 lines.append("]")
             elif isinstance(step.search, ProfilePreparation):
-                lines.extend(("", f"[{_toml_key(step.name)}.SEARCH.PROFILE]"))
+                lines.extend(("", f"[{_toml_key(step.name)}.SEARCH.PREPARE]"))
                 lines.extend(_render_preparation(step.search))
             lines.extend(_render_statistics(step.name, step.statistics))
         return "\n".join(lines) + "\n"
@@ -438,7 +438,7 @@ def _render_preparation(preparation: ProfilePreparation) -> list[str]:
         f"{key} = [{', '.join(json.dumps(item.render()) for item in selectors)}]"
         for key, selectors in (
             ("HOLD", preparation.hold),
-            ("MIRROR", preparation.mirror),
+            ("TRY_DW_SIGNS", preparation.mirror),
         )
         if selectors
     ]

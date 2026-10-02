@@ -1,3 +1,4 @@
+<!-- Numerical measurements retain their original runtime/source provenance. -->
 # Production qualification: optional factor-local start preparation
 
 Production follow-up: [#795](https://github.com/gbouvignies/ChemEx/issues/795).
@@ -79,9 +80,9 @@ still costs roughly 90 seconds on this machine. A universal 1000 cap is faster
 for that attempt but markedly slower overall for the useful CEST workflow.
 This is an explicit tradeoff, not a claim that all preparation is cheap.
 
-## Follow-up: bounded MIRROR cardinality and alternate budgets
+## Follow-up: bounded TRY_DW_SIGNS cardinality and alternate budgets
 
-MIRROR now permits at most **two selected coordinates per connected factor**,
+TRY_DW_SIGNS now permits at most **two selected coordinates per connected factor**,
 including selected coordinates whose fitted endpoint is zero. The guard runs
 before sign enumeration; thus a qualified factor has at most three alternate
 trials. Oversized factors retain their successful normal endpoint, record a
@@ -134,13 +135,13 @@ budget exhaustion. Ruff/formatting, ty and diff checks pass. The complete suite
 was not repeated for this focused follow-up; the initial complete-suite results
 and confirmed main-branch failures remain documented below.
 
-Current total production diff from main: **473 added, 1693 removed; net −1220**.
+Production diff before the terminology-only follow-up: **473 added, 1693 removed; net −1220**.
 The follow-up itself changes 38 source lines net and updates the existing
 benchmark runner/traces, preparation tests, Method docs and changelog.
 
 ## Scientific and acceptance semantics
 
-`SEARCH.PROFILE` uses `HOLD` and `MIRROR` selectors, with no ranges or seed.
+`SEARCH.PREPARE` uses `HOLD` and `TRY_DW_SIGNS` selectors, with no ranges or seed.
 HOLD coordinates stay at the current committed/root start only during nuisance
 preparation. Exact GRID dependency discovery proves factor independence;
 affine-coupled problems retain GRID's conservative single-factor treatment.
@@ -149,7 +150,7 @@ feasibility validation, including starts after `restart_from()`.
 
 Each normal successful factor endpoint supplies DW magnitudes and all other
 nuisance endpoint values for sign trials. Zero endpoints produce no invented
-branch. Combinations occur only within a connected factor. The initial MIRROR
+branch. Combinations occur only within a connected factor. The initial TRY_DW_SIGNS
 surface supports constant DW_AB/DW_AC; temperature-polynomial coefficients and
 other DW parameterizations are rejected. No exact sign symmetry is inferred.
 
@@ -211,7 +212,7 @@ A	benchmarks/profile_preparation.md
 A	benchmarks/profile_preparation.py
 A	benchmarks/profile_preparation_results.json
 D	examples/Experiments/DCEST_15N_3States/Methods/method_de.toml
-A	examples/Experiments/DCEST_15N_3States/Methods/method_profile.toml
+A	examples/Experiments/DCEST_15N_3States/Methods/method_prepare.toml
 M	src/chemex/configuration/method_expressions.py
 M	src/chemex/configuration/method_plan.py
 M	src/chemex/configuration/method_v2.py
@@ -233,3 +234,21 @@ A	tests/test_profile_preparation.py
 M	website/docs/user_guide/fitting/method_files.md
 M	website/docs/user_guide/fitting/temperature_dependent_shifts.md
 ```
+
+## User-facing terminology follow-up
+
+The public interface is now `SEARCH.PREPARE`, with `HOLD` and `TRY_DW_SIGNS`.
+The unshipped `SEARCH.PROFILE` and `MIRROR` spellings are rejected without
+compatibility aliases. The Method guide, shipped example, changelog, migration
+diagnostic and progress messages describe improving starting values and trying
+alternative chemical-shift-difference signs before the final fit. Numerical
+implementation and retained traces are unchanged. Internal `ProfilePreparation`,
+`profile_preparation`, nuisance/factor terminology, mirrored endpoints and
+complete-root validation remain useful technical names.
+
+Focused terminology validation: **115 passed, 2 deselected** across Method,
+compiler, preparation, selected production-fit and migration tests. The two
+CEST/DCEST numerical qualifications were excluded because this pass changes no
+numerical behavior; their qualified results above remain the evidence base.
+Ruff, formatting, type and diff checks pass. Graphify AST was updated. No
+complete-suite repeat or website build was performed for this pass.

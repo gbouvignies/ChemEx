@@ -267,7 +267,7 @@ def _method_selectors(
                     selector,
                     _source(
                         selector,
-                        SourceRef(Path("<method-plan>"), step.name, "SEARCH.PROFILE"),
+                        SourceRef(Path("<method-plan>"), step.name, "SEARCH.PREPARE"),
                     ),
                 )
 
@@ -712,31 +712,31 @@ def _validate_preparation(
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:
     seen: set[str] = set()
     resolved: list[tuple[str, ...]] = []
-    for field, selectors in (("HOLD", search.hold), ("MIRROR", search.mirror)):
+    for field, selectors in (("HOLD", search.hold), ("TRY_DW_SIGNS", search.mirror)):
         ids: list[str] = []
         for selector in selectors:
             source = _source(
                 selector,
-                SourceRef(Path("<method-plan>"), "", f"SEARCH.PROFILE.{field}"),
+                SourceRef(Path("<method-plan>"), "", f"SEARCH.PREPARE.{field}"),
             )
             matches = _matches(selector, model, source)
-            _reject_protected(matches, model, source, "PROFILE")
+            _reject_protected(matches, model, source, "PREPARE")
             for key in matches:
                 if roles[key] is not ParameterRole.FIT:
                     raise MethodFormatError(
-                        f"PROFILE target {key} is not a final independent FIT coordinate",
+                        f"PREPARE parameter {key} is not a final independent FIT coordinate",
                         source,
                     )
                 if key in seen:
                     raise MethodFormatError(
-                        f"Duplicate or overlapping PROFILE target {key}", source
+                        f"Duplicate or overlapping PREPARE parameter {key}", source
                     )
-                if field == "MIRROR" and (
+                if field == "TRY_DW_SIGNS" and (
                     model.definitions[key].name not in {"DW_AB", "DW_AC"}
                     or "tc" in model.model_name.split(".")
                 ):
                     raise MethodFormatError(
-                        "MIRROR supports only qualified constant DW_AB/DW_AC coordinates",
+                        "TRY_DW_SIGNS supports only constant DW_AB/DW_AC parameters; temperature-dependent DW coefficients are not supported",
                         source,
                     )
                 seen.add(key)
@@ -822,11 +822,11 @@ def project_preparation(
     active = frozenset(final_fit_ids)
     for selector in (*search.hold, *search.mirror):
         source = _source(
-            selector, SourceRef(Path("<method-plan>"), "", "SEARCH.PROFILE")
+            selector, SourceRef(Path("<method-plan>"), "", "SEARCH.PREPARE")
         )
         if not active.intersection(_matches(selector, model, source)):
             raise MethodFormatError(
-                "PROFILE selector has no active final independent FIT coordinate",
+                "PREPARE selector does not select any active independent FIT parameter",
                 source,
             )
     hold, mirror = resolved

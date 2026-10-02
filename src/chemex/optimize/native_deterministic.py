@@ -398,7 +398,7 @@ def _commit_resolved_continuity_if_changed(
     )
 
 
-def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/PROFILE product dispatcher
+def run_native_deterministic(  # noqa: C901 - closed Direct/GRID/PREPARE product dispatcher
     experiments: Experiments,
     path: Path,
     plot: str,

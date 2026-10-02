@@ -742,7 +742,7 @@ def test_all_shipped_methods_use_canonical_v2_and_parse() -> None:
         assert plan.render() == method.read_text(encoding="utf-8")
 
     profile_example = next(
-        path for path in methods if path.name == "method_profile.toml"
+        path for path in methods if path.name == "method_prepare.toml"
     )
     assert isinstance(
         read_method_plan([profile_example]).steps[0].search, ProfilePreparation
@@ -1067,7 +1067,7 @@ AXES = [
     assert tuple(axis.declaration_ordinal for axis in resolved) == (0, 1)
 
 
-@pytest.mark.parametrize("search_kind", ("GRID", "PROFILE"))
+@pytest.mark.parametrize("search_kind", ("GRID", "PREPARE"))
 def test_search_condition_selector_matches_its_named_field(
     tmp_path: Path,
     search_kind: str,

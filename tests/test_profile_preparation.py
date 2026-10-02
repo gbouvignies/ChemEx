@@ -31,7 +31,7 @@ def _coordinates(context):
 def test_profile_method_roundtrip_and_legacy_de_diagnostic(tmp_path: Path) -> None:
     method = tmp_path / "method.toml"
     method.write_text(
-        'FORMAT_VERSION = 2\n[STEP.SEARCH.PROFILE]\nHOLD = ["PB", "KEX_AB"]\nMIRROR = ["DW_AB"]\n'
+        'FORMAT_VERSION = 2\n[STEP.SEARCH.PREPARE]\nHOLD = ["PB", "KEX_AB"]\nTRY_DW_SIGNS = ["DW_AB"]\n'
     )
     plan = read_method_plan([method])
     assert isinstance(plan.steps[0].search, ProfilePreparation)
@@ -39,15 +39,17 @@ def test_profile_method_roundtrip_and_legacy_de_diagnostic(tmp_path: Path) -> No
     assert read_method_plan([method]).steps == plan.steps
     method.write_text("FORMAT_VERSION = 2\n[STEP.SEARCH.DE]\nSEED = 1\n")
     with pytest.raises(
-        MethodFormatError, match="SEARCH.DE has been retired; use SEARCH.PROFILE"
+        MethodFormatError, match="SEARCH.DE has been retired.*SEARCH.PREPARE"
     ):
         read_method_plan([method])
 
 
-@pytest.mark.parametrize("settings", ("", 'HOLD = "PB"', "MIRROR = [1]", "RANGES = []"))
+@pytest.mark.parametrize(
+    "settings", ("", 'HOLD = "PB"', "TRY_DW_SIGNS = [1]", "RANGES = []")
+)
 def test_invalid_profile_structure_is_rejected(tmp_path: Path, settings: str) -> None:
     method = tmp_path / "method.toml"
-    method.write_text(f"FORMAT_VERSION = 2\n[STEP.SEARCH.PROFILE]\n{settings}\n")
+    method.write_text(f"FORMAT_VERSION = 2\n[STEP.SEARCH.PREPARE]\n{settings}\n")
     with pytest.raises(MethodFormatError):
         read_method_plan([method])
 
@@ -242,8 +244,8 @@ def test_out_of_bounds_mirrored_child_start_is_rejected_safely() -> None:
 @pytest.mark.parametrize(
     "settings,diagnostic",
     (
-        ('HOLD = ["PB"]\nMIRROR = ["PB"]', "overlapping"),
-        ('MIRROR = ["R1A_A"]', "qualified constant"),
+        ('HOLD = ["PB"]\nTRY_DW_SIGNS = ["PB"]', "overlapping"),
+        ('TRY_DW_SIGNS = ["R1A_A"]', "only constant"),
         ('HOLD = ["UNKNOWN"]', "No parameter matches"),
     ),
 )
@@ -254,7 +256,7 @@ def test_profile_coordinate_validation(
 
     _, session, _ = _programmatic_fit_context(tmp_path / "Output")
     method = tmp_path / "method.toml"
-    method.write_text(f"FORMAT_VERSION = 2\n[STEP.SEARCH.PROFILE]\n{settings}\n")
+    method.write_text(f"FORMAT_VERSION = 2\n[STEP.SEARCH.PREPARE]\n{settings}\n")
     model = session.parameter_factory.sealed_parameter_model
     assert model is not None
     with pytest.raises(MethodFormatError, match=diagnostic):
@@ -270,14 +272,14 @@ def test_preparation_failure_cannot_skip_normal_final_fit_or_commit(
 
     method = tmp_path / "method.toml"
     method.write_text(
-        'FORMAT_VERSION = 2\n[STEP]\nROLES = [{FIX = ["KEX_AB"]}, {FIT = ["PB"]}]\n[STEP.SEARCH.PROFILE]\nHOLD = ["PB"]\n'
+        'FORMAT_VERSION = 2\n[STEP]\nROLES = [{FIX = ["KEX_AB"]}, {FIT = ["PB"]}]\n[STEP.SEARCH.PREPARE]\nHOLD = ["PB"]\n'
     )
     session = AnalysisSession.create()
     with patch.object(preparation, "preparation_request_budget", return_value=1):
         run(_fit_arguments(tmp_path / "Output", method), session=session)
     assert session.analysis_values.snapshot().revision == 1
     assert (tmp_path / "Output/Parameters/fitted.toml").exists()
-    assert "Preparation incomplete" in capsys.readouterr().out
+    assert "continuing with the normal final fit" in capsys.readouterr().out
 
 
 def test_preparation_cannot_commit_if_final_trf_fails(tmp_path: Path) -> None:
@@ -287,7 +289,7 @@ def test_preparation_cannot_commit_if_final_trf_fails(tmp_path: Path) -> None:
 
     method = tmp_path / "method.toml"
     method.write_text(
-        'FORMAT_VERSION = 2\n[STEP]\nROLES = [{FIX = ["KEX_AB"]}, {FIT = ["PB"]}]\n[STEP.SEARCH.PROFILE]\nHOLD = ["PB"]\n'
+        'FORMAT_VERSION = 2\n[STEP]\nROLES = [{FIX = ["KEX_AB"]}, {FIT = ["PB"]}]\n[STEP.SEARCH.PREPARE]\nHOLD = ["PB"]\n'
     )
     session = AnalysisSession.create()
     with (
@@ -413,9 +415,9 @@ def test_tc_dw_coefficients_are_not_silently_mirrored(tmp_path: Path) -> None:
     )
     method = tmp_path / "method.toml"
     method.write_text(
-        'FORMAT_VERSION = 2\n[STEP.SEARCH.PROFILE]\nMIRROR = ["DW0_AB"]\n'
+        'FORMAT_VERSION = 2\n[STEP.SEARCH.PREPARE]\nTRY_DW_SIGNS = ["DW0_AB"]\n'
     )
-    with pytest.raises(MethodFormatError, match="qualified constant"):
+    with pytest.raises(MethodFormatError, match="only constant"):
         read_method_plan([method]).validate(model)
 
 
@@ -444,7 +446,7 @@ def test_three_requested_mirrors_rejected_before_sign_enumeration(values) -> Non
             preparation, "product", side_effect=AssertionError("unbounded enumeration")
         ),
         pytest.raises(
-            DirectTrfConstructionError, match="at most two.*connected factor"
+            DirectTrfConstructionError, match="at most two.*same coupled fit"
         ),
     ):
         mirrored_endpoints(endpoint, ("ab1", "ab2", "ac"))
@@ -468,7 +470,9 @@ def test_unqualified_factor_keeps_normal_endpoint_and_reports_reason(capsys) -> 
     failure = attempts[1].failure
     assert failure is not None and "at most two" in failure
     print_profile_preparation_result(True, 0, False, (failure,))
-    assert "at most two coordinates per connected factor" in capsys.readouterr().out
+    assert "at most two selected DW parameters within the same coupled fit" in " ".join(
+        capsys.readouterr().out.split()
+    )
 
 
 def test_alternate_budget_exhaustion_preserves_normal_endpoint_and_work_bound() -> None:
@@ -527,3 +531,42 @@ def test_real_connected_factor_over_limit_preserves_normal_and_final_trf() -> No
     final = refine(context, result.vector)
     assert final["terminal"] == "accepted"
     assert final["chi2"] == pytest.approx(434.5551945, abs=1e-3)
+
+
+@pytest.mark.parametrize(
+    "table,settings", (("PROFILE", 'HOLD = ["PB"]'), ("PREPARE", 'MIRROR = ["DW_AB"]'))
+)
+def test_unshipped_preparation_spellings_have_no_compatibility_aliases(
+    tmp_path: Path, table: str, settings: str
+) -> None:
+    method = tmp_path / "method.toml"
+    method.write_text(f"FORMAT_VERSION = 2\n[STEP.SEARCH.{table}]\n{settings}\n")
+    with pytest.raises(MethodFormatError, match="Unsupported v2 field"):
+        read_method_plan([method])
+
+
+def test_prepare_public_rendering_and_user_progress_words(
+    tmp_path: Path, capsys
+) -> None:
+    from chemex.messages import (
+        print_profile_preparation,
+        print_profile_preparation_result,
+    )
+
+    method = tmp_path / "method.toml"
+    method.write_text(
+        'FORMAT_VERSION = 2\n[STEP.SEARCH.PREPARE]\nHOLD = ["PB", "KEX_AB"]\nTRY_DW_SIGNS = ["DW_AB"]\n'
+    )
+    rendered = read_method_plan([method]).render()
+    assert "[STEP.SEARCH.PREPARE]" in rendered
+    assert 'TRY_DW_SIGNS = ["DW_AB"]' in rendered
+    assert "SEARCH.PROFILE" not in rendered and "MIRROR" not in rendered
+    print_profile_preparation()
+    print_profile_preparation_result(
+        True, 1, False, ("TerminalFailure(category='objective_budget_exhausted')",)
+    )
+    output = capsys.readouterr().out
+    assert "Improving starting values before fitting" in output
+    assert "preliminary fit did not converge within its work limit" in output
+    assert "normal final fit" in output
+    assert "nuisance" not in output and "TerminalFailure" not in output
