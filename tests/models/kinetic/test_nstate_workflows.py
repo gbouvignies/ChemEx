@@ -34,14 +34,8 @@ from chemex.evaluation.native import (
 from chemex.models.factory import model_factory
 from chemex.nmr.basis import Basis
 from chemex.nmr.spectrometer import Spectrometer
-from chemex.optimize import de_direct_trf as de_module
 from chemex.optimize import native_mcmc as native_mcmc_module
 from chemex.optimize import uncertainty as uncertainty_module
-from chemex.optimize.de_direct_trf import (
-    DeSearchInvocation,
-    DeSearchTerminal,
-    execute_de_search,
-)
 from chemex.optimize.deterministic_uncertainty import (
     AcceptedDeterministicFitFacts,
     ContinuousTrfBasis,
@@ -354,66 +348,6 @@ def test_direct_trf_reaches_closed_simplex_boundaries(
     assert sum(
         resolved[workflow.local_ids[name]] for name in ("pa", "pb", "pc", "pd")
     ) == pytest.approx(1.0)
-
-
-def test_selected_coordinate_de_uses_public_nstate_simplex_values() -> None:
-    workflow = _build_workflow(
-        start={"pb": 0.2, "pc": 0.3, "pd": 0.2},
-        target={"pb": 0.2, "pc": 0.3, "pd": 0.45},
-        fitted_name="PD",
-    )
-    selected_id = workflow.problem.controlled_ids[0]
-    invocation = DeSearchInvocation.for_product_problem(
-        workflow.problem,
-        search_coordinates=((selected_id, 0.0, 1.0, "linear"),),
-        root_seed=773,
-    )
-    chart = invocation.search_problem.feasible_coordinates
-    assert chart is not None
-    assert chart.population_simplexes
-    assert not chart.uses_private_relaxation_coordinates
-    assert invocation.search_problem.controlled_ids == (selected_id,)
-    assert tuple(item.param_id for item in invocation.search_coordinates) == (
-        selected_id,
-    )
-
-    def valid_and_exterior_backend(live, _invocation, _solver_start):
-        valid = np.asarray((0.45,), dtype=np.float64)
-        exterior = np.asarray((0.8,), dtype=np.float64)
-        valid_objective = live.objective(valid)
-        assert math.isfinite(valid_objective)
-        assert live.objective(exterior) == math.inf
-        return SimpleNamespace(
-            success=True,
-            message="Optimization terminated successfully.",
-            nit=1,
-            nfev=2,
-            x=valid,
-            fun=valid_objective,
-            population=np.tile(valid, (invocation.population.size, 1)),
-            population_energies=np.full(
-                invocation.population.size,
-                valid_objective,
-            ),
-        )
-
-    with patch.object(
-        de_module,
-        "_invoke_de_backend",
-        side_effect=valid_and_exterior_backend,
-    ):
-        outcome = execute_de_search(
-            workflow.problem,
-            invocation,
-            workflow.parameterization,
-            workflow.engine,
-        )
-
-    assert outcome.terminal is DeSearchTerminal.POPULATION_CONVERGED
-    assert outcome.valid_candidate_count == 1
-    assert outcome.rejected_trial_count == 1
-    assert outcome.best_candidate is not None
-    assert outcome.best_candidate.selected_vector == (0.45,)
 
 
 def test_mcmc_accepts_exact_nstate_simplex_boundary_and_retries_exterior() -> None:

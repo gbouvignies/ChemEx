@@ -15,14 +15,13 @@ METHOD_LANGUAGE = {
     "FixAction",
     "ConstrainAction",
     "GridSearch",
-    "DeSearch",
+    "ProfilePreparation",
 }
 OLD_INTERPRETERS = {
     "effective_role_actions",
     "compile_parameterization_from_actions",
     "select_profiles",
     "resolve_grid_axes",
-    "resolve_de_coordinates",
 }
 
 

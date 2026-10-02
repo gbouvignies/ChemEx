@@ -5,14 +5,12 @@ from typing import Any
 
 from chemex.configuration.method_expressions import (
     parse_constraint,
-    parse_strict_de_coordinate,
     parse_strict_grid_axis,
     parse_strict_selector,
 )
 from chemex.configuration.method_plan import (
     ConstrainAction,
     Constraint,
-    DeSearch,
     FitAction,
     FixAction,
     FormatOrigin,
@@ -21,6 +19,7 @@ from chemex.configuration.method_plan import (
     MethodFormatError,
     MethodPlan,
     ParameterSelector,
+    ProfilePreparation,
     ProfileSelection,
     ResamplingRequest,
     RoleAction,
@@ -180,38 +179,44 @@ def _grid_search(value: object, filename: Path, name: str) -> GridSearch:
     )
 
 
-def _de_search(value: object, filename: Path, name: str) -> DeSearch:
-    source = SourceRef(filename, name, "SEARCH.DE")
-    settings = _mapping(value, {"seed", "coordinates"}, source)
-    if "seed" not in settings or "coordinates" not in settings:
-        raise MethodFormatError("SEARCH.DE requires SEED and COORDINATES", source)
-    coordinates = _string_list(
-        settings["coordinates"], SourceRef(filename, name, "SEARCH.DE.COORDINATES")
-    )
-    if not coordinates:
-        raise MethodFormatError(
-            "SEARCH.DE.COORDINATES must contain at least one entry",
-            SourceRef(filename, name, "SEARCH.DE.COORDINATES"),
-        )
-    return DeSearch(
-        _seed(settings["seed"], SourceRef(filename, name, "SEARCH.DE.SEED")),
-        tuple(
-            parse_strict_de_coordinate(
-                text, SourceRef(filename, name, "SEARCH.DE.COORDINATES", index)
+def _profile_preparation(
+    value: object, filename: Path, name: str
+) -> ProfilePreparation:
+    source = SourceRef(filename, name, "SEARCH.PREPARE")
+    settings = _mapping(value, {"hold", "try_dw_signs"}, source)
+    selectors = {}
+    for key in ("hold", "try_dw_signs"):
+        field = f"SEARCH.PREPARE.{key.upper()}"
+        selectors[key] = tuple(
+            _selector(text, SourceRef(filename, name, field, index))
+            for index, text in enumerate(
+                _string_list(settings.get(key, []), SourceRef(filename, name, field))
             )
-            for index, text in enumerate(coordinates)
-        ),
-    )
+        )
+    if not any(selectors.values()):
+        raise MethodFormatError(
+            "SEARCH.PREPARE requires HOLD or TRY_DW_SIGNS selectors", source
+        )
+    return ProfilePreparation(selectors["hold"], selectors["try_dw_signs"])
 
 
-def _search(value: object, filename: Path, name: str) -> GridSearch | DeSearch:
+def _search(
+    value: object, filename: Path, name: str
+) -> GridSearch | ProfilePreparation:
     source = SourceRef(filename, name, "SEARCH")
-    settings = _mapping(value, {"grid", "de"}, source)
+    settings = _mapping(value, {"grid", "prepare", "de"}, source)
+    if "de" in settings:
+        raise MethodFormatError(
+            "SEARCH.DE has been retired. Use the normal fit directly, or use SEARCH.PREPARE to improve starting values or try alternative DW signs before fitting.",
+            SourceRef(filename, name, "SEARCH.DE"),
+        )
     if len(settings) != 1:
-        raise MethodFormatError("SEARCH must contain exactly one of GRID or DE", source)
+        raise MethodFormatError(
+            "SEARCH must contain exactly one of GRID or PREPARE", source
+        )
     if "grid" in settings:
         return _grid_search(settings["grid"], filename, name)
-    return _de_search(settings["de"], filename, name)
+    return _profile_preparation(settings["prepare"], filename, name)
 
 
 def _role_action(

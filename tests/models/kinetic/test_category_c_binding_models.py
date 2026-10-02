@@ -384,7 +384,7 @@ def test_complete_legacy_pairs_are_converted_independently_per_temperature(
         ("3st_binding_if", 'GRID = ["[KCB] = lin(1.0, 2.0, 2)"]', "KCB"),
         (
             "3st_binding_cs",
-            '[STEP.SEARCH.DE]\nSEED = 19\nCOORDINATES = ["[KAB] = lin(1, 2)"]',
+            '[STEP.SEARCH.PREPARE]\nHOLD = ["KAB"]',
             "KAB",
         ),
     ),
@@ -398,7 +398,7 @@ def test_legacy_directional_method_roles_are_rejected_with_migration(
     session, _ = _prepare_model(model_name, 1.0e-3, 2.0e-3, {})
     assert session.try_build_analysis_values()
     method_path = tmp_path / "method.toml"
-    version = "FORMAT_VERSION = 2\n" if "SEARCH.DE" in method_entry else ""
+    version = "FORMAT_VERSION = 2\n" if "SEARCH.PREPARE" in method_entry else ""
     method_path.write_text(
         f"{version}[STEP]\n{method_entry}\n",
         encoding="utf-8",

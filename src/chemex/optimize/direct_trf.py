@@ -509,6 +509,7 @@ class ProfiledGridPointProblemDerivation:
     grid_items: tuple[tuple[str, float], ...]
     controlled_ids: tuple[str, ...]
     captured_independent_items: tuple[tuple[str, float], ...]
+    nuisance_start_items: tuple[tuple[str, float], ...] = ()
     identity: str = field(init=False)
 
     def __post_init__(self) -> None:
@@ -526,6 +527,11 @@ class ProfiledGridPointProblemDerivation:
             or set(grid_ids) & set(self.controlled_ids)
             or len(set(independent_ids)) != len(independent_ids)
             or not {*grid_ids, *self.controlled_ids}.issubset(independent_ids)
+            or (
+                self.nuisance_start_items
+                and tuple(key for key, _ in self.nuisance_start_items)
+                != self.controlled_ids
+            )
         ):
             raise DirectTrfConstructionError(
                 "Profiled GRID point derivation has inconsistent coordinates"
@@ -550,82 +556,22 @@ class ProfiledGridPointProblemDerivation:
                         (param_id, _float_token(value))
                         for param_id, value in self.captured_independent_items
                     ),
-                ),
-            ),
-        )
-
-
-@dataclass(frozen=True, slots=True)
-class DeSearchProblemDerivation:
-    """Exact lineage for one selected-coordinate DE search problem."""
-
-    root_problem_identity: str
-    root_affine_feasibility_identity: str
-    search_specification_identity: str
-    selected_ids: tuple[str, ...]
-    captured_held_items: tuple[tuple[str, float], ...]
-    start: tuple[float, ...]
-    identity: str = field(init=False)
-
-    def __post_init__(self) -> None:
-        if (
-            not self.root_problem_identity
-            or not self.search_specification_identity
-            or not self.selected_ids
-            or len(set(self.selected_ids)) != len(self.selected_ids)
-            or self.selected_ids
-            != tuple(sorted(self.selected_ids, key=lambda item: item.encode("utf-8")))
-        ):
-            raise DirectTrfConstructionError(
-                "DE search derivation requires unique canonical selected IDs"
-            )
-        held_items = tuple(
-            (
-                param_id,
-                _finite_binary64(value, name=f"DE held value {param_id!r}"),
-            )
-            for param_id, value in self.captured_held_items
-        )
-        held_ids = tuple(param_id for param_id, _value in held_items)
-        if len(set(held_ids)) != len(held_ids) or set(held_ids) & set(
-            self.selected_ids
-        ):
-            raise DirectTrfConstructionError(
-                "DE search derivation has inconsistent held coordinates"
-            )
-        start = tuple(
-            _finite_binary64(value, name=f"DE search start[{index}]")
-            for index, value in enumerate(self.start)
-        )
-        if len(start) != len(self.selected_ids):
-            raise DirectTrfConstructionError("DE search start has the wrong dimension")
-        object.__setattr__(self, "captured_held_items", held_items)
-        object.__setattr__(self, "start", start)
-        object.__setattr__(
-            self,
-            "identity",
-            _identity(
-                "native-de-search-problem-derivation",
-                (
-                    self.root_problem_identity,
-                    self.root_affine_feasibility_identity,
-                    self.search_specification_identity,
-                    self.selected_ids,
-                    tuple(
-                        (param_id, _float_token(value))
-                        for param_id, value in held_items
+                    *(
+                        (
+                            tuple(
+                                (key, _float_token(value))
+                                for key, value in self.nuisance_start_items
+                            ),
+                        )
+                        if self.nuisance_start_items
+                        else ()
                     ),
-                    _vector_tokens(start),
                 ),
             ),
         )
 
 
-type ProblemDerivation = (
-    ComponentProblemDerivation
-    | ProfiledGridPointProblemDerivation
-    | DeSearchProblemDerivation
-)
+type ProblemDerivation = ComponentProblemDerivation | ProfiledGridPointProblemDerivation
 
 
 def _normalize_affine_restriction(
@@ -915,7 +861,7 @@ class OptimizationProblem:
     )
     identity: str = field(init=False)
 
-    def __post_init__(self) -> None:  # noqa: C901 - complete problem invariant
+    def __post_init__(self) -> None:
         _validate_problem_ordering(
             self.controlled_ids,
             self.independent_items,
@@ -976,25 +922,13 @@ class OptimizationProblem:
                 self.derivation.projected_plan_identity != self.evaluation_plan_identity
                 or self.derivation.controlled_ids != self.controlled_ids
                 or self.derivation.captured_independent_items != self.independent_items
+                or normalized_start
+                != tuple(
+                    dict(self.independent_items)[key] for key in self.controlled_ids
+                )
             ):
                 raise DirectTrfConstructionError(
                     "Profiled GRID point problem differs from its derivation record"
-                )
-        elif isinstance(self.derivation, DeSearchProblemDerivation):
-            if (
-                self.derivation.root_affine_feasibility_identity
-                != affine_feasibility_identity
-            ):
-                raise DirectTrfConstructionError(
-                    "DE search affine feasibility differs from its derivation record"
-                )
-            if (
-                self.derivation.selected_ids != self.controlled_ids
-                or self.derivation.captured_held_items != self.held_items
-                or self.derivation.start != normalized_start
-            ):
-                raise DirectTrfConstructionError(
-                    "DE search problem differs from its derivation record"
                 )
         object.__setattr__(self, "start", normalized_start)
         object.__setattr__(self, "lower_bounds", lower)
@@ -1007,8 +941,6 @@ class OptimizationProblem:
             derivation_record = (
                 ("derived-profiled-grid-point", self.derivation.identity),
             )
-        else:
-            derivation_record = (("derived-de-search", self.derivation.identity),)
         # Preserve the established box-only problem identity exactly.
         feasibility_record = _affine_feasibility_identity_record(
             self.affine_half_spaces,
@@ -1307,6 +1239,7 @@ class OptimizationProblem:
         projected_plan_identity: str,
         grid_items: tuple[tuple[str, float], ...],
         controlled_ids: tuple[str, ...],
+        nuisance_start_items: tuple[tuple[str, float], ...] = (),
     ) -> OptimizationProblem:
         """Hold exact GRID values and control only factor-local nuisance coordinates."""
         if not self.acceptance_authority:
@@ -1330,7 +1263,14 @@ class OptimizationProblem:
             raise DirectTrfConstructionError(
                 "Profiled GRID point coordinates differ from the root FIT scope"
             )
-        updates = dict(grid_items)
+        if (
+            nuisance_start_items
+            and tuple(key for key, _ in nuisance_start_items) != controlled_ids
+        ):
+            raise DirectTrfConstructionError(
+                "Nuisance starts must cover the canonical factor FIT scope"
+            )
+        updates = dict((*grid_items, *nuisance_start_items))
         independent_items = tuple(
             (param_id, updates.get(param_id, value))
             for param_id, value in self.independent_items
@@ -1351,6 +1291,7 @@ class OptimizationProblem:
             grid_items,
             controlled_ids,
             independent_items,
+            nuisance_start_items,
         )
         child_lower = tuple(
             self.lower_bounds[root_indices[param_id]] for param_id in controlled_ids
@@ -1451,7 +1392,10 @@ class OptimizationProblem:
             param_id: index for index, param_id in enumerate(self.controlled_ids)
         }
         if isinstance(derivation, ProfiledGridPointProblemDerivation):
-            expected_independent = derivation.captured_independent_items
+            updates = dict((*derivation.grid_items, *derivation.nuisance_start_items))
+            expected_independent = tuple(
+                (key, updates.get(key, value)) for key, value in self.independent_items
+            )
             expected_held = tuple(
                 item for item in expected_independent if item[0] not in controlled
             )

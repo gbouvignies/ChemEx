@@ -7,13 +7,26 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
 
 ## [Unreleased]
 
+### Added
+- Optional `SEARCH.PREPARE` improves starting values before the normal fit.
+  `HOLD` temporarily keeps selected shared parameters at their current values;
+  `TRY_DW_SIGNS` tries alternative signs of fitted `DW_AB`/`DW_AC` values.
+  Preliminary fits have internal work limits and fall back to available or
+  original values when they cannot finish. Only the final normal fit, with all
+  `FIT` parameters free, supplies reported parameters and uncertainties.
+
 ### Changed
+- **Breaking Method interface:** Retired selected-coordinate `SEARCH.DE`.
+  Use the normal fit directly, or `SEARCH.PREPARE` to improve starting values
+  or try alternative DW signs before fitting. DE ranges and seeds are no longer
+  supported; PREPARE is not a general global-optimization replacement.
+
 - **Breaking model selection:** Removed the legacy `2st_rs` kinetic-model name.
   Use the composable `2st.rs` spelling instead.
 - ChemEx now validates and compiles every Method Step against the loaded
   profiles before fitting or clearing prior results. An invalid later step
   rejects the run before earlier steps can commit or create `run_info/`.
-  A step selecting no profiles is reported as skipped; its valid GRID or DE
+  A step selecting no profiles is reported as skipped; its valid GRID or PREPARE
   declaration needs no active fit coordinate. Fit results for valid, nonempty
   steps are unchanged.
 

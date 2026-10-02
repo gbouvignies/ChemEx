@@ -811,9 +811,36 @@ def print_running_grid() -> None:
     console.print(Text("  • Running the grid search..."))
 
 
-def print_running_de() -> None:
-    """Inform the user that selected-coordinate basin search is in progress."""
-    console.print(Text("  • Running selected-coordinate DE search..."))
+def print_profile_preparation() -> None:
+    """Announce optional, non-authoritative nuisance preparation."""
+    console.print(Text("  • Improving starting values before fitting..."))
+
+
+def print_profile_preparation_result(
+    incomplete: bool,
+    fallback_factors: int,
+    root_fallback: bool,
+    failures: tuple[str, ...] = (),
+) -> None:
+    """Surface incomplete attempts without claiming successful profiling."""
+    if incomplete:
+        detail = (
+            "original starting values restored"
+            if root_fallback
+            else f"{fallback_factors} local fit(s) kept original starting values"
+        )
+        console.print(
+            Text(
+                f"  • Starting-value preparation was only partly completed ({detail}); continuing with the normal final fit."
+            )
+        )
+        for failure in dict.fromkeys(failures):
+            explanation = (
+                "A preliminary fit did not converge within its work limit."
+                if "objective_budget_exhausted" in failure
+                else failure
+            )
+            console.print(Text(f"    {explanation}"))
 
 
 def print_running_statistics(name: str) -> None:
