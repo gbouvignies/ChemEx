@@ -54,12 +54,6 @@ def build_spectrometer(
     return Spectrometer.from_spin_system(spin_system, basis, conditions)
 
 
-def _find_nearest(array: Array, value: float) -> float:
-    array = np.asarray(array)
-    idx = (np.abs(array - value)).argmin()
-    return array[idx]
-
-
 class Shift15NSqSequence:
     """Sequence for 15N single-quantum chemical shift measurement."""
 
@@ -67,11 +61,12 @@ class Shift15NSqSequence:
         self.settings = settings
 
     def calculate(self, spectrometer: Spectrometer, data: Data) -> Array:
-        ppm_i = spectrometer.ppm_i
-        ref_shift_i = spectrometer.par_values[self.settings.cs_i_name] * ppm_i
-        shifts = spectrometer.analysis.calculate_shifts()
-        shift_sq = _find_nearest(shifts, ref_shift_i)
-        return np.array([shift_sq / ppm_i])
+        del data
+        shift_sq = spectrometer.analysis.calculate_shift(
+            self.settings.observed_state,
+            coherence="sq_i",
+        )
+        return np.array([shift_sq / spectrometer.ppm_i])
 
     def is_reference(self, metadata: Array) -> Array:
         return np.full_like(metadata, fill_value=False, dtype=np.bool_)
@@ -90,6 +85,7 @@ def create_profile_calculation(
 EXPERIMENT_TYPE = shift_type(
     name=EXPERIMENT_NAME,
     config_type=Shift15NSqConfig,
+    unit="PPM",
 )(create_profile_calculation)
 
 

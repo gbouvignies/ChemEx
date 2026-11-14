@@ -1,13 +1,22 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Literal, Protocol
 
 from chemex.containers.data import Data
 
+ShiftUnit = Literal["PPB", "PPM"]
+
+_DEFAULT_SHIFT_PRECISION: dict[ShiftUnit, int] = {
+    "PPB": 3,
+    "PPM": 6,
+}
+
 
 class Printer(Protocol):
-    header: str
+    @property
+    def header(self) -> str: ...
+
     simulation: bool
 
     def print(self, name: str, data: Data) -> str: ...
@@ -15,23 +24,49 @@ class Printer(Protocol):
 
 @dataclass
 class ShiftPrinter:
-    header = "\n".join(
-        [
-            "#",
-            "# Unit: PPB",
-            "#",
-            (
-                f"# {'NAME':>16s} {'SHIFT (EXP)':>17s}"
-                f" {'ERROR (EXP)':>17s} {'SHIFT (CALC)':>17s}\n"
-            ),
-        ],
-    )
     simulation: bool = False
+    unit: ShiftUnit = "PPB"
+    precision: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.unit not in _DEFAULT_SHIFT_PRECISION:
+            msg = (
+                f"Unsupported shift unit {self.unit!r}; "
+                f"expected one of {tuple(_DEFAULT_SHIFT_PRECISION)}."
+            )
+            raise ValueError(msg)
+        if self.precision is not None and self.precision < 0:
+            msg = f"`precision` must be non-negative; got {self.precision}."
+            raise ValueError(msg)
+
+    @property
+    def _digits(self) -> int:
+        if self.precision is not None:
+            return self.precision
+        return _DEFAULT_SHIFT_PRECISION[self.unit]
+
+    @property
+    def header(self) -> str:
+        columns = [f"{'NAME':>16s}"]
+        if not self.simulation:
+            columns.extend([f"{'SHIFT (EXP)':>17s}", f"{'ERROR (EXP)':>17s}"])
+        columns.append(f"{'SHIFT (CALC)':>17s}")
+        return "\n".join(
+            [
+                "#",
+                f"# Unit: {self.unit}",
+                "#",
+                f"# {' '.join(columns)}\n",
+            ],
+        )
 
     def print(self, name: str, data: Data) -> str:
+        fmt = f" 17.{self._digits}f"
+        if self.simulation:
+            return f"{name:>18s} {data.calc[0]:{fmt}}\n"
         return (
-            f"{name:>18s} {data.exp[0]: 17.3f} {data.err[0]: 17.3f}"
-            f" {data.calc[0]: 17.3f}\n"
+            f"{name:>18s} {data.exp[0]:{fmt}} {data.err[0]:{fmt}}"
+            f" {data.calc[0]:{fmt}}\n"
         )
 
 

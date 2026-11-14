@@ -6,6 +6,7 @@ import tomllib
 from collections.abc import Callable, Mapping
 from copy import deepcopy
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Protocol, Self, TypeVar
@@ -55,6 +56,7 @@ from chemex.printers.data import (
     Printer,
     RelaxationPrinter,
     ShiftPrinter,
+    ShiftUnit,
 )
 from chemex.toml import load_toml
 
@@ -455,12 +457,15 @@ def _relaxation_support[
     )
 
 
-def _shift_support[ConfigT: ShiftFamilyConfig]() -> ExperimentSupport[ConfigT]:
+def _shift_support[ConfigT: ShiftFamilyConfig](
+    *,
+    unit: ShiftUnit = "PPB",
+) -> ExperimentSupport[ConfigT]:
     return ExperimentSupport[ConfigT](
         load_dataset=load_shift_dataset,
         create_filterer=NoFilterer,
-        create_printer=ShiftPrinter,
-        create_plotter=ShiftPlotter,
+        create_printer=partial(ShiftPrinter, unit=unit),
+        create_plotter=partial(ShiftPlotter, unit=unit),
     )
 
 
@@ -507,12 +512,13 @@ def shift_type[ConfigT: ShiftFamilyConfig](
     *,
     name: str,
     config_type: type[ConfigT],
+    unit: ShiftUnit = "PPB",
 ) -> Callable[[ProfileCalculationFactory[ConfigT]], ExperimentType[ConfigT]]:
     """Define an Experiment Type using established shift support."""
     return experiment_type(
         name=name,
         config_type=config_type,
-        support=_shift_support(),
+        support=_shift_support(unit=unit),
     )
 
 

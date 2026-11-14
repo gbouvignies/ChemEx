@@ -9,11 +9,29 @@ from matplotlib.figure import Figure
 from chemex.containers.data import Data
 from chemex.containers.profile import Profile
 from chemex.messages import print_plot_filename
+from chemex.printers.data import ShiftUnit
 
 _RED700 = "#D32F2F"
+_AXIS_UNITS: dict[ShiftUnit, str] = {
+    "PPB": "ppb",
+    "PPM": "ppm",
+}
 
 
-def plot_shift(name_pdf: Path, data: Data) -> None:
+def _axis_unit_label(unit: ShiftUnit) -> str:
+    if unit not in _AXIS_UNITS:
+        msg = f"Unsupported shift unit {unit!r}; expected one of {tuple(_AXIS_UNITS)}."
+        raise ValueError(msg)
+    return _AXIS_UNITS[unit]
+
+
+def plot_shift(
+    name_pdf: Path,
+    data: Data,
+    *,
+    unit: ShiftUnit = "PPB",
+) -> None:
+    unit_label = _axis_unit_label(unit)
     fig = Figure()
     ax = fig.subplots(1, 1)
     fig.align_labels()
@@ -22,8 +40,8 @@ def plot_shift(name_pdf: Path, data: Data) -> None:
     val_max = max(ax.get_xlim()[1], ax.get_ylim()[1])
     ax.set_aspect("equal", "box")
     ax.plot([val_min, val_max], [val_min, val_max], color="k", linewidth=0.5, zorder=1)
-    ax.set_xlabel(r"$Δδ_\mathregular{fit}$ (ppb)")
-    ax.set_ylabel(r"$Δδ_\mathregular{exp}$ (ppb)")
+    ax.set_xlabel(rf"$Δδ_\mathregular{{fit}}$ ({unit_label})")
+    ax.set_ylabel(rf"$Δδ_\mathregular{{exp}}$ ({unit_label})")
     fig.savefig(str(name_pdf))
 
 
@@ -39,8 +57,16 @@ def create_plot_data(profiles: list[Profile]) -> Data:
 
 
 class ShiftPlotter:
-    def __init__(self, filename: Path, **_extra: Any) -> None:
+    def __init__(
+        self,
+        filename: Path,
+        *,
+        unit: ShiftUnit = "PPB",
+        **_extra: Any,
+    ) -> None:
+        _axis_unit_label(unit)
         self.filename = filename
+        self.unit: ShiftUnit = unit
 
     def plot(self, output_stem: Path, profiles: list[Profile]) -> None:
         name_pdf = output_stem.with_suffix(".pdf")
@@ -48,7 +74,7 @@ class ShiftPlotter:
         print_plot_filename(name_pdf, extra=False)
 
         data_plot = create_plot_data(profiles)
-        plot_shift(name_pdf, data_plot)
+        plot_shift(name_pdf, data_plot, unit=self.unit)
 
     def plot_simulation(self, output_stem: Path, profiles: list[Profile]) -> None:
         self.plot(output_stem, profiles)
