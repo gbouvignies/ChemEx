@@ -465,7 +465,7 @@ def _shift_support[ConfigT: ShiftFamilyConfig](
         load_dataset=load_shift_dataset,
         create_filterer=NoFilterer,
         create_printer=partial(ShiftPrinter, unit=unit),
-        create_plotter=ShiftPlotter,
+        create_plotter=partial(ShiftPlotter, unit=unit),
     )
 
 

@@ -11,6 +11,7 @@ from chemex.configuration.methods import Selection
 from chemex.containers.data import Data
 from chemex.experiments import experiment_types
 from chemex.experiments.loader import register_experiments
+from chemex.plotters.shift import ShiftPlotter
 from chemex.printers.data import ShiftPrinter
 from chemex.runtime.session import AnalysisSession
 
@@ -111,6 +112,8 @@ def test_shift_experiment_types_configure_expected_printer_units(
     )
     assert isinstance(built.experiment.printer, ShiftPrinter)
     assert built.experiment.printer.unit == expected_unit
+    assert isinstance(built.experiment.plotter, ShiftPlotter)
+    assert built.experiment.plotter.unit == expected_unit
 
 
 def test_shift_simulate_and_fit_end_to_end_cli(tmp_path: Path) -> None:

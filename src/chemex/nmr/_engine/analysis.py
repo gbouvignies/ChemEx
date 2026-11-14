@@ -258,7 +258,16 @@ def _schur_frequency_offset(
 
 
 def _select_observed_frequency_offset(liouv_sub: Array, obs_index: int) -> float:
-    """Return Im(lambda_obs - liouv_sub[obs_index, obs_index]) for observed state."""
+    """Estimate Im(lambda_dom - liouv_sub[obs_index, obs_index]) for the dominant mode.
+
+    Selects the eigenmode (or nearly defective Schur cluster, via Riesz projector
+    ``P_C``) with the largest modal FID amplitude ``|1^T P_C e_obs|`` for unit
+    coherence prepared in ``obs_index`` and summed across all states at detection.
+    This is a single-mode / cluster-mean eigenvalue estimator: when multiple
+    overlapping modes carry comparable amplitude or non-zero dispersive phases
+    (for example in intermediate exchange), ``Im(lambda_dom)`` need not coincide
+    with the apparent peak maximum of a composite Fourier-transformed lineshape.
+    """
     size = liouv_sub.shape[0]
     if size == 1:
         return 0.0
@@ -314,6 +323,13 @@ class SpectrometerAnalysis:
         coherence: Coherence = "sq_i",
         relative: bool = False,
     ) -> float:
+        """Return the dominant-mode precession frequency (rad/s) for ``observed_state``.
+
+        Identifies the complex-subspace eigenmode (or degenerate Schur cluster)
+        with maximal modal FID amplitude ``|1^T P_C e_obs|``. Note that this is a
+        dominant-mode eigenvalue estimator rather than a peak-maximum finder on a
+        composite multi-Lorentzian experimental lineshape.
+        """
         states = self._engine.model.states
         if observed_state not in states:
             msg = (
