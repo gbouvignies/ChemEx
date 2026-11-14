@@ -16,6 +16,20 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   A step selecting no profiles is reported as skipped; its valid GRID or DE
   declaration needs no active fit coordinate. Fit results for valid, nonempty
   steps are unchanged.
+- `ShiftPrinter` output is now unit- and simulation-aware: `shift_15n_sq` and
+  `shift_13c_sq` write `# Unit: PPM` with `.6f` precision, `shift_15n_sqmq`
+  retains `# Unit: PPB` with `.3f` precision, and `chemex simulate` omits the
+  `SHIFT (EXP)` and `ERROR (EXP)` columns consistently with `ProfilePrinter`.
+
+### Fixed
+- Chemical-shift experiments (`shift_15n_sqmq`, `shift_15n_sq`, `shift_13c_sq`)
+  and `SpectrometerAnalysis` now evaluate precession frequencies inside
+  dedicated complex coherence subspaces (`sq_i`, `dq_is`, `zq_is`) with modal
+  FID-amplitude eigenmode selection and complex-Schur degeneracy handling. This
+  eliminates conjugate-ghost sign flips near `0` ppm and $\omega_{\text{DQ}}
+  \approx 0$, handles fast-exchange titrations past 50% saturation and
+  coalescence exceptional points cleanly, and produces accurate `shift_15n_sqmq`
+  exchange shifts even when `CS_A` is omitted.
 
 ## [2026.09.2] - 2026-09-23
 
