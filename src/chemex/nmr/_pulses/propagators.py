@@ -6,18 +6,22 @@ import numpy as np
 from cachetools import cached
 from cachetools.keys import hashkey
 from scipy.linalg import expm, schur, solve_sylvester
+from scipy.linalg.lapack import dtrsen
 
 from chemex.nmr._engine.engine import ISLiouvillianEngine
 from chemex.typing import Array
 
 DictArray = dict[str, Array]
 
-# A small value used for numerical stability
+# Imaginary-part cutoff separating secular/overdamped modes from oscillatory modes
 SMALL_VALUE = 1e-6
 
-# Upper 1-norm condition-number bound on eigenvector matrices before falling
-# back to unitary Schur modal projection in the complete-dephasing branch.
-_MAX_EIGENVECTOR_COND_1 = 1.0e6
+# Heuristic 1-norm eigenvector condition-number threshold above which the
+# complete-dephasing branch switches from batched eigendecomposition to a
+# real-Schur modal projection. Well-conditioned NMR spin-lock Liouvillians
+# typically have cond_1(V) < 20; this is a practical numerical heuristic rather
+# than a strict accuracy guarantee across arbitrary matrix scales.
+_EIGENVECTOR_COND_1_THRESHOLD = 1.0e3
 
 
 def _cache_key(
@@ -44,49 +48,49 @@ def _parse_delays(delays: float | Iterable[float]) -> tuple[Array, bool]:
     return delays_array, is_scalar
 
 
-def _expm_per_matrix(scaled: Array) -> Array:
-    """Evaluate matrix exponentials per 2D slice.
-
-    Evaluating 2D slices individually avoids both eigenvector ill-conditioning
-    at Bloch-McConnell Jordan blocks and SciPy 1.18.0's batched `expm` C loop
-    state-bleed defect when a higher-norm slice precedes a lower-norm slice.
-    """
-    shape = scaled.shape
-    size = shape[-1]
+def _expm_scaled(scaled: Array) -> Array:
+    """Evaluate matrix exponentials for a 2D or batched `(..., n, n)` array."""
     if scaled.size == 0:
-        return np.empty(shape, dtype=np.float64)
-    if scaled.ndim == 2:
-        if not np.any(scaled):
-            return np.eye(size, dtype=np.float64)
-        return np.ascontiguousarray(expm(scaled), dtype=np.float64)
+        return np.empty(scaled.shape, dtype=np.float64)
+    if not np.any(scaled):
+        size = scaled.shape[-1]
+        return np.broadcast_to(np.eye(size, dtype=np.float64), scaled.shape).copy()
+    return np.ascontiguousarray(expm(scaled), dtype=np.float64)
 
-    flat = np.ascontiguousarray(scaled, dtype=np.float64).reshape((-1, size, size))
-    if flat.shape[0] == 1:
-        mat0 = flat[0]
-        out0 = np.eye(size, dtype=np.float64) if not np.any(mat0) else expm(mat0)
-        return np.ascontiguousarray(out0, dtype=np.float64).reshape(shape)
 
-    out = np.empty_like(flat, dtype=np.float64)
-    eye: Array | None = None
-    for idx in range(flat.shape[0]):
-        mat = flat[idx]
-        if not np.any(mat):
-            if eye is None:
-                eye = np.eye(size, dtype=np.float64)
-            out[idx] = eye
+def _select_secular_schur_blocks(t_mat: Array) -> Array:
+    """Mark diagonal blocks of a real Schur matrix with `|imag| < SMALL_VALUE`."""
+    size = t_mat.shape[0]
+    frob_t = float(np.linalg.norm(t_mat, ord="fro"))
+    real_roundoff_tol = 64.0 * size * np.finfo(np.float64).eps * frob_t
+    asymmetry_bound = 1.0 / (_EIGENVECTOR_COND_1_THRESHOLD**2)
+
+    select = np.zeros(size, dtype=np.int32)
+    idx = 0
+    while idx < size:
+        if idx + 1 < size and t_mat[idx + 1, idx] != 0.0:
+            # Canonical 2x2 real Schur block [[a, b], [c, a]] with b * c < 0.
+            # A real defective block perturbed by O(eps * ||T||_F) roundoff can
+            # split by O(sqrt(hi * eps * ||T||_F)); treat the imaginary part as
+            # roundoff noise only when the distance `lo` to real eigenvalues is
+            # within backward roundoff AND the block is strongly non-normal.
+            b = abs(float(t_mat[idx, idx + 1]))
+            c = abs(float(t_mat[idx + 1, idx]))
+            lo, hi = (b, c) if b <= c else (c, b)
+            is_roundoff_split = lo <= real_roundoff_tol and lo <= asymmetry_bound * hi
+            imag_mag = 0.0 if is_roundoff_split else float(np.sqrt(b * c))
+            if imag_mag < SMALL_VALUE:
+                select[idx] = 1
+                select[idx + 1] = 1
+            idx += 2
         else:
-            out[idx] = expm(mat)
-    return out.reshape(shape)
+            select[idx] = 1
+            idx += 1
+    return select
 
 
 def _dephased_propagators_schur(liouv_array: Array, delays_array: Array) -> Array:
-    """Compute modal complete-dephasing propagators via real Schur + Sylvester.
-
-    Because the retained (`|imag| < SMALL_VALUE`) and removed (`|imag| >= SMALL_VALUE`)
-    spectral sets are disjoint, block-diagonalizing the orthogonal real Schur form via
-    the Sylvester equation requires no eigenvector inversion and preserves exact
-    secular evolution across arbitrary Jordan blocks.
-    """
+    """Compute modal complete-dephasing propagators via real Schur + Sylvester."""
     batch_shape = liouv_array.shape[:-2]
     size = liouv_array.shape[-1]
     out = np.empty((delays_array.size, *batch_shape, size, size), dtype=np.float64)
@@ -103,33 +107,51 @@ def _dephased_propagators_schur(liouv_array: Array, delays_array: Array) -> Arra
         if np.any(zero_mask):
             flat_out[zero_mask, b_idx] = eye
         if np.any(neg_mask):
-            flat_out[neg_mask, b_idx] = _expm_per_matrix(
+            flat_out[neg_mask, b_idx] = _expm_scaled(
                 delays_array[neg_mask, None, None] * mat[None, :, :]
             )
         if not np.any(pos_mask):
             continue
 
-        t_mat, z_mat, n_keep = schur(
-            mat,
-            output="real",
-            sort=lambda _re, im: abs(im) < SMALL_VALUE,
-        )
+        t_mat, z_mat = schur(mat, output="real")
+        select = _select_secular_schur_blocks(t_mat)
+        n_keep = int(np.sum(select))
         pos_delays = delays_array[pos_mask]
+
         if n_keep == 0:
             flat_out[pos_mask, b_idx] = 0.0
         elif n_keep == size:
-            flat_out[pos_mask, b_idx] = _expm_per_matrix(
+            flat_out[pos_mask, b_idx] = _expm_scaled(
                 pos_delays[:, None, None] * mat[None, :, :]
             )
         else:
-            t11 = t_mat[:n_keep, :n_keep]
-            t12 = t_mat[:n_keep, n_keep:]
-            t22 = t_mat[n_keep:, n_keep:]
+            t_ord, z_ord, _wr, _wi, m_out, _s, _sep, info = dtrsen(
+                select, t_mat, z_mat, job="N", wantq=1
+            )
+            ordered_count = int(m_out)
+            if info < 0:
+                msg = f"Invalid argument {-int(info)} passed to LAPACK dtrsen."
+                raise np.linalg.LinAlgError(msg)
+            if info > 0 or ordered_count != n_keep:
+                msg = (
+                    "Complete-dephasing Schur reordering failed to separate "
+                    f"near-degenerate eigenvalues (dtrsen info={int(info)}, "
+                    f"selected={n_keep}, ordered={ordered_count})."
+                )
+                raise np.linalg.LinAlgError(msg)
+
+            t11 = t_ord[:n_keep, :n_keep]
+            t12 = t_ord[:n_keep, n_keep:]
+            t22 = t_ord[n_keep:, n_keep:]
             x_mat = solve_sylvester(t11, -t22, -t12)
-            z1 = z_mat[:, :n_keep]
-            z2 = z_mat[:, n_keep:]
+            if not np.isfinite(x_mat).all():
+                msg = "Complete-dephasing Sylvester projection produced non-finite values."
+                raise np.linalg.LinAlgError(msg)
+
+            z1 = z_ord[:, :n_keep]
+            z2 = z_ord[:, n_keep:]
             right = z1.T - x_mat @ z2.T
-            exp_t11 = _expm_per_matrix(pos_delays[:, None, None] * t11[None, :, :])
+            exp_t11 = _expm_scaled(pos_delays[:, None, None] * t11[None, :, :])
             flat_out[pos_mask, b_idx] = (z1 @ exp_t11) @ right
 
     return np.ascontiguousarray(out)
@@ -144,7 +166,7 @@ def _dephased_propagators(liouv_array: Array, delays_array: Array) -> Array:
             norm_vinv = np.max(np.sum(np.abs(eigenvectors_inv), axis=-2), axis=-1)
             cond_1 = norm_v * norm_vinv
         if np.isfinite(eigenvectors_inv).all() and np.all(
-            cond_1 <= _MAX_EIGENVECTOR_COND_1
+            cond_1 <= _EIGENVECTOR_COND_1_THRESHOLD
         ):
             # The complete-dephasing limit removes oscillatory modes for positive
             # durations. At zero duration there is no evolution, so retain identity.
@@ -184,8 +206,8 @@ def calculate_propagators(
 
     if not dephasing:
         if is_scalar:
-            return _expm_per_matrix(liouv_array * delays_array[0])
-        return _expm_per_matrix(np.multiply.outer(delays_array, liouv_array))
+            return _expm_scaled(liouv_array * delays_array[0])
+        return _expm_scaled(np.multiply.outer(delays_array, liouv_array))
 
     if delays_array.size == 0:
         return np.empty((0, *liouv_array.shape), dtype=np.float64)

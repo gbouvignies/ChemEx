@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 from scipy.linalg import expm
 
+import chemex.nmr._pulses.propagators as propagators_module
 from chemex.configuration.conditions import Conditions
 from chemex.containers.data import Data
 from chemex.experiments.catalog.cpmg_ch3_1h_tq_diff import (
@@ -36,7 +37,11 @@ from chemex.experiments.catalog.relaxation_nz import (
 )
 from chemex.models.loader import register_kinetic_settings
 from chemex.models.model import ModelSpec
-from chemex.nmr._pulses.propagators import calculate_propagators
+from chemex.nmr._pulses.propagators import (
+    SMALL_VALUE,
+    _dephased_propagators_schur,
+    calculate_propagators,
+)
 from chemex.nmr.basis import Basis
 from chemex.nmr.constants import Distribution
 from chemex.nmr.spectrometer import Spectrometer
@@ -381,6 +386,149 @@ def test_complete_dephasing_preserves_secular_transfer_on_real_jordan_blocks() -
         rtol=1e-13,
         atol=1e-14,
     )
+
+
+@pytest.mark.parametrize("scale", [1.0e-6, 1.0, 1.0e6])
+@pytest.mark.parametrize("delta", [0.0, 1.0e-12, 1.0e-8, 1.0e-4])
+def test_complete_dephasing_handles_tilted_defective_blocks_across_scales(
+    scale: float, delta: float
+) -> None:
+    # A similarity-transformed defective or nearly defective real block experiences
+    # O(sqrt(eps)) Puiseux eigenvalue splitting in float64; verify that secular
+    # evolution is preserved across 12 orders of magnitude of matrix scale.
+    similarity = np.array(
+        [
+            [1.0, 0.3, 0.5, -0.2],
+            [0.0, 1.0, -0.4, 0.7],
+            [0.2, -0.1, 1.0, 0.1],
+            [-0.3, 0.4, 0.0, 1.0],
+        ]
+    )
+    similarity_inv = np.linalg.inv(similarity)
+    delay = 0.2 / scale
+    secular_block = scale * np.array([[-5.0 + delta, 50.0], [0.0, -5.0 - delta]])
+    osc_freq = max(200.0 * scale, 1.0e-3)
+    osc_block = np.array([[-10.0 * scale, -osc_freq], [osc_freq, -10.0 * scale]])
+
+    liouv = (
+        similarity
+        @ np.block([[secular_block, np.zeros((2, 2))], [np.zeros((2, 2)), osc_block]])
+        @ similarity_inv
+    )
+    expected = (
+        similarity
+        @ np.block(
+            [
+                [expm(delay * secular_block), np.zeros((2, 2))],
+                [np.zeros((2, 2)), np.zeros((2, 2))],
+            ]
+        )
+        @ similarity_inv
+    )
+
+    np.testing.assert_allclose(
+        calculate_propagators(liouv, delay, dephasing=True),
+        expected,
+        rtol=1e-11,
+        atol=1e-11,
+    )
+
+
+@pytest.mark.parametrize("high_freq", [0.0, 1.0, 1.0e4, 1.0e8])
+@pytest.mark.parametrize(("low_freq", "retained"), [(0.5e-6, True), (2.0e-6, False)])
+def test_complete_dephasing_preserves_low_frequency_cutoff_across_scales(
+    high_freq: float, low_freq: float, retained: bool
+) -> None:
+    delay = 0.25
+    low_block = np.array([[0.0, low_freq], [-low_freq, 0.0]])
+    expected_low = expm(delay * low_block) if retained else np.zeros((2, 2))
+
+    if high_freq == 0.0:
+        liouv = low_block
+        expected = expected_low
+    else:
+        high_block = np.array([[-5.0, -high_freq], [high_freq, -5.0]])
+        liouv = np.block(
+            [[low_block, np.zeros((2, 2))], [np.zeros((2, 2)), high_block]]
+        )
+        expected = np.block(
+            [[expected_low, np.zeros((2, 2))], [np.zeros((2, 2)), np.zeros((2, 2))]]
+        )
+
+    np.testing.assert_allclose(
+        calculate_propagators(liouv, delay, dephasing=True),
+        expected,
+        rtol=0.0,
+        atol=1e-13,
+    )
+    np.testing.assert_allclose(
+        _dephased_propagators_schur(liouv, np.array([delay]))[0],
+        expected,
+        rtol=0.0,
+        atol=1e-13,
+    )
+
+
+def test_complete_dephasing_handles_threshold_boundary_alongside_jordan_block() -> None:
+    # Exercises Schur reordering when a tilted defective real block coexists with
+    # modes just below and just above SMALL_VALUE (where callback-sorted schur
+    # previously raised LinAlgError).
+    delay = 0.2
+    rng = np.random.default_rng(11)
+    similarity = np.eye(6) + 0.2 * rng.standard_normal((6, 6))
+    similarity_inv = np.linalg.inv(similarity)
+
+    jordan_block = np.array([[-15.0, 50.0], [0.0, -15.0]])
+    below_cutoff = np.array([[-8.0, -(0.95 * SMALL_VALUE)], [0.95 * SMALL_VALUE, -8.0]])
+    above_cutoff = np.array([[-3.0, -(1.05 * SMALL_VALUE)], [1.05 * SMALL_VALUE, -3.0]])
+
+    block_liouv = np.zeros((6, 6))
+    block_liouv[:2, :2] = jordan_block
+    block_liouv[2:4, 2:4] = below_cutoff
+    block_liouv[4:6, 4:6] = above_cutoff
+    liouv = similarity @ block_liouv @ similarity_inv
+
+    expected_blocks = np.zeros((6, 6))
+    expected_blocks[:2, :2] = expm(delay * jordan_block)
+    expected_blocks[2:4, 2:4] = expm(delay * below_cutoff)
+    expected = similarity @ expected_blocks @ similarity_inv
+
+    np.testing.assert_allclose(
+        calculate_propagators(liouv, [0.0, delay], dephasing=True),
+        [np.eye(6), expected],
+        rtol=1e-10,
+        atol=1e-10,
+    )
+
+
+def test_dephased_propagators_schur_raises_on_dtrsen_or_sylvester_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    liouv = np.array([[-2.0, 0.0, 0.0], [0.0, -3.0, -10.0], [0.0, 10.0, -3.0]])
+    delays = np.array([0.25])
+
+    def fake_dtrsen_reorder_fail(select, t_mat, z_mat, **_kwargs):
+        return t_mat, z_mat, np.zeros(3), np.zeros(3), 0, 0.0, 0.0, 1
+
+    monkeypatch.setattr(propagators_module, "dtrsen", fake_dtrsen_reorder_fail)
+    with pytest.raises(np.linalg.LinAlgError, match="dtrsen info=1"):
+        _dephased_propagators_schur(liouv, delays)
+
+    def fake_dtrsen_bad_arg(select, t_mat, z_mat, **_kwargs):
+        return t_mat, z_mat, np.zeros(3), np.zeros(3), 1, 0.0, 0.0, -2
+
+    monkeypatch.setattr(propagators_module, "dtrsen", fake_dtrsen_bad_arg)
+    with pytest.raises(np.linalg.LinAlgError, match="Invalid argument 2"):
+        _dephased_propagators_schur(liouv, delays)
+
+    monkeypatch.undo()
+    monkeypatch.setattr(
+        propagators_module,
+        "solve_sylvester",
+        lambda *_args: np.full((1, 2), np.nan),
+    )
+    with pytest.raises(np.linalg.LinAlgError, match="non-finite"):
+        _dephased_propagators_schur(liouv, delays)
 
 
 @pytest.mark.parametrize("dephasing", [False, True])
