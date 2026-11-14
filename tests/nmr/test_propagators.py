@@ -4,7 +4,48 @@ import numpy as np
 import pytest
 from scipy.linalg import expm
 
-from chemex.nmr._pulses.propagators import calculate_propagators
+import chemex.nmr._pulses.propagators as propagators_module
+from chemex.configuration.conditions import Conditions
+from chemex.containers.data import Data
+from chemex.experiments.catalog.cpmg_ch3_1h_tq_diff import (
+    CpmgCh31HTqDiffConfig,
+    CpmgCh31HTqDiffSequence,
+)
+from chemex.experiments.catalog.cpmg_ch3_1h_tq_diff import (
+    build_spectrometer as build_tq_diff_spectrometer,
+)
+from chemex.experiments.catalog.cpmg_ch3_mq import (
+    CpmgCh3MqConfig,
+    CpmgCh3MqSequence,
+)
+from chemex.experiments.catalog.cpmg_ch3_mq import (
+    build_spectrometer as build_ch3_mq_spectrometer,
+)
+from chemex.experiments.catalog.relaxation_hznz import (
+    RelaxationHzNzConfig,
+    RelaxationHzNzSequence,
+)
+from chemex.experiments.catalog.relaxation_hznz import (
+    build_spectrometer as build_hznz_spectrometer,
+)
+from chemex.experiments.catalog.relaxation_nz import (
+    RelaxationNzConfig,
+    RelaxationNzSequence,
+)
+from chemex.experiments.catalog.relaxation_nz import (
+    build_spectrometer as build_nz_spectrometer,
+)
+from chemex.models.loader import register_kinetic_settings
+from chemex.models.model import ModelSpec
+from chemex.nmr._pulses.propagators import (
+    SMALL_VALUE,
+    _dephased_propagators_schur,
+    calculate_propagators,
+)
+from chemex.nmr.basis import Basis
+from chemex.nmr.constants import Distribution
+from chemex.nmr.spectrometer import Spectrometer
+from chemex.parameters.spin_system import SpinSystem
 
 
 def test_calculate_propagators_single_delay_matches_expm() -> None:
@@ -173,3 +214,494 @@ def test_complete_dephasing_handles_nearly_defective_oscillatory_block() -> None
         rtol=0.0,
         atol=1.0e-12,
     )
+
+
+def test_calculate_propagators_preserves_secular_transfer_at_jordan_blocks() -> None:
+    # 2x2 defective Jordan block in 4D Spectrometer shape (n_jeff=1, n_b1=1, 2, 2)
+    liouv_2x2 = np.array([[-110.0, 100.0], [0.0, -110.0]])[np.newaxis, np.newaxis, :, :]
+    delay = 0.02
+    expected_single = np.exp(-110.0 * delay) * np.array(
+        [[1.0, 100.0 * delay], [0.0, 1.0]]
+    )
+
+    got_single = calculate_propagators(liouv_2x2, delay)
+    assert got_single.shape == (1, 1, 2, 2)
+    np.testing.assert_allclose(
+        got_single[0, 0], expected_single, rtol=1e-14, atol=1e-15
+    )
+
+    delays = [0.0, 0.02, 0.05]
+    got_multi = calculate_propagators(liouv_2x2, delays)
+    assert got_multi.shape == (3, 1, 1, 2, 2)
+    for idx, t in enumerate(delays):
+        expected = np.exp(-110.0 * t) * np.array([[1.0, 100.0 * t], [0.0, 1.0]])
+        np.testing.assert_allclose(
+            got_multi[idx, 0, 0], expected, rtol=1e-14, atol=1e-15
+        )
+
+    # 3x3 Jordan block verifying quadratic secular transfer (k * t)^2 / 2
+    rate = -25.0
+    coupling = 40.0
+    liouv_3x3 = np.array(
+        [[rate, coupling, 0.0], [0.0, rate, coupling], [0.0, 0.0, rate]]
+    )[np.newaxis, np.newaxis, :, :]
+    expected_3x3 = np.exp(rate * delay) * np.array(
+        [
+            [1.0, coupling * delay, 0.5 * (coupling * delay) ** 2],
+            [0.0, 1.0, coupling * delay],
+            [0.0, 0.0, 1.0],
+        ]
+    )
+    np.testing.assert_allclose(
+        calculate_propagators(liouv_3x3, delay)[0, 0],
+        expected_3x3,
+        rtol=1e-14,
+        atol=1e-15,
+    )
+
+
+def test_spectrometer_delays_accurate_at_coalescence_and_pb_zero_boundary() -> None:
+    register_kinetic_settings()
+    model_2st = ModelSpec.from_name("2st")
+    basis = Basis(type="ixy", spin_system="nh", model=model_2st)
+    spectrometer = Spectrometer.from_spin_system(
+        SpinSystem(name="G23N-HN"),
+        basis,
+        Conditions(h_larmor_frq=600.0),
+    )
+    spectrometer.carrier_i = 120.0
+
+    # 1. Exact two-state coalescence: pa = pb = 0.5, r2_a = r2_b, kex = |dw_rad_s|
+    k = 100.0
+    dw_ppm = (2.0 * k) / abs(spectrometer.ppm_i)
+    for eps in (0.0, 1.0e-12, -1.0e-12, 1.0e-8):
+        spectrometer.update(
+            {
+                "pa": 0.5,
+                "pb": 0.5,
+                "kab": k * (1.0 + eps),
+                "kba": k * (1.0 + eps),
+                "cs_i_a": 120.0 - 0.5 * dw_ppm,
+                "cs_i_b": 120.0 + 0.5 * dw_ppm,
+                "r2_i_a": 15.0,
+                "r2_i_b": 15.0,
+            }
+        )
+        expected = expm(spectrometer._engine.l_free[0, 0] * 0.02)
+        np.testing.assert_allclose(
+            spectrometer.delays(0.02)[0, 0],
+            expected,
+            rtol=1e-13,
+            atol=1e-14,
+        )
+
+    # 2. Defective pb = 0 boundary: kab = 0, dw = 0, r2_a - r2_b = kba
+    spectrometer.update(
+        {
+            "pa": 1.0,
+            "pb": 0.0,
+            "kab": 0.0,
+            "kba": 100.0,
+            "cs_i_a": 120.0,
+            "cs_i_b": 120.0,
+            "r2_i_a": 115.0,
+            "r2_i_b": 15.0,
+        }
+    )
+    expected_pb0 = expm(spectrometer._engine.l_free[0, 0] * 0.02)
+    np.testing.assert_allclose(
+        spectrometer.delays(0.02)[0, 0],
+        expected_pb0,
+        rtol=1e-14,
+        atol=1e-15,
+    )
+
+
+def test_calculate_propagators_handles_mixed_norm_batches_without_state_bleed() -> None:
+    # Guards against SciPy 1.18.0 batched expm squaring-count bleed when a large-norm
+    # slice (requiring squarings) precedes a small-norm or nilpotent slice.
+    liouv_big = np.array([[0.0, -20.0], [20.0, 0.0]])
+    liouv_small = np.array([[0.0, -0.5], [0.5, 0.0]])
+    liouv_nilpotent = np.array([[0.0, 100.0], [0.0, 0.0]])
+    batch = np.stack([liouv_big, liouv_small, liouv_nilpotent])[:, np.newaxis, :, :]
+
+    got = calculate_propagators(batch, 1.0)
+    expected = np.stack(
+        [
+            np.array([[np.cos(20.0), -np.sin(20.0)], [np.sin(20.0), np.cos(20.0)]]),
+            np.array([[np.cos(0.5), -np.sin(0.5)], [np.sin(0.5), np.cos(0.5)]]),
+            np.array([[1.0, 100.0], [0.0, 1.0]]),
+        ]
+    )[:, np.newaxis, :, :]
+
+    assert got.shape == expected.shape
+    np.testing.assert_allclose(got, expected, rtol=1e-13, atol=1e-14)
+
+
+def test_complete_dephasing_preserves_secular_transfer_on_real_jordan_blocks() -> None:
+    # Pure real defective Jordan block must retain secular transfer under dephasing=True
+    liouv_nilpotent = np.array([[0.0, 1.0], [0.0, 0.0]])
+    np.testing.assert_allclose(
+        calculate_propagators(liouv_nilpotent, 0.25, dephasing=True),
+        np.array([[1.0, 0.25], [0.0, 1.0]]),
+        rtol=0.0,
+        atol=1.0e-14,
+    )
+
+    # Realistic 2-state CEST spin-lock Liouvillian at pb=0, dw=0, r2_a - r2_b = kba:
+    # ix_a / ix_b form a real non-oscillatory Jordan block along B1x while iy/iz oscillate.
+    register_kinetic_settings()
+    model_2st = ModelSpec.from_name("2st")
+    basis = Basis(type="ixyz_eq", spin_system="nh", model=model_2st)
+    spectrometer = Spectrometer.from_spin_system(
+        SpinSystem(name="G23N-HN"),
+        basis,
+        Conditions(h_larmor_frq=600.0),
+    )
+    spectrometer.carrier_i = 120.0
+    spectrometer.b1_i = 25.0
+    spectrometer.update(
+        {
+            "pa": 1.0,
+            "pb": 0.0,
+            "kab": 0.0,
+            "kba": 100.0,
+            "cs_i_a": 120.0,
+            "cs_i_b": 120.0,
+            "r2_i_a": 115.0,
+            "r2_i_b": 15.0,
+            "r1_i_a": 101.5,
+            "r1_i_b": 1.5,
+        }
+    )
+    delay = 0.02
+    liouv = spectrometer._engine.l_free + spectrometer._engine.l_b1x_i
+    propagator = calculate_propagators(liouv, delay, dephasing=True)
+    # In ixyz_eq (components: ie, ix, iy, iz), ix_a is index 1 and ix_b is index 5
+    expected_ix_transfer = delay * 100.0 * np.exp(-115.0 * delay)
+    assert propagator.shape == (1, 1, 8, 8)
+    np.testing.assert_allclose(
+        propagator[0, 0, 1, 5],
+        expected_ix_transfer,
+        rtol=1e-13,
+        atol=1e-14,
+    )
+
+
+@pytest.mark.parametrize("scale", [1.0e-6, 1.0, 1.0e6])
+@pytest.mark.parametrize("delta", [0.0, 1.0e-12, 1.0e-8, 1.0e-4])
+def test_complete_dephasing_handles_tilted_defective_blocks_across_scales(
+    scale: float, delta: float
+) -> None:
+    # A similarity-transformed defective or nearly defective real block experiences
+    # O(sqrt(eps)) Puiseux eigenvalue splitting in float64; verify that secular
+    # evolution is preserved across 12 orders of magnitude of matrix scale.
+    similarity = np.array(
+        [
+            [1.0, 0.3, 0.5, -0.2],
+            [0.0, 1.0, -0.4, 0.7],
+            [0.2, -0.1, 1.0, 0.1],
+            [-0.3, 0.4, 0.0, 1.0],
+        ]
+    )
+    similarity_inv = np.linalg.inv(similarity)
+    delay = 0.2 / scale
+    secular_block = scale * np.array([[-5.0 + delta, 50.0], [0.0, -5.0 - delta]])
+    osc_freq = max(200.0 * scale, 1.0e-3)
+    osc_block = np.array([[-10.0 * scale, -osc_freq], [osc_freq, -10.0 * scale]])
+
+    liouv = (
+        similarity
+        @ np.block([[secular_block, np.zeros((2, 2))], [np.zeros((2, 2)), osc_block]])
+        @ similarity_inv
+    )
+    expected = (
+        similarity
+        @ np.block(
+            [
+                [expm(delay * secular_block), np.zeros((2, 2))],
+                [np.zeros((2, 2)), np.zeros((2, 2))],
+            ]
+        )
+        @ similarity_inv
+    )
+
+    np.testing.assert_allclose(
+        calculate_propagators(liouv, delay, dephasing=True),
+        expected,
+        rtol=1e-11,
+        atol=1e-11,
+    )
+
+
+@pytest.mark.parametrize("high_freq", [0.0, 1.0, 1.0e4, 1.0e8])
+@pytest.mark.parametrize(("low_freq", "retained"), [(0.5e-6, True), (2.0e-6, False)])
+def test_complete_dephasing_preserves_low_frequency_cutoff_across_scales(
+    high_freq: float, low_freq: float, retained: bool
+) -> None:
+    delay = 0.25
+    low_block = np.array([[0.0, low_freq], [-low_freq, 0.0]])
+    expected_low = expm(delay * low_block) if retained else np.zeros((2, 2))
+
+    if high_freq == 0.0:
+        liouv = low_block
+        expected = expected_low
+    else:
+        high_block = np.array([[-5.0, -high_freq], [high_freq, -5.0]])
+        liouv = np.block(
+            [[low_block, np.zeros((2, 2))], [np.zeros((2, 2)), high_block]]
+        )
+        expected = np.block(
+            [[expected_low, np.zeros((2, 2))], [np.zeros((2, 2)), np.zeros((2, 2))]]
+        )
+
+    np.testing.assert_allclose(
+        calculate_propagators(liouv, delay, dephasing=True),
+        expected,
+        rtol=0.0,
+        atol=1e-13,
+    )
+    np.testing.assert_allclose(
+        _dephased_propagators_schur(liouv, np.array([delay]))[0],
+        expected,
+        rtol=0.0,
+        atol=1e-13,
+    )
+
+
+def test_complete_dephasing_handles_threshold_boundary_alongside_jordan_block() -> None:
+    # Exercises Schur reordering when a tilted defective real block coexists with
+    # modes just below and just above SMALL_VALUE (where callback-sorted schur
+    # previously raised LinAlgError).
+    delay = 0.2
+    rng = np.random.default_rng(11)
+    similarity = np.eye(6) + 0.2 * rng.standard_normal((6, 6))
+    similarity_inv = np.linalg.inv(similarity)
+
+    jordan_block = np.array([[-15.0, 50.0], [0.0, -15.0]])
+    below_cutoff = np.array([[-8.0, -(0.95 * SMALL_VALUE)], [0.95 * SMALL_VALUE, -8.0]])
+    above_cutoff = np.array([[-3.0, -(1.05 * SMALL_VALUE)], [1.05 * SMALL_VALUE, -3.0]])
+
+    block_liouv = np.zeros((6, 6))
+    block_liouv[:2, :2] = jordan_block
+    block_liouv[2:4, 2:4] = below_cutoff
+    block_liouv[4:6, 4:6] = above_cutoff
+    liouv = similarity @ block_liouv @ similarity_inv
+
+    expected_blocks = np.zeros((6, 6))
+    expected_blocks[:2, :2] = expm(delay * jordan_block)
+    expected_blocks[2:4, 2:4] = expm(delay * below_cutoff)
+    expected = similarity @ expected_blocks @ similarity_inv
+
+    np.testing.assert_allclose(
+        calculate_propagators(liouv, [0.0, delay], dephasing=True),
+        [np.eye(6), expected],
+        rtol=1e-10,
+        atol=1e-10,
+    )
+
+
+def test_dephased_propagators_schur_raises_on_dtrsen_or_sylvester_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    liouv = np.array([[-2.0, 0.0, 0.0], [0.0, -3.0, -10.0], [0.0, 10.0, -3.0]])
+    delays = np.array([0.25])
+
+    def fake_dtrsen_reorder_fail(select, t_mat, z_mat, **_kwargs):
+        return t_mat, z_mat, np.zeros(3), np.zeros(3), 0, 0.0, 0.0, 1
+
+    monkeypatch.setattr(propagators_module, "dtrsen", fake_dtrsen_reorder_fail)
+    with pytest.raises(np.linalg.LinAlgError, match="dtrsen info=1"):
+        _dephased_propagators_schur(liouv, delays)
+
+    def fake_dtrsen_bad_arg(select, t_mat, z_mat, **_kwargs):
+        return t_mat, z_mat, np.zeros(3), np.zeros(3), 1, 0.0, 0.0, -2
+
+    monkeypatch.setattr(propagators_module, "dtrsen", fake_dtrsen_bad_arg)
+    with pytest.raises(np.linalg.LinAlgError, match="Invalid argument 2"):
+        _dephased_propagators_schur(liouv, delays)
+
+    monkeypatch.undo()
+    monkeypatch.setattr(
+        propagators_module,
+        "solve_sylvester",
+        lambda *_args: np.full((1, 2), np.nan),
+    )
+    with pytest.raises(np.linalg.LinAlgError, match="non-finite"):
+        _dephased_propagators_schur(liouv, delays)
+
+
+@pytest.mark.parametrize("dephasing", [False, True])
+def test_calculate_propagators_squeezes_only_scalar_delays(dephasing: bool) -> None:
+    liouv_2d = np.array([[-2.0, 0.0], [0.0, -3.0]])
+    liouv_4d = np.broadcast_to(liouv_2d, (2, 3, 2, 2)).copy()
+    liouv_5d = np.broadcast_to(liouv_2d, (5, 2, 3, 2, 2)).copy()
+
+    # Scalar inputs drop the leading delay axis
+    assert calculate_propagators(liouv_2d, 0.25, dephasing=dephasing).shape == (2, 2)
+    assert calculate_propagators(
+        liouv_4d, np.float64(0.25), dephasing=dephasing
+    ).shape == (2, 3, 2, 2)
+    assert calculate_propagators(
+        liouv_4d, np.array(0.25), dephasing=dephasing
+    ).shape == (2, 3, 2, 2)
+    assert calculate_propagators(liouv_5d, 0.25, dephasing=dephasing).shape == (
+        5,
+        2,
+        3,
+        2,
+        2,
+    )
+
+    # 1-element 1D sequences / iterables preserve the leading delay axis of length 1
+    assert calculate_propagators(liouv_2d, [0.25], dephasing=dephasing).shape == (
+        1,
+        2,
+        2,
+    )
+    assert calculate_propagators(liouv_4d, [0.25], dephasing=dephasing).shape == (
+        1,
+        2,
+        3,
+        2,
+        2,
+    )
+    assert calculate_propagators(liouv_4d, (0.25,), dephasing=dephasing).shape == (
+        1,
+        2,
+        3,
+        2,
+        2,
+    )
+    assert calculate_propagators(
+        liouv_4d, np.array([0.25]), dephasing=dephasing
+    ).shape == (1, 2, 3, 2, 2)
+    assert calculate_propagators(
+        liouv_4d, (t for t in [0.25]), dephasing=dephasing
+    ).shape == (1, 2, 3, 2, 2)
+    assert calculate_propagators(
+        liouv_4d, {0: 0.25}.values(), dephasing=dephasing
+    ).shape == (1, 2, 3, 2, 2)
+    assert calculate_propagators(liouv_4d, [], dephasing=dephasing).shape == (
+        0,
+        2,
+        3,
+        2,
+        2,
+    )
+
+
+def test_single_delay_sequences_work_under_multi_point_distributions() -> None:
+    register_kinetic_settings()
+    jeff_dist = Distribution(np.array([-17.5, 17.5]), np.array([0.5, 0.5]))
+
+    # 1. cpmg_ch3_mq with reference-only metadata (all_delays has length 1)
+    mq_cfg = CpmgCh3MqConfig.model_validate(
+        {
+            "experiment": {
+                "name": "cpmg_ch3_mq",
+                "time_t2": 0.04,
+                "t_zeta": 1.0 / (8.0 * 125.0),
+            },
+            "conditions": {"h_larmor_frq": 600.0},
+            "data": {},
+        }
+    )
+    mq_cfg.model = ModelSpec.from_name("1st")
+    mq_spec = build_ch3_mq_spectrometer(mq_cfg, SpinSystem.from_name("L18CD1-HD1"))
+    mq_spec.jeff_i = jeff_dist
+    mq_spec.update(
+        {"pa": 1.0, "r2mq_is_a": 10.0, "mu_is_a": 0.0, "cs_i_a": 22.0, "cs_s_a": 0.8}
+    )
+    mq_out = CpmgCh3MqSequence(mq_cfg.experiment).calculate(
+        mq_spec,
+        Data(exp=np.array([1.0]), err=np.array([0.01]), metadata=np.array([0.0])),
+    )
+    assert mq_out.shape == (1,)
+    assert np.isfinite(mq_out).all()
+
+    # 2. relaxation_nz & relaxation_hznz with a 1-point time array under distributed jeff_i
+    nz_cfg = RelaxationNzConfig.model_validate(
+        {
+            "experiment": {"name": "relaxation_nz"},
+            "conditions": {"h_larmor_frq": 600.0},
+            "data": {},
+        }
+    )
+    nz_cfg.model = ModelSpec.from_name("1st")
+    nz_spec = build_nz_spectrometer(nz_cfg, SpinSystem.from_name("G23N-HN"))
+    nz_spec.jeff_i = jeff_dist
+    nz_spec.update({"pa": 1.0, "r1_i_a": 1.5})
+    nz_out = RelaxationNzSequence(nz_cfg.experiment).calculate(
+        nz_spec,
+        Data(exp=np.array([0.8]), err=np.array([0.01]), metadata=np.array([0.1])),
+    )
+    assert nz_out.shape == (1,)
+    expected_nz = nz_spec.get_start_magnetization(nz_cfg.experiment.start_terms)[0, 0]
+    np.testing.assert_allclose(nz_out, [expected_nz * np.exp(-0.15)])
+
+    hznz_cfg = RelaxationHzNzConfig.model_validate(
+        {
+            "experiment": {"name": "relaxation_hznz"},
+            "conditions": {"h_larmor_frq": 600.0},
+            "data": {},
+        }
+    )
+    hznz_cfg.model = ModelSpec.from_name("1st")
+    hznz_spec = build_hznz_spectrometer(hznz_cfg, SpinSystem.from_name("G23N-HN"))
+    hznz_spec.jeff_i = jeff_dist
+    hznz_spec.update({"pa": 1.0, "r1_i_a": 1.5, "r1a_is_a": 2.5, "etaz_i_a": 0.0})
+    hznz_out = RelaxationHzNzSequence(hznz_cfg.experiment).calculate(
+        hznz_spec,
+        Data(exp=np.array([0.8]), err=np.array([0.01]), metadata=np.array([0.1])),
+    )
+    assert hznz_out.shape == (1,)
+    assert np.isfinite(hznz_out).all()
+
+    # 3. cpmg_ch3_1h_tq_diff under distributed jeff_i (scalar delays must not unpack axis 0)
+    tq_cfg = CpmgCh31HTqDiffConfig.model_validate(
+        {
+            "experiment": {
+                "name": "cpmg_ch3_1h_tq_diff",
+                "time_t2": 0.04,
+                "carrier": 0.8,
+                "pw90": 10.0e-6,
+                "delta": 1.5e-3,
+                "gradient": 20.0,
+                "tauc": 0.001,
+            },
+            "conditions": {"h_larmor_frq": 600.0},
+            "data": {},
+        }
+    )
+    tq_cfg.model = ModelSpec.from_name("1st")
+    tq_spec = build_tq_diff_spectrometer(tq_cfg, SpinSystem.from_name("L18HD1-CD1"))
+    tq_spec.jeff_i = jeff_dist
+    tq_spec.update(
+        {
+            "pa": 1.0,
+            "r1_i_a": 1.5,
+            "r2_i_a": 15.0,
+            "r2a_i_a": 16.0,
+            "r1a_is_a": 2.0,
+            "etaxy_i_a": 0.0,
+            "etaz_i_a": 0.0,
+            "cs_i_a": 0.8,
+            "j_is_a": 125.0,
+            "d_a": 0.0,
+        }
+    )
+    tq_out = CpmgCh31HTqDiffSequence(tq_cfg.experiment).calculate(
+        tq_spec,
+        Data(exp=np.array([1.0]), err=np.array([0.01]), metadata=np.array([2.0])),
+    )
+    assert tq_out.shape == (1,)
+    assert np.isfinite(tq_out).all()
+
+
+def test_calculate_propagators_rejects_invalid_shapes() -> None:
+    with pytest.raises(ValueError, match="square matrix dimensions"):
+        calculate_propagators(np.zeros((2, 3)), 0.1)
+
+    with pytest.raises(ValueError, match="scalar or a 1D iterable"):
+        calculate_propagators(np.zeros((2, 2)), np.zeros((1, 2)))

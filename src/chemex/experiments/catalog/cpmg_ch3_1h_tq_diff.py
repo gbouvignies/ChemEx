@@ -174,17 +174,17 @@ class CpmgCh31HTqDiffSequence:
 
         # Calculation of the spectrometers with gradient 1
         spectrometer.gradient_dephasing = 1.0 / 3.0 * self.settings.k2_factor
-        (d_delta_1,) = spectrometer.delays(self.settings.delta)
+        d_delta_1 = spectrometer.delays(self.settings.delta)
 
         # Calculation of the spectrometers with gradient 2
         spectrometer.gradient_dephasing = self.settings.k2_factor
-        (d_tau_2,) = spectrometer.delays(self.settings.tau)
+        d_tau_2 = spectrometer.delays(self.settings.tau)
         p90_2 = spectrometer.p90_i
         p180_2 = spectrometer.p180_i
 
         # Calculation of the spectrometers with gradient 3
         spectrometer.gradient_dephasing = 7.0 / 3.0 * self.settings.k2_factor
-        (d_delta_3,) = spectrometer.delays(self.settings.delta)
+        d_delta_3 = spectrometer.delays(self.settings.delta)
 
         # Calculation of the spectrometers with gradient 4
         spectrometer.gradient_dephasing = 4.0 * self.settings.k2_factor
