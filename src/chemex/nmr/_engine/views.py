@@ -11,8 +11,13 @@ def reshape_single_liouvillian(
     *,
     purpose: str,
 ) -> Array:
-    squeezed = np.squeeze(liouvillian)
     expected_shape = (size, size)
+    squeeze_axes = tuple(
+        axis for axis, dim in enumerate(liouvillian.shape[:-2]) if dim == 1
+    )
+    squeezed = (
+        np.squeeze(liouvillian, axis=squeeze_axes) if squeeze_axes else liouvillian
+    )
     if squeezed.shape != expected_shape:
         msg = (
             f"{purpose} requires single-point B1 and Jeff distributions; "

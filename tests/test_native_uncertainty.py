@@ -1946,9 +1946,11 @@ def test_multivariate_scaled_svd_correlation_and_joint_propagation_reference() -
         np.asarray(evidence.residual_jacobian.matrix),
         reference_jacobian,
         # The independent five-point and production adaptive finite-difference
-        # calculations differ by up to 4.674e-6 across the qualified local,
-        # GitHub Actions Python 3.13, and Python 3.14 platform envelope.
-        rtol=6.0e-6,
+        # calculations differ by up to 6.633e-6 (5.895e-8 absolute on the
+        # 8.887e-3 entry after DANTE matrix_power rounding under Padé expm)
+        # across the qualified local, GitHub Actions Python 3.13, and
+        # Python 3.14 platform envelope.
+        rtol=8.5e-6,
         atol=2.0e-9,
     )
     assert evidence.rank_diagnostic is not None

@@ -39,8 +39,8 @@ class _ISpinPulseCache(_BasePulseCache):
 class _SSpinPulseCache(_BasePulseCache):
     p180: Array = field(default_factory=lambda: np.array(0.0))
 
-    def pulse_widths(self) -> Array:
-        return np.array([2.0]) * self.pw90
+    def pulse_width(self) -> float:
+        return 2.0 * self.pw90
 
     def store(self, *, p180: Array, generation: tuple[int, int]) -> None:
         self.p180 = p180
@@ -106,7 +106,7 @@ class PulseLibrary:
             # width axis to preserve here. Keep the broadcast distribution axes
             # intact and add only the phase axis.
             p180 = self._kernel.add_phases(
-                self._kernel.pulse_s(self._s_pulses.pulse_widths(), 0.0),
+                self._kernel.pulse_s(self._s_pulses.pulse_width(), 0.0),
                 "s",
             )
             self._s_pulses.store(p180=p180, generation=generation)

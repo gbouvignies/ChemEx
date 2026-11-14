@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from itertools import product
+
 import numpy as np
 
 from chemex.nmr._engine.engine import ISLiouvillianEngine
@@ -9,12 +11,30 @@ from chemex.typing import Array
 # A small value used for numerical stability
 SMALL_VALUE = 1e-6
 
+# Inhomogeneous thermal-bath identity coordinates in `*_eq` bases; these form an
+# invariant source block with conserved 0 and pure-exchange eigenvalues rather
+# than spin-relaxation modes.
+_EQUILIBRIUM_COMPONENTS = frozenset(("ie", "se"))
+
 
 class SpectrometerAnalysis:
     """Small analysis surface built on top of a spectrometer engine."""
 
     def __init__(self, engine: ISLiouvillianEngine) -> None:
         self._engine = engine
+
+    def _homogeneous_spin_submatrix(self, liouv: Array) -> Array:
+        basis = self._engine.basis
+        if not any(comp in _EQUILIBRIUM_COMPONENTS for comp in basis.components):
+            return liouv
+        spin_indices = [
+            idx
+            for idx, (_state, comp) in enumerate(
+                product(basis.model.states, basis.components)
+            )
+            if comp not in _EQUILIBRIUM_COMPONENTS
+        ]
+        return liouv[np.ix_(spin_indices, spin_indices)]
 
     def calculate_shifts(self) -> Array:
         liouv = reshape_single_liouvillian(
@@ -30,6 +50,7 @@ class SpectrometerAnalysis:
             self._engine.size,
             purpose="R1rho eigenvalue calculation",
         )
+        liouv = self._homogeneous_spin_submatrix(liouv)
         eigenvalues = np.linalg.eigvals(liouv)
         real_eigenvalues = eigenvalues[
             np.isclose(eigenvalues.imag, 0.0, atol=SMALL_VALUE)
