@@ -132,7 +132,8 @@ def pop_3st(
         )
     )
     if populations is None:
-        return {"pa": 1.0, "pb": 0.0, "pc": 0.0}
+        msg = "Kinetic rates do not determine a unique stationary distribution"
+        raise ValueError(msg)
 
     return populations
 
@@ -234,6 +235,7 @@ def pop_4st(
         )
     )
     if populations is None:
-        return {"pa": 1.0, "pb": 0.0, "pc": 0.0, "pd": 0.0}
+        msg = "Kinetic rates do not determine a unique stationary distribution"
+        raise ValueError(msg)
 
     return populations

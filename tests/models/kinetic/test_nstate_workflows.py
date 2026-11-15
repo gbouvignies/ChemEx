@@ -46,6 +46,7 @@ from chemex.optimize.deterministic_uncertainty import (
     AcceptedDeterministicFitFacts,
     ContinuousTrfBasis,
     DeterministicUncertainty,
+    compile_model_constraint_linearization_capabilities,
     derive_deterministic_uncertainty,
 )
 from chemex.optimize.direct_trf import (
@@ -91,6 +92,7 @@ class _NStateSpectrometer:
             "pd": 0.0,
             "pe": 0.0,
             "pf": 0.0,
+            "kex_bc": 0.0,
         }
 
     def update(self, values: dict[str, float]) -> None:
@@ -114,7 +116,7 @@ class _NStatePulseSequence:
         metadata = np.asarray(data.metadata, dtype=np.float64)
         return sum(
             spectrometer.values[name] * metadata**power
-            for power, name in enumerate(("pb", "pc", "pd", "pe", "pf"), 1)
+            for power, name in enumerate(("pb", "pc", "pd", "pe", "pf", "kex_bc"), 1)
             if name in spectrometer.values
         )
 
@@ -939,3 +941,243 @@ def test_disconnected_static_mixture_zero_pair_qualifies_active_uncertainties() 
     assert uncertainty.parameter(local_ids["kda"]).standard_error == pytest.approx(
         400.0 * pd_error
     )
+
+
+def test_fixed_zero_kex_at_zero_endpoint_pair_propagates_without_domain_error() -> None:
+    session = AnalysisSession.create()
+    session.set_model("4st")
+    basis = Basis(type="iz", spin_system="nh", model=session.model.spec)
+    spin_system = SpinSystem.from_name("G23N-HN")
+    conditions = Conditions(
+        h_larmor_frq=600.0,
+        temperature=25.0,
+        p_total=1.0e-3,
+        l_total=2.0e-3,
+    )
+    settings = model_factory.create("4st", conditions)
+    local_ids = {
+        name: setting.name_setting.get_param_name(spin_system, conditions).id_
+        for name, setting in settings.items()
+    }
+    config = SimpleNamespace(
+        conditions=conditions,
+        to_be_fitted=SimpleNamespace(rates=[], model_free=[]),
+    )
+    session.parameter_factory.create_parameters(
+        config,  # ty: ignore[invalid-argument-type]
+        basis=basis,
+        spin_system=spin_system,
+    )
+    session.parameters.set_defaults(
+        [
+            (ParamName.from_section("pb"), DefaultSetting(0.1)),
+            (ParamName.from_section("pc"), DefaultSetting(0.0)),
+            (ParamName.from_section("pd"), DefaultSetting(0.2)),
+            (ParamName.from_section("kex_ab"), DefaultSetting(400.0)),
+            (ParamName.from_section("kex_bc"), DefaultSetting(0.0)),
+        ]
+    )
+    assert session.parameter_factory.try_seal_definitions()
+    assert session.try_build_analysis_values()
+
+    metadata = np.asarray((0.25, 0.5, 0.8, 1.1, 1.5, 2.0))
+    data = Data(
+        exp=np.asarray(0.2 * metadata**3, dtype=np.float64),
+        err=np.full(metadata.shape, 1.0e-4),
+        metadata=metadata,
+    )
+    profile = Profile(
+        data,
+        cast("Spectrometer", _NStateSpectrometer(spin_system)),
+        cast("PulseSequence", _NStatePulseSequence()),
+        {name: local_ids[name] for name in ("pb", "pc", "pd")},
+        cast("Any", None),
+        is_scaled=False,
+    )
+    experiments = cast("Any", (SimpleNamespace(profiles=(profile,)),))
+    required_ids = {
+        local_ids[name] for name in ("pa", "pb", "pc", "pd", "kab", "kba", "kbc", "kcb")
+    }
+    parameterization = session.compile_parameterization(
+        Method(
+            fit=["PB"],
+            fix=["PC", "PD", "KEX_AB", "KEX_BC"],
+        ),
+        required_ids,
+    )
+    engine = EvaluationEngine.from_experiments(experiments, parameterization)
+    configuration = session.parameter_factory.sealed_configuration
+    assert configuration is not None
+    problem = OptimizationProblem.from_native(
+        engine.plan,
+        parameterization,
+        configuration,
+        session.analysis_values.snapshot(),
+    )
+    workflow = _NStateWorkflow(
+        session,
+        local_ids,
+        (local_ids,),
+        parameterization,
+        engine,
+        problem,
+    )
+
+    template = _fit_workflow(workflow)
+    exact_zero = _qualified_accepted_at(workflow, template, (0.0,))
+    uncertainty = _derive_uncertainty(workflow, exact_zero)
+
+    pb_conclusion = uncertainty.parameter(local_ids["pb"])
+    assert pb_conclusion.standard_error is not None
+    assert pb_conclusion.boundary_warning
+
+    evidence = uncertainty.root_evidence
+    assert evidence is not None
+    assert evidence.failures == ()
+    assert evidence.constraint_jacobian is not None
+    jacobian_rows = dict(
+        zip(
+            evidence.constraint_jacobian.output_ids,
+            evidence.constraint_jacobian.matrix,
+            strict=True,
+        )
+    )
+    assert jacobian_rows[local_ids["pa"]] == pytest.approx((-1.0,))
+    assert jacobian_rows[local_ids["kab"]] == pytest.approx((500.0,))
+    assert jacobian_rows[local_ids["kba"]] == pytest.approx((-500.0,))
+    assert jacobian_rows[local_ids["kbc"]] == (0.0,)
+    assert jacobian_rows[local_ids["kcb"]] == (0.0,)
+
+    assert evidence.constrained_marginal_errors is not None
+    marginal_by_id = {
+        entry.param_id: entry for entry in evidence.constrained_marginal_errors.entries
+    }
+    pb_error = pb_conclusion.standard_error
+    assert marginal_by_id[local_ids["pa"]].value == pytest.approx(pb_error)
+    assert marginal_by_id[local_ids["kab"]].value == pytest.approx(500.0 * pb_error)
+    assert marginal_by_id[local_ids["kba"]].value == pytest.approx(500.0 * pb_error)
+    assert marginal_by_id[local_ids["kbc"]].raw_value == 0.0
+    assert marginal_by_id[local_ids["kcb"]].raw_value == 0.0
+
+    active_scope = (local_ids["pa"], local_ids["kab"], local_ids["kba"])
+    active_evidence = uncertainty_module.derive_uncertainty_evidence(
+        exact_zero,
+        problem=problem,
+        parameterization=parameterization,
+        engine=engine,
+        policy=uncertainty.policy,
+        constrained_scope=active_scope,
+        constrained_units=tuple(
+            (param_id, ParameterUnit.UNSPECIFIED) for param_id in active_scope
+        ),
+        constrained_scales=tuple((param_id, 1.0) for param_id in active_scope),
+        compiled_constraint_linearization=(
+            compile_model_constraint_linearization_capabilities(
+                parameterization,
+                active_scope,
+            )
+        ),
+        resolved_environment_identity="nstate-active-scope-check",
+    )
+    assert active_evidence.failures == ()
+    assert active_evidence.constrained_marginal_errors is not None
+    assert active_evidence.constrained_marginal_errors.scope_reportable
+    active_errors = {
+        entry.param_id: entry.value
+        for entry in active_evidence.constrained_marginal_errors.entries
+    }
+    assert active_errors[local_ids["pa"]] == pytest.approx(pb_error)
+    assert active_errors[local_ids["kab"]] == pytest.approx(500.0 * pb_error)
+    assert active_errors[local_ids["kba"]] == pytest.approx(500.0 * pb_error)
+
+
+def test_fitted_zero_kex_at_zero_endpoint_pair_rejects_undefined_kex_partial() -> None:
+    session = AnalysisSession.create()
+    session.set_model("4st")
+    basis = Basis(type="iz", spin_system="nh", model=session.model.spec)
+    spin_system = SpinSystem.from_name("G23N-HN")
+    conditions = Conditions(
+        h_larmor_frq=600.0,
+        temperature=25.0,
+        p_total=1.0e-3,
+        l_total=2.0e-3,
+    )
+    settings = model_factory.create("4st", conditions)
+    local_ids = {
+        name: setting.name_setting.get_param_name(spin_system, conditions).id_
+        for name, setting in settings.items()
+    }
+    config = SimpleNamespace(
+        conditions=conditions,
+        to_be_fitted=SimpleNamespace(rates=[], model_free=[]),
+    )
+    session.parameter_factory.create_parameters(
+        config,  # ty: ignore[invalid-argument-type]
+        basis=basis,
+        spin_system=spin_system,
+    )
+    session.parameters.set_defaults(
+        [
+            (ParamName.from_section("pb"), DefaultSetting(0.1)),
+            (ParamName.from_section("pc"), DefaultSetting(0.0)),
+            (ParamName.from_section("pd"), DefaultSetting(0.2)),
+            (ParamName.from_section("kex_bc"), DefaultSetting(0.0)),
+        ]
+    )
+    assert session.parameter_factory.try_seal_definitions()
+    assert session.try_build_analysis_values()
+
+    metadata = np.asarray((0.25, 0.5, 0.8, 1.1, 1.5, 2.0))
+    data = Data(
+        exp=np.asarray(0.2 * metadata**3, dtype=np.float64),
+        err=np.full(metadata.shape, 1.0e-4),
+        metadata=metadata,
+    )
+    profile = Profile(
+        data,
+        cast("Spectrometer", _NStateSpectrometer(spin_system)),
+        cast("PulseSequence", _NStatePulseSequence()),
+        {name: local_ids[name] for name in ("pb", "pc", "pd", "kex_bc")},
+        cast("Any", None),
+        is_scaled=False,
+    )
+    experiments = cast("Any", (SimpleNamespace(profiles=(profile,)),))
+    required_ids = {local_ids[name] for name in ("pa", "pb", "pc", "pd", "kbc", "kcb")}
+    parameterization = session.compile_parameterization(
+        Method(
+            fit=["PB", "KEX_BC"],
+            fix=["PC", "PD"],
+        ),
+        required_ids,
+    )
+    engine = EvaluationEngine.from_experiments(experiments, parameterization)
+    configuration = session.parameter_factory.sealed_configuration
+    assert configuration is not None
+    problem = OptimizationProblem.from_native(
+        engine.plan,
+        parameterization,
+        configuration,
+        session.analysis_values.snapshot(),
+    )
+    workflow = _NStateWorkflow(
+        session,
+        local_ids,
+        (local_ids,),
+        parameterization,
+        engine,
+        problem,
+    )
+
+    template = _fit_workflow(workflow)
+    exact_zero = _qualified_accepted_at(workflow, template, (0.0, 0.0))
+    uncertainty = _derive_uncertainty(workflow, exact_zero)
+
+    evidence = uncertainty.root_evidence
+    assert evidence is not None
+    assert evidence.constraint_jacobian is None
+    assert any(
+        failure.stage == "constraint_linearization"
+        and "undefined at a zero pair" in failure.message
+        for failure in evidence.failures
+    )
+    assert uncertainty.parameter(local_ids["kbc"]).standard_error is None

@@ -168,11 +168,17 @@ def _forward_d_kex(kex: float, p_i: float, p_j: float) -> float:
 
 
 def _forward_d_pi(kex: float, p_i: float, p_j: float) -> float:
+    _validate_pair_inputs(kex, p_i, p_j)
+    if kex == 0.0:
+        return 0.0
     denominator = _pair_derivative_denominator(kex, p_i, p_j)
     return -kex * p_j / (denominator * denominator)
 
 
 def _forward_d_pj(kex: float, p_i: float, p_j: float) -> float:
+    _validate_pair_inputs(kex, p_i, p_j)
+    if kex == 0.0:
+        return 0.0
     denominator = _pair_derivative_denominator(kex, p_i, p_j)
     return kex * p_i / (denominator * denominator)
 
@@ -183,11 +189,17 @@ def _reverse_d_kex(kex: float, p_i: float, p_j: float) -> float:
 
 
 def _reverse_d_pi(kex: float, p_i: float, p_j: float) -> float:
+    _validate_pair_inputs(kex, p_i, p_j)
+    if kex == 0.0:
+        return 0.0
     denominator = _pair_derivative_denominator(kex, p_i, p_j)
     return kex * p_j / (denominator * denominator)
 
 
 def _reverse_d_pj(kex: float, p_i: float, p_j: float) -> float:
+    _validate_pair_inputs(kex, p_i, p_j)
+    if kex == 0.0:
+        return 0.0
     denominator = _pair_derivative_denominator(kex, p_i, p_j)
     return -kex * p_i / (denominator * denominator)
 
@@ -319,13 +331,13 @@ def _linearizations(state_count: int) -> tuple[FunctionLinearization, ...]:
         AnalyticFunctionLinearization(
             "pair_rates",
             "forward",
-            "generic-nstate-pair-rate-partials-v1",
+            "generic-nstate-pair-rate-partials-v2",
             (_forward_d_kex, _forward_d_pi, _forward_d_pj),
         ),
         AnalyticFunctionLinearization(
             "pair_rates",
             "reverse",
-            "generic-nstate-pair-rate-partials-v1",
+            "generic-nstate-pair-rate-partials-v2",
             (_reverse_d_kex, _reverse_d_pi, _reverse_d_pj),
         ),
     )

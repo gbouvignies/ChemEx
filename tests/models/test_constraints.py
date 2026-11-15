@@ -107,12 +107,30 @@ def test_two_state_both_zero_preserves_compatibility_fallback() -> None:
     assert pop_2st(0.0, 0.0) == {"pa": 1.0, "pb": 0.0}
 
 
+def _assert_stationary_2st(
+    rates: tuple[float, float],
+    populations: dict[str, float],
+) -> None:
+    kab, kba = rates
+    scale = max(rates)
+    if scale > 0.0:
+        kab /= scale
+        kba /= scale
+    pa, pb = populations["pa"], populations["pb"]
+    residual = np.array((-kab * pa + kba * pb, kab * pa - kba * pb))
+
+    assert sum(populations.values()) == pytest.approx(1.0, abs=1e-15)
+    assert all(population >= 0.0 for population in populations.values())
+    np.testing.assert_allclose(residual, 0.0, atol=2e-15)
+
+
 def _assert_stationary(rates: Rates3State, populations: dict[str, float]) -> None:
     kab, kba, kac, kca, kbc, kcb = rates
     scale = max(rates)
-    kab, kba, kac, kca, kbc, kcb = (
-        rate / scale for rate in (kab, kba, kac, kca, kbc, kcb)
-    )
+    if scale > 0.0:
+        kab, kba, kac, kca, kbc, kcb = (
+            rate / scale for rate in (kab, kba, kac, kca, kbc, kcb)
+        )
     pa, pb, pc = (populations[name] for name in ("pa", "pb", "pc"))
     residual = np.array(
         (
@@ -200,10 +218,11 @@ def _assert_stationary_4st(
 ) -> None:
     kab, kba, kac, kca, kad, kda, kbc, kcb, kbd, kdb, kcd, kdc = rates
     scale = max(rates)
-    kab, kba, kac, kca, kad, kda, kbc, kcb, kbd, kdb, kcd, kdc = (
-        rate / scale
-        for rate in (kab, kba, kac, kca, kad, kda, kbc, kcb, kbd, kdb, kcd, kdc)
-    )
+    if scale > 0.0:
+        kab, kba, kac, kca, kad, kda, kbc, kcb, kbd, kdb, kcd, kdc = (
+            rate / scale
+            for rate in (kab, kba, kac, kca, kad, kda, kbc, kcb, kbd, kdb, kcd, kdc)
+        )
     pa, pb, pc, pd = (populations[name] for name in ("pa", "pb", "pc", "pd"))
     residual = np.array(
         (
@@ -367,16 +386,105 @@ def test_four_state_literal_zero_isolated_states_reduce_cleanly() -> None:
     ) == pytest.approx({"pa": 1 / 3, "pb": 2 / 3, "pc": 0.0, "pd": 0.0})
 
 
-def test_all_zero_and_disconnected_multi_sink_preserve_pa_fallback() -> None:
-    assert pop_3st() == {"pa": 1.0, "pb": 0.0, "pc": 0.0}
-    assert pop_4st() == {"pa": 1.0, "pb": 0.0, "pc": 0.0, "pd": 0.0}
-    # Disconnected {A <-> B} and {C <-> D} has two independent closed classes.
-    assert pop_4st(2.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 3.0, 1.0) == {
-        "pa": 1.0,
-        "pb": 0.0,
-        "pc": 0.0,
-        "pd": 0.0,
-    }
+def test_all_zero_rates_preserve_stationary_pa_compatibility_convention() -> None:
+    pop2 = pop_2st()
+    pop3 = pop_3st()
+    pop4 = pop_4st()
+
+    assert pop2 == {"pa": 1.0, "pb": 0.0}
+    assert pop3 == {"pa": 1.0, "pb": 0.0, "pc": 0.0}
+    assert pop4 == {"pa": 1.0, "pb": 0.0, "pc": 0.0, "pd": 0.0}
+    _assert_stationary_2st((0.0, 0.0), pop2)
+    _assert_stationary((0.0,) * 6, pop3)
+    _assert_stationary_4st((0.0,) * 12, pop4)
+
+
+@pytest.mark.parametrize(
+    "rates",
+    [
+        # B <- A -> C: two disjoint absorbing sinks {B} and {C}
+        (1.0, 0.0, 1.0, 0.0, 0.0, 0.0),
+        # A <- B -> C: two disjoint absorbing sinks {A} and {C}
+        (0.0, 1.0, 0.0, 0.0, 1.0, 0.0),
+        # A <- C -> B: two disjoint absorbing sinks {A} and {B}
+        (0.0, 0.0, 0.0, 1.0, 0.0, 1.0),
+    ],
+)
+def test_three_state_multi_sink_networks_raise_domain_error(
+    rates: Rates3State,
+) -> None:
+    with pytest.raises(ValueError, match="unique stationary distribution"):
+        pop_3st(*rates)
+
+
+@pytest.mark.parametrize(
+    "rates",
+    [
+        # Disconnected {A <-> B} and {C <-> D}: two closed communicating classes
+        (2.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 3.0, 1.0),
+        # Disconnected {A <-> C} and {B <-> D}: two closed communicating classes
+        (0.0, 0.0, 2.0, 1.0, 0.0, 0.0, 0.0, 0.0, 3.0, 1.0, 0.0, 0.0),
+        # Disconnected {A <-> D} and {B <-> C}: two closed communicating classes
+        (0.0, 0.0, 0.0, 0.0, 2.0, 1.0, 3.0, 1.0, 0.0, 0.0, 0.0, 0.0),
+        # Disconnected one-way A -> B and C -> D: two absorbing sinks {B} and {D}
+        (1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0),
+        # A drains into both {B} and {C <-> D}: two closed communicating classes
+        (1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 3.0, 1.0),
+        # State D isolated while active {A, B, C} has two sinks B <- A -> C
+        (1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+    ],
+)
+def test_four_state_disconnected_or_multi_sink_networks_raise_domain_error(
+    rates: Rates4State,
+) -> None:
+    with pytest.raises(ValueError, match="unique stationary distribution"):
+        pop_4st(*rates)
+
+
+def test_returned_equilibrium_populations_always_satisfy_stationarity() -> None:
+    two_state_cases: tuple[tuple[float, float], ...] = (
+        (0.0, 0.0),
+        (0.0, 5.0),
+        (5.0, 0.0),
+        (2.0, 7.0),
+        (1.0e-200, 3.0e-200),
+    )
+    for rates_2st in two_state_cases:
+        _assert_stationary_2st(rates_2st, pop_2st(*rates_2st))
+
+    three_state_cases: tuple[Rates3State, ...] = (
+        (0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+        # Single absorbing sink A (B -> A <- C)
+        (0.0, 2.0, 0.0, 3.0, 0.0, 0.0),
+        # Single absorbing sink C (A -> B -> C)
+        (2.0, 0.0, 0.0, 0.0, 5.0, 0.0),
+        # Irreversible cycle A -> B -> C -> A
+        (2.0, 0.0, 0.0, 4.0, 3.0, 0.0),
+        # Isolated state C with active A <-> B
+        (4.0, 2.0, 0.0, 0.0, 0.0, 0.0),
+        # Isolated state A with single-sink B -> C
+        (0.0, 0.0, 0.0, 0.0, 5.0, 0.0),
+    )
+    for rates_3st in three_state_cases:
+        _assert_stationary(rates_3st, pop_3st(*rates_3st))
+
+    four_state_cases: tuple[Rates4State, ...] = (
+        (0.0,) * 12,
+        # Single absorbing sink A (B -> A, C -> A, D -> A)
+        (0.0, 2.0, 0.0, 3.0, 0.0, 4.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+        # Single absorbing sink D along chain A -> B -> C -> D
+        (2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 4.0, 0.0),
+        # Irreversible 4-cycle A -> B -> C -> D -> A
+        (2.0, 0.0, 0.0, 0.0, 0.0, 5.0, 3.0, 0.0, 0.0, 0.0, 4.0, 0.0),
+        # Transient A feeding closed reversible {C <-> D}, with B -> A
+        (0.0, 2.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 3.0, 1.0),
+        # State C isolated while B <-> A -> D drains into unique sink D
+        (2.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+        # States C and D isolated with active A <-> B
+        (4.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+    )
+    for rates_4st in four_state_cases:
+        _assert_stationary_4st(rates_4st, pop_4st(*rates_4st))
 
 
 @pytest.mark.parametrize(

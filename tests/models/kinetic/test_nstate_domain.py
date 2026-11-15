@@ -219,7 +219,29 @@ def test_pair_rate_partials_are_finite_at_one_zero_endpoint() -> None:
     )
 
 
-def test_pair_rate_partials_fail_closed_at_a_zero_pair() -> None:
+def test_pair_rate_population_partials_are_zero_when_kex_is_zero() -> None:
+    register()
+    capabilities = {
+        (item.function_id, item.component): item
+        for item in function_linearization_registry.get("4st")
+        if isinstance(item, AnalyticFunctionLinearization)
+    }
+
+    forward = capabilities[("pair_rates", "forward")].partials
+    reverse = capabilities[("pair_rates", "reverse")].partials
+
+    for p_i, p_j in ((0.0, 0.0), (0.0, 0.4), (0.4, 0.0), (0.2, 0.6)):
+        for partials in (forward, reverse):
+            for pop_partial in partials[1:]:
+                derivative = pop_partial(0.0, p_i, p_j)
+                assert derivative == 0.0
+                assert math.copysign(1.0, derivative) == 1.0
+
+    assert forward[0](0.0, 0.2, 0.6) == pytest.approx(0.75)
+    assert reverse[0](0.0, 0.2, 0.6) == pytest.approx(0.25)
+
+
+def test_pair_rate_partials_fail_closed_where_genuinely_undefined() -> None:
     register()
     capabilities = {
         (item.function_id, item.component): item
@@ -228,9 +250,23 @@ def test_pair_rate_partials_fail_closed_at_a_zero_pair() -> None:
     }
 
     for component in ("forward", "reverse"):
-        for partial in capabilities[("pair_rates", component)].partials:
-            with pytest.raises(ValueError, match="undefined at a zero pair"):
-                partial(0.0, 0.0, 0.0)
+        partials = capabilities[("pair_rates", component)].partials
+        with pytest.raises(ValueError, match="undefined at a zero pair"):
+            partials[0](0.0, 0.0, 0.0)
+        for positive_kex in (math.nextafter(0.0, 1.0), 125.0):
+            for partial in partials:
+                with pytest.raises(ValueError, match="undefined at a zero pair"):
+                    partial(positive_kex, 0.0, 0.0)
+        for invalid_args, match in (
+            ((-1.0, 0.0, 0.0), "KEX must be nonnegative"),
+            ((0.0, -0.1, 0.0), "endpoint populations must be nonnegative"),
+            ((0.0, 0.0, -0.1), "endpoint populations must be nonnegative"),
+            ((0.0, math.nan, 0.0), "must be finite"),
+            ((0.0, 0.0, math.inf), "must be finite"),
+        ):
+            for partial in partials:
+                with pytest.raises(ValueError, match=match):
+                    partial(*invalid_args)
 
 
 def test_registered_population_complement_partials_preserve_coupled_pa() -> None:
