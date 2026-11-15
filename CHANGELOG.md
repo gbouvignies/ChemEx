@@ -43,7 +43,9 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   preserves unit total intensity in unscaled simulations and removes an
   unphysical $+K \ln(2) / T_1$ offset on fitted `R1` and `R2` rates in
   uniformly $^{13}\text{C}$-labeled CEST experiments with reference planes
-  (for $K$ active couplings in `J_EFF`).
+  (for $K$ active couplings in `J_EFF`); updated initial `R1_A` and `R2_A`
+  defaults in `examples/Experiments/CEST_13C_LABEL_CN/Parameters/parameters.toml`
+  accordingly.
 - Aligned non-`.mf` default anti-phase relaxation expressions with Redfield
   relaxation theory and heteronuclear $I \leftrightarrow S$ symmetry: `"ch"`
   and `"cn"` spin systems now leave `R1A` independent and use

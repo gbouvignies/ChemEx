@@ -20,8 +20,6 @@ from chemex.parameters.spins import create_base_param_settings
 from chemex.runtime import AnalysisSession
 from chemex.terminal import format_known_failure
 
-_EXAMPLES_ROOT = Path(__file__).resolve().parents[2] / "examples" / "Experiments"
-
 _SWAPPED_COMPONENTS = {
     "r2_i": "r2_s",
     "r2_s": "r2_i",
@@ -254,12 +252,164 @@ def test_tauc_docstrings_specify_nanoseconds() -> None:
         assert "Correlation time in seconds" not in obj.__doc__
 
 
+_CPMG_PROFILE_OUT = """\
+#    ncyc_cp        Intensity      Esd(Int.)
+   0.000e+00    7.8892830e+04  2.0867709e+02
+   2.000e+00    3.8922232e+04  1.5663089e+02
+   4.000e+00    3.9646431e+04  1.5735970e+02
+   4.000e+00    4.0233670e+04  1.5795898e+02
+   8.000e+00    4.2038030e+04  1.5984393e+02
+   2.200e+01    4.5939124e+04  1.6411183e+02
+   2.200e+01    4.6173211e+04  1.6437711e+02
+"""
+
+
+def _write_text(path: Path, content: str) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+    return path
+
+
+def _write_cpmg_13co_ap_fixture(root: Path) -> tuple[list[Path], list[Path]]:
+    _write_text(root / "Data" / "500MHz" / "23N-HN.out", _CPMG_PROFILE_OUT)
+    _write_text(root / "Data" / "800MHz" / "23N-HN.out", _CPMG_PROFILE_OUT)
+    exp_500 = _write_text(
+        root / "Experiments" / "500MHz.toml",
+        """\
+[experiment]
+name = "cpmg_13co_ap"
+time_t2 = 30.0e-3
+carrier = 176.819
+pw90 = 38.813e-6
+time_equil = 0.003
+
+[conditions]
+h_larmor_frq = 500.0
+
+[data]
+path = "../Data/500MHz/"
+error = "duplicates"
+
+[data.profiles]
+22CO-23N = "23N-HN.out"
+""",
+    )
+    exp_800 = _write_text(
+        root / "Experiments" / "800MHz.toml",
+        """\
+[experiment]
+name = "cpmg_13co_ap"
+time_t2 = 30.0e-3
+carrier = 176.732
+pw90 = 38.4e-6
+time_equil = 0.003
+
+[conditions]
+h_larmor_frq = 800.0
+
+[data]
+path = "../Data/800MHz/"
+error = "duplicates"
+
+[data.profiles]
+22CO-23N = "23N-HN.out"
+""",
+    )
+    par_file = _write_text(
+        root / "Parameters" / "parameters.toml",
+        """\
+[GLOBAL]
+PB = 1.0e-2
+KEX_AB = 1.0e+3
+DW_AB = 0.25
+"R1_A, B0->800.0MHz" = 1.00
+"R1_A, B0->500.0MHz" = 0.90
+"R1A_A, B0->800.0MHz" = 3.30
+"R1A_A, B0->500.0MHz" = 3.00
+"R2_A, B0->800.0MHz" = 17.0
+"R2_A, B0->500.0MHz" = 17.0
+
+[CS_A]
+22CO = 177.180
+""",
+    )
+    return [exp_500, exp_800], [par_file]
+
+
+def _write_cpmg_15n_ip_fixture(root: Path) -> Path:
+    _write_text(root / "Data" / "600MHz" / "L3N-HN.out", _CPMG_PROFILE_OUT)
+    return _write_text(
+        root / "Experiments" / "600MHz.toml",
+        """\
+[experiment]
+name = "cpmg_15n_ip_0013"
+time_t2 = 40.0e-3
+carrier = 119.0
+pw90 = 45.0e-6
+ncyc_max = 40
+time_equil = 5.0e-3
+
+[conditions]
+h_larmor_frq = 600.25
+label = ["2H"]
+
+[data]
+path = "../Data/600MHz/"
+error = "duplicates"
+
+[data.profiles]
+L3N = "L3N-HN.out"
+""",
+    )
+
+
+def _write_cpmg_ch3_13c_h2c_fixture(root: Path) -> tuple[list[Path], list[Path]]:
+    _write_text(root / "Data" / "600MHz" / "L24CD1-QD1.out", _CPMG_PROFILE_OUT)
+    exp_600 = _write_text(
+        root / "Experiments" / "600MHz.toml",
+        """\
+[experiment]
+name = "cpmg_ch3_13c_h2c"
+time_t2 = 30.0e-3
+taub = 2.0e-3
+carrier = 20.0
+pw90 = 14.8e-6
+
+[conditions]
+h_larmor_frq = 600.25
+
+[data]
+path = "../Data/600MHz/"
+error = "duplicates"
+
+[data.profiles]
+L24CD1-HD1 = "L24CD1-QD1.out"
+""",
+    )
+    par_file = _write_text(
+        root / "Parameters" / "parameters.toml",
+        """\
+[GLOBAL]
+PB = 1.0e-2
+KEX_AB = 1.5e+3
+DW_AB = 0.2
+R1_A = 1.5
+R2_A = 10.0
+R1A_A = 3.0
+
+[CS_A]
+L24CD1 = 22.431
+""",
+    )
+    return [exp_600], [par_file]
+
+
 def test_cli_entrypoint_reports_known_failure_for_cn_model_free(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    exp_dir = _EXAMPLES_ROOT / "CPMG_13CO_AP"
+    exp_files, par_files = _write_cpmg_13co_ap_fixture(tmp_path / "cpmg_13co_ap")
     monkeypatch.setattr(
         sys,
         "argv",
@@ -267,9 +417,9 @@ def test_cli_entrypoint_reports_known_failure_for_cn_model_free(
             "chemex",
             "simulate",
             "-e",
-            str(exp_dir / "Experiments" / "800MHz.toml"),
+            str(exp_files[1]),
             "-p",
-            str(exp_dir / "Parameters" / "parameters.toml"),
+            str(par_files[0]),
             "-d",
             "2st.mf",
             "-o",
@@ -287,13 +437,8 @@ def test_cli_entrypoint_reports_known_failure_for_cn_model_free(
     assert "unexpected internal error" not in combined.lower()
 
 
-def test_cpmg_13co_ap_rejects_mf_and_honors_r1a_in_non_mf() -> None:
-    exp_dir = _EXAMPLES_ROOT / "CPMG_13CO_AP"
-    exp_files = [
-        exp_dir / "Experiments" / "500MHz.toml",
-        exp_dir / "Experiments" / "800MHz.toml",
-    ]
-    par_files = [exp_dir / "Parameters" / "parameters.toml"]
+def test_cpmg_13co_ap_rejects_mf_and_honors_r1a_in_non_mf(tmp_path: Path) -> None:
+    exp_files, par_files = _write_cpmg_13co_ap_fixture(tmp_path / "cpmg_13co_ap")
 
     # 1. Explicit rejection of 2st.mf
     session_mf = AnalysisSession.create()
@@ -317,35 +462,41 @@ def test_cpmg_13co_ap_rejects_mf_and_honors_r1a_in_non_mf() -> None:
     session.parameters.set_defaults(read_defaults(par_files))
     assert session.try_build_analysis_values()
 
-    profile_800 = next(
-        profile
-        for exp in experiments
-        if exp.filename.name == "800MHz.toml"
-        for profile in exp
-    )
-    required_ids = set(profile_800.name_map.values())
+    profiles_by_file = {exp.filename.name: exp.profiles[0] for exp in experiments}
+    required_ids = {
+        param_id
+        for profile in profiles_by_file.values()
+        for param_id in profile.name_map.values()
+    }
     parameterization = session.compile_parameterization(Method(), required_ids)
     resolved = parameterization.resolve(
         parameterization.frame_from_snapshot(session.analysis_values.snapshot())
     )
 
-    r1_id = profile_800.name_map["r1_i_a"]
-    r1a_id = profile_800.name_map["r1a_is_a"]
-    r2_id = profile_800.name_map["r2_i_a"]
-    r2a_id = profile_800.name_map["r2a_i_a"]
+    profile_800 = profiles_by_file["800MHz.toml"]
+    assert resolved[profile_800.name_map["r1_i_a"]] == pytest.approx(1.00)
+    assert resolved[profile_800.name_map["r1a_is_a"]] == pytest.approx(3.30)
+    assert resolved[profile_800.name_map["r2a_i_a"]] == pytest.approx(
+        resolved[profile_800.name_map["r2_i_a"]] + 3.30 - 1.00
+    )
 
-    assert resolved[r1_id] == pytest.approx(1.00)
-    assert resolved[r1a_id] == pytest.approx(3.30)
-    assert resolved[r2a_id] == pytest.approx(resolved[r2_id] + 3.30 - 1.00)
+    profile_500 = profiles_by_file["500MHz.toml"]
+    assert resolved[profile_500.name_map["r1_i_a"]] == pytest.approx(0.90)
+    assert resolved[profile_500.name_map["r1a_is_a"]] == pytest.approx(3.00)
+    assert resolved[profile_500.name_map["r2a_i_a"]] == pytest.approx(
+        resolved[profile_500.name_map["r2_i_a"]] + 3.00 - 0.90
+    )
 
 
-def test_non_mf_cn_without_defaults_uses_spin_defaults_in_mixed_session() -> None:
-    co_file = _EXAMPLES_ROOT / "CPMG_13CO_AP" / "Experiments" / "800MHz.toml"
-    nh_file = _EXAMPLES_ROOT / "CPMG_15N_IP_0013" / "Experiments" / "600MHz.toml"
+def test_non_mf_cn_without_defaults_uses_spin_defaults_in_mixed_session(
+    tmp_path: Path,
+) -> None:
+    co_files, _ = _write_cpmg_13co_ap_fixture(tmp_path / "cpmg_13co_ap")
+    nh_file = _write_cpmg_15n_ip_fixture(tmp_path / "cpmg_15n_ip")
     session = AnalysisSession.create()
     session.set_model("2st")
     experiments = build_experiments(
-        [co_file, nh_file],
+        [co_files[1], nh_file],
         Selection(None, None),
         session=session,
     )
@@ -375,10 +526,10 @@ def test_non_mf_cn_without_defaults_uses_spin_defaults_in_mixed_session() -> Non
     )
 
 
-def test_cpmg_ch3_13c_h2c_honors_r1a_a_in_non_mf() -> None:
-    exp_dir = _EXAMPLES_ROOT / "CPMG_CH3_13C_H2C"
-    exp_files = [exp_dir / "Experiments" / "600MHz.toml"]
-    par_files = [exp_dir / "Parameters" / "parameters.toml"]
+def test_cpmg_ch3_13c_h2c_honors_r1a_a_in_non_mf(tmp_path: Path) -> None:
+    exp_files, par_files = _write_cpmg_ch3_13c_h2c_fixture(
+        tmp_path / "cpmg_ch3_13c_h2c"
+    )
 
     session = AnalysisSession.create()
     session.set_model("2st")
