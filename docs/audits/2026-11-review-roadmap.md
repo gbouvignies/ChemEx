@@ -471,7 +471,6 @@ A fresh session or coding agent can pick up any sub-issue without prior conversa
    uv run ruff format --check .
    git diff --check
    ```
-4. After modifying Python code, run `graphify update .` per [AGENTS.md](../../AGENTS.md) to keep the AST knowledge graph current.
 
 ---
 

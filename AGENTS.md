@@ -33,34 +33,6 @@ and coordinated updates to both its development dependency range and
 
 ## Orient by task
 
-- CLI and top-level orchestration: `src/chemex/cli.py`,
-  `src/chemex/chemex.py`, `src/chemex/__main__.py`
-- Session state, plugin registration, and worker/native-thread settings:
-  `src/chemex/runtime/`
-- TOML parsing and Pydantic schemas: `src/chemex/toml.py`,
-  `src/chemex/configuration/`
-- Experiment construction and registration:
-  `src/chemex/experiments/builder.py`,
-  `src/chemex/experiments/experiment_types.py`,
-  `src/chemex/experiments/loader.py`,
-  `src/chemex/experiments/catalog/`
-- Experimental data, profiles, and experiment collections:
-  `src/chemex/containers/`, `src/chemex/evaluation/`, `src/chemex/filterers.py`
-- Kinetic/exchange model definitions and registration:
-  `src/chemex/models/model.py`, `src/chemex/models/factory.py`,
-  `src/chemex/models/kinetic/`
-- Parameter naming, creation, constraints, and native value resolution:
-  `src/chemex/parameters/`
-- NMR basis, Liouvillian calculations, propagators, pulses, distributions, and
-  readout: `src/chemex/nmr/`
-- Fitting, grouping, grids, resampling, MCMC, and statistics:
-  `src/chemex/optimize/`, `src/chemex/uncertainty.py`
-- Output tables, fitted parameter files, and plots:
-  `src/chemex/printers/`, `src/chemex/plotters/`
-- Fit provenance and archived inputs: `src/chemex/run_info.py`
-- User workflows and realistic TOML/data: `examples/`, `website/docs/`
-- Verification: `tests/`; exploratory performance work: `benchmarks/`
-
 Search for the experiment name, model name, parameter name, or TOML key before
 editing. Inspect its schema, registration site, representative example, and
 tests together.
@@ -303,19 +275,6 @@ Every completed change should report:
 - numerical comparisons, reference cases, and tolerances when relevant;
 - documentation/examples updated, or why none were needed;
 - remaining risks, pre-existing failures, and narrowly justified follow-up.
-
-## graphify
-
-This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
-
-When the user types `/graphify`, use the installed graphify skill or instructions before doing anything else.
-
-Rules:
-- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
-- Dirty graphify-out/ files are expected after hooks or incremental updates; dirty graph files are not a reason to skip graphify. Only skip graphify if the task is about stale or incorrect graph output, or the user explicitly says not to use it.
-- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
-- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
-- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
 
 ## Agent skills
 
