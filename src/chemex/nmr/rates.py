@@ -7,10 +7,25 @@ import numpy as np
 from scipy.constants import hbar, mu_0
 
 from chemex.configuration.conditions import Conditions
+from chemex.exceptions import ChemExError
 from chemex.nmr.basis import Basis
 from chemex.nmr.constants import GAMMA
 from chemex.parameters.spin_system.nucleus import Nucleus
 from chemex.typing import Array
+
+
+class UnsupportedModelFreeError(ChemExError, ValueError):
+    """Model-free relaxation is not implemented for the requested spin system."""
+
+    def __init__(self, spin_system: str, *, model_name: str = "") -> None:
+        detail = (
+            f"Model-free (.mf) relaxation is not implemented for the "
+            f"{spin_system!r} spin system."
+        )
+        super().__init__(detail)
+        self.spin_system = spin_system
+        self.model_name = model_name
+        self.detail = detail
 
 
 @overload
@@ -25,7 +40,7 @@ def _calculate_jw(tauc: float, s2: float, w: float | Array) -> float | Array:
     """Calculate J(w) for given tau_c, s2, and angular frequency w.
 
     Args:
-        tauc (float): Correlation time in seconds.
+        tauc (float): Correlation time in nanoseconds.
         s2 (float): Order parameter squared, amplitude of motion measure.
         w (float | Array): Angular frequency/frequencies for J(w) calculation. Can be float or
                Array.
@@ -76,7 +91,7 @@ class RatesIS:
 
         Args:
             h_frq (float): Proton Larmor frequency in MHz.
-            tauc (float): Correlation time in seconds.
+            tauc (float): Correlation time in nanoseconds.
             s2 (float): Order parameter squared.
 
         Returns:
@@ -194,7 +209,7 @@ class RateNH(RatesIS):
 
         Args:
             h_frq (float): Proton Larmor frequency in MHz.
-            tauc (float): Correlation time in seconds.
+            tauc (float): Correlation time in nanoseconds.
             s2 (float): Order parameter squared.
             khh (float, optional): Exchange rate between H atoms. Defaults to None.
 
@@ -303,8 +318,6 @@ rate_functions: dict[str, RatesIS] = {
     "ch_d": RateCHDeuterated(),
     "hc": RateHC(),
     "hc_d": RateHCDeuterated(),
-    "cn": RateCH(),
-    "cn_d": RateCHDeuterated(),
 }
 
 _RATE_NAMES = [
@@ -355,6 +368,12 @@ def _canonical_rate_identity(spin_system: str, component: str) -> tuple[str, str
     return canonical_orientation, _REVERSED_RATE_COMPONENTS[component]
 
 
+def supports_model_free(spin_system: str) -> bool:
+    """Return whether model-free relaxation rates are implemented for ``spin_system``."""
+    canonical_orientation, _ = _canonical_rate_identity(spin_system, "r1_i")
+    return canonical_orientation in rate_functions
+
+
 def get_model_free_expressions(basis: Basis, conditions: Conditions) -> dict[str, str]:
     """Generate expressions for model-free analysis based on basis and conditions.
 
@@ -366,6 +385,11 @@ def get_model_free_expressions(basis: Basis, conditions: Conditions) -> dict[str
         dict[str, str]: Mapping of rate names to expressions for model-free analysis.
 
     """
+    if not supports_model_free(basis.spin_system):
+        raise UnsupportedModelFreeError(
+            basis.spin_system,
+            model_name=basis.model.name,
+        )
     deuterated_extension = "_d" if conditions.is_deuterated else ""
     h_frq_str = f"{conditions.h_larmor_frq}"
     has_h_exchange = basis.spin_system in {"nh", "hn"}

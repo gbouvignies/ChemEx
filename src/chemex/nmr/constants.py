@@ -45,7 +45,10 @@ J_COUPLINGS = {
 }
 
 
-# Residue-specific scalar coupling values with neighboring carbons (in Hz)
+# Effective residue-specific 1,2J_CC and 1,2J_CN (and 1,2J_NC) scalar couplings
+# in Hz for uniformly 13C, 15N-labeled samples. Experiment builders activate
+# this table when "13c" is in conditions.label and implicitly assume 15N
+# labeling; partner-isotope identity (13C vs 15N) is not tracked separately.
 J_EFF: dict[str, dict[str, tuple[float, ...]]] = {
     "a": {
         "n": (-7.7, -10.7, -14.4),
@@ -84,6 +87,16 @@ J_EFF: dict[str, dict[str, tuple[float, ...]]] = {
         "c": (52.5, -14.4),
         "ca": (52.5, 35.0, -10.7, -7.7),
         "cb": (35.0, 52.5),
+        "cg": (52.5, 57.0, 57.0),
+        "cd1": (57.0, 57.0),
+        "cd2": (57.0, 57.0),
+        "cd": (57.0, 57.0),
+        "cqd": (57.0, 57.0),
+        "ce1": (57.0, 57.0),
+        "ce2": (57.0, 57.0),
+        "ce": (57.0, 57.0),
+        "cqe": (57.0, 57.0),
+        "cz": (57.0, 57.0),
     },
     "g": {
         "n": (-7.7, -10.7, -14.4),
@@ -204,6 +217,14 @@ J_EFF: dict[str, dict[str, tuple[float, ...]]] = {
         "c": (52.5, -14.4),
         "ca": (52.5, 35.0, -10.7, -7.7),
         "cb": (35.0, 52.5),
+        "cg": (52.5, 66.0, 53.0),
+        "cd1": (66.0, -14.4),
+        "cd2": (53.0, 57.0, 57.0),
+        "ce2": (57.0, 60.0, -14.4),
+        "ce3": (57.0, 57.0),
+        "cz2": (60.0, 57.0),
+        "cz3": (57.0, 57.0),
+        "ch2": (57.0, 57.0),
         "ne1": (-14.4, -14.4),
     },
     "y": {
@@ -211,8 +232,22 @@ J_EFF: dict[str, dict[str, tuple[float, ...]]] = {
         "c": (52.5, -14.4),
         "ca": (52.5, 35.0, -10.7, -7.7),
         "cb": (35.0, 52.5),
+        "cg": (52.5, 57.0, 57.0),
+        "cd1": (57.0, 57.0),
+        "cd2": (57.0, 57.0),
+        "cd": (57.0, 57.0),
+        "cqd": (57.0, 57.0),
+        "ce1": (57.0, 66.0),
+        "ce2": (57.0, 66.0),
+        "ce": (57.0, 66.0),
+        "cqe": (57.0, 66.0),
+        "cz": (66.0, 66.0),
     },
     "u": {
+        "n": (-7.7, -10.7, -14.4),
+        "c": (52.5, -14.4),
+        "ca": (52.5, 35.0, -10.7, -7.7),
+        "cb": (35.0,),
         "c1'": (45.0, 11.0),
         "c6": (66.0, 13.0, 3.0),
         "n3": (19.2, 10.7),
@@ -255,13 +290,20 @@ class Distribution:
 
 
 def get_multiplet(symbol: str, nucleus: str) -> Distribution:
-    """Calculate the multiplet pattern."""
+    """Calculate the normalized multiplet pattern from ``J_EFF``.
+
+    ``J_EFF`` combines active ``13C-13C`` and ``13C-15N`` scalar couplings
+    assuming uniform ``13C, 15N`` labeling; coupled partner isotopes are not
+    filtered separately by ``"15n"`` in ``Conditions.label``.
+    """
     multiplet = [0.0]
     for coupling in J_EFF[symbol.lower()][nucleus.lower()]:
         doublet = coupling * 0.5 * np.array([[-1.0], [1.0]], dtype=np.float64)
         multiplet = (multiplet + doublet).flatten()
     counter = Counter(multiplet)
     values, weights = zip(*counter.items(), strict=True)
+    weights_array = np.array(weights, dtype=np.float64)
     return Distribution(
-        np.array(values, dtype=np.float64), np.array(weights, dtype=np.float64)
+        np.array(values, dtype=np.float64),
+        weights_array / weights_array.sum(),
     )

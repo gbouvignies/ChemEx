@@ -242,6 +242,23 @@ def _format_scientific(error: ChemExError) -> str:
     )
 
 
+def _format_rates(error: ChemExError) -> str | None:
+    from chemex.nmr.rates import UnsupportedModelFreeError
+
+    if not isinstance(error, UnsupportedModelFreeError):
+        return None
+    return _fields(
+        "Model-free (.mf) relaxation is not supported for this spin system.",
+        ("Model", error.model_name or None),
+        ("Spin System", error.spin_system),
+        ("Reason", error.detail),
+        (
+            "Next",
+            "Use a non-.mf model and specify relaxation rates explicitly.",
+        ),
+    )
+
+
 def _format_parameter_expression(error: ChemExError) -> str | None:
     from chemex.parameters.database import (
         ConstraintExpressionError,
@@ -340,6 +357,7 @@ _FORMATTERS: dict[str, _Formatter] = {
     "chemex.exceptions": _format_path_error,
     "chemex.experiments.experiment_types": _format_experiment,
     "chemex.models.model": _format_model,
+    "chemex.nmr.rates": _format_rates,
     "chemex.optimize.mcmc": _format_mcmc,
     "chemex.optimize.native_deterministic": _format_deterministic,
     "chemex.optimize.resampling": _format_resampling,

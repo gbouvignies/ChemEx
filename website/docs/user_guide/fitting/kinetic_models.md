@@ -77,7 +77,10 @@ are model-derived, with magnetic-field and nucleus dependence retained on the
 rates. `KHH` stays with the physical proton even for reversed `HN`/`NH`
 orientation; deuterated labels use the corresponding deuterated rate model.
 Exact zero `TAUC`, `S2`, or `KHH` is retained, and the derived rates must still
-satisfy ChemEx's relaxation feasibility conditions. For an example, see
+satisfy ChemEx's relaxation feasibility conditions. Model-free relaxation is
+currently supported for amide (`nh`, `hn`) and aliphatic/aromatic CH (`ch`,
+`hc`) spin systems; carbonyl `cn` experiments (`cpmg_13co_ap`) require a
+non-`.mf` model with explicit relaxation rates. For an example, see
 `CEST_15N_TR/` under `Examples/Experiments/`.
 
 ## Linear chemical-shift temperature coefficients

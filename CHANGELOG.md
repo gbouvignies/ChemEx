@@ -22,8 +22,40 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   `# Unit: PPB` with `.3f` precision and `(ppb)` plot axis labels, and
   `chemex simulate` omits the `SHIFT (EXP)` and `ERROR (EXP)` columns
   consistently with `ProfilePrinter`.
+- **Breaking `.mf` selection on `"cn"` spin systems:** Model-free (`.mf`)
+  relaxation is now explicitly rejected as a known failure for `"cn"` spin
+  systems (`cpmg_13co_ap`) instead of silently evaluating aliphatic CH
+  relaxation rates (`RateCH` / `RateCHDeuterated`). Non-`.mf` `"cn"` runs no
+  longer bootstrap unspecified relaxation rates from `RateCH` and instead use
+  spin-parameter defaults and user-supplied parameter files.
 
 ### Fixed
+- Thermal equilibrium magnetization (`build_equilibrium_magnetization`) now
+  uses `SIGNED_XI_RATIO` rather than unsigned `XI_RATIO`, restoring the
+  negative Boltzmann polarization sign for negative-$\gamma$ nuclei
+  ($^{15}\text{N}$) and the physical steady-state heteronuclear NOE sign under
+  `sigma_is` cross-relaxation while keeping single-spin starting magnetization
+  (`build_start_magnetization`) positive.
+- Added aromatic side-chain $^{1}J_{\text{CC}}$ and $^{1}J_{\text{CN}}$
+  scalar-coupling entries in `J_EFF` for Phe (`f`), Tyr (`y`), and Trp (`w`),
+  plus selenocysteine (`u`) backbone and `cb` entries (`n`, `c`, `ca`, `cb`),
+  and normalized `get_multiplet` component weights to sum to `1.0`. This
+  preserves unit total intensity in unscaled simulations and removes an
+  unphysical $+K \ln(2) / T_1$ offset on fitted `R1` and `R2` rates in
+  uniformly $^{13}\text{C}$-labeled CEST experiments with reference planes
+  (for $K$ active couplings in `J_EFF`); updated initial `R1_A` and `R2_A`
+  defaults in `examples/Experiments/CEST_13C_LABEL_CN/Parameters/parameters.toml`
+  accordingly.
+- Aligned non-`.mf` default anti-phase relaxation expressions with Redfield
+  relaxation theory and heteronuclear $I \leftrightarrow S$ symmetry: `"ch"`
+  and `"cn"` spin systems now leave `R1A` independent and use
+  `r2a_i = {r2_i} + {r1a_is} - {r1_i}` (matching `"nh"`, honoring explicit
+  `R1A` defaults in experiments such as `cpmg_ch3_13c_h2c` and `cpmg_13co_ap`
+  and preserving $R_{2a}(I) > R_2(I)$), while `"hc"` updates
+  `r2a_s = {r2_s} + {r1a_is} - {r1_s}` (matching `"hn"`). Existing non-`.mf`
+  fits and simulations for `"ch"`, `"cn"`, and `"hc"` experiments can change
+  accordingly. Corrected `tauc` docstring units in `chemex.nmr.rates` from
+  seconds to nanoseconds.
 - Chemical-shift experiments (`shift_15n_sqmq`, `shift_15n_sq`, `shift_13c_sq`)
   and `SpectrometerAnalysis` now evaluate precession frequencies inside
   dedicated complex coherence subspaces (`sq_i`, `dq_is`, `zq_is`) using a
