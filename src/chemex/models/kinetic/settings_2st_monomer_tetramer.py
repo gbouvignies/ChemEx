@@ -1,10 +1,6 @@
 from __future__ import annotations
 
-import math
 from functools import lru_cache
-
-import numpy as np
-from scipy.optimize import root
 
 from chemex.configuration.conditions import Conditions
 from chemex.models.constraints import pop_2st
@@ -24,25 +20,10 @@ from chemex.parameters.userfunctions import (
     population_linearizations,
     user_function_registry,
 )
-from chemex.typing import Array
 
 NAME = "2st_monomer_tetramer"
 
 TP = ("temperature", "p_total")
-
-
-def calculate_residuals(
-    concentrations: Array,
-    p_total: float,
-    kd: float,
-) -> Array:
-    monomer, tetramer = concentrations
-    return np.array(
-        [
-            monomer + 4.0 * tetramer - p_total,
-            kd * tetramer - monomer**4,
-        ],
-    )
 
 
 @lru_cache(maxsize=100)
@@ -55,23 +36,23 @@ def _calculate_equilibrium(p_total: float, kd: float) -> OligomerizationEquilibr
 @lru_cache(maxsize=100)
 def calculate_concentrations(p_total: float, kd: float) -> dict[str, float]:
     validate_oligomerization_kd(kd)
-    if math.isfinite(p_total) and p_total > 0.0:
-        equilibrium = _calculate_equilibrium(p_total, kd)
-        monomer, tetramer = concentrations_from_log_fractions(
-            p_total,
-            (
-                (1, equilibrium.log_monomer_fraction),
-                (4, equilibrium.log_oligomer_fractions[0]),
-            ),
-        )
+    if p_total == 0.0:
         return {
-            "monomer": monomer,
-            "tetramer": tetramer,
+            "monomer": 0.0,
+            "tetramer": 0.0,
         }
-
-    concentrations_start = (p_total, 0.0)
-    results = root(calculate_residuals, concentrations_start, args=(p_total, kd))
-    return {"monomer": results["x"][0], "tetramer": results["x"][1]}
+    equilibrium = _calculate_equilibrium(p_total, kd)
+    monomer, tetramer = concentrations_from_log_fractions(
+        p_total,
+        (
+            (1, equilibrium.log_monomer_fraction),
+            (4, equilibrium.log_oligomer_fractions[0]),
+        ),
+    )
+    return {
+        "monomer": monomer,
+        "tetramer": tetramer,
+    }
 
 
 @lru_cache(maxsize=100)

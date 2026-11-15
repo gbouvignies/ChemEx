@@ -332,6 +332,124 @@ error = "scatter"
 
 
 @pytest.mark.parametrize("command", _entry_commands())
+def test_cli_reports_missing_oligomerization_p_total_as_experiment_error(
+    command: tuple[str, ...],
+    tmp_path: Path,
+) -> None:
+    experiment = tmp_path / "oligomerization-no-ptotal.toml"
+    experiment.write_text(
+        f"""
+[experiment]
+name = "cpmg_15n_ip"
+carrier = 118.559
+pw90 = 40.6625e-6
+time_equil = 2.0e-3
+time_t2 = 30.0e-3
+
+[conditions]
+h_larmor_frq = 500.0
+temperature = 25.0
+label = ["2H"]
+
+[data]
+error = "file"
+path = "{OLIGOMERIZATION_DATA.as_posix()}"
+
+[data.profiles]
+1N = "1N-HN.out"
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    completed = _run(
+        command,
+        "simulate",
+        "-e",
+        str(experiment),
+        "-p",
+        str(OLIGOMERIZATION_PARAMETERS),
+        "-o",
+        str(tmp_path / "output"),
+        "-d",
+        "3st_monomer_dimer_trimer",
+        "--plot",
+        "nothing",
+    )
+
+    combined = completed.stdout + completed.stderr
+    assert completed.returncode == 1
+    assert "Experiment configuration is invalid" in completed.stderr
+    assert str(experiment) in completed.stderr
+    assert "p_total" in completed.stderr
+    assert "unexpected internal error" not in combined
+    assert TRACEBACK_HEADER not in combined
+
+
+@pytest.mark.parametrize("command", _entry_commands())
+def test_cli_reports_method_step_domain_error_as_known_failure(
+    command: tuple[str, ...],
+    tmp_path: Path,
+) -> None:
+    parameters = tmp_path / "params-4st.toml"
+    parameters.write_text(
+        textwrap.dedent(
+            """\
+            [GLOBAL]
+            PB = 0.05
+            PC = 0.05
+            PD = 0.05
+            KEX_AB = 100.0
+            KEX_BC = 100.0
+            KEX_CD = 100.0
+            """
+        ),
+        encoding="utf-8",
+    )
+    method = tmp_path / "method-zero-pair.toml"
+    method.write_text(
+        textwrap.dedent(
+            """\
+            [STEP1]
+            CONSTRAINTS = ["[PB] = 0.0", "[PC] = 0.0"]
+            """
+        ),
+        encoding="utf-8",
+    )
+    output = tmp_path / "output"
+
+    completed = _run(
+        command,
+        "fit",
+        "-e",
+        str(EXPERIMENT),
+        "-p",
+        str(PARAMETERS),
+        str(parameters),
+        "-m",
+        str(method),
+        "-o",
+        str(output),
+        "-d",
+        "4st_linear",
+        "--include",
+        "G2N-HN",
+        "--plot",
+        "nothing",
+    )
+
+    combined = completed.stdout + completed.stderr
+    assert completed.returncode == 1
+    assert "The parameter state is scientifically invalid." in completed.stderr
+    assert (
+        "directional exchange is undefined when both endpoint populations are zero"
+        in completed.stderr
+    )
+    assert "Method Step: STEP1" in completed.stderr
+    assert "unexpected internal error" not in combined
+    assert TRACEBACK_HEADER not in combined
+
+
+@pytest.mark.parametrize("command", _entry_commands())
 @pytest.mark.parametrize("input_kind", ("experiment", "parameters"))
 def test_cli_entrypoints_report_malformed_input_with_source(
     command: tuple[str, ...],

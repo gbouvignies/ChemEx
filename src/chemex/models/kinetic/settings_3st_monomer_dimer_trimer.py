@@ -1,10 +1,6 @@
 from __future__ import annotations
 
-import math
 from functools import lru_cache
-
-import numpy as np
-from scipy.optimize import root
 
 from chemex.configuration.conditions import Conditions
 from chemex.models.constraints import pop_3st
@@ -25,27 +21,10 @@ from chemex.parameters.userfunctions import (
     population_linearizations,
     user_function_registry,
 )
-from chemex.typing import Array
 
 NAME = "3st_monomer_dimer_trimer"
 
 TP = ("temperature", "p_total")
-
-
-def calculate_residuals(
-    concentrations: Array,
-    p_total: float,
-    kd1: float,
-    kd2: float,
-) -> Array:
-    monomer, dimer, trimer = concentrations
-    return np.array(
-        [
-            monomer + 2.0 * dimer + 3.0 * trimer - p_total,
-            kd1 * dimer - monomer**2,
-            kd2 * trimer - monomer * dimer,
-        ],
-    )
 
 
 @lru_cache(maxsize=100)
@@ -70,28 +49,25 @@ def calculate_concentrations(
 ) -> dict[str, float]:
     validate_oligomerization_kd(kd1)
     validate_oligomerization_kd(kd2)
-    if math.isfinite(p_total) and p_total > 0.0:
-        equilibrium = _calculate_equilibrium(p_total, kd1, kd2)
-        monomer, dimer, trimer = concentrations_from_log_fractions(
-            p_total,
-            (
-                (1, equilibrium.log_monomer_fraction),
-                (2, equilibrium.log_oligomer_fractions[0]),
-                (3, equilibrium.log_oligomer_fractions[1]),
-            ),
-        )
+    if p_total == 0.0:
         return {
-            "monomer": monomer,
-            "dimer": dimer,
-            "trimer": trimer,
+            "monomer": 0.0,
+            "dimer": 0.0,
+            "trimer": 0.0,
         }
-
-    concentrations_start = (p_total, 0.0, 0.0)
-    results = root(calculate_residuals, concentrations_start, args=(p_total, kd1, kd2))
+    equilibrium = _calculate_equilibrium(p_total, kd1, kd2)
+    monomer, dimer, trimer = concentrations_from_log_fractions(
+        p_total,
+        (
+            (1, equilibrium.log_monomer_fraction),
+            (2, equilibrium.log_oligomer_fractions[0]),
+            (3, equilibrium.log_oligomer_fractions[1]),
+        ),
+    )
     return {
-        "monomer": results["x"][0],
-        "dimer": results["x"][1],
-        "trimer": results["x"][2],
+        "monomer": monomer,
+        "dimer": dimer,
+        "trimer": trimer,
     }
 
 
@@ -178,15 +154,15 @@ def make_settings_3st_monomer_dimer_trimer(
         ),
         "c_monomer": ParamLocalSetting(
             name_setting=NameSetting("c_monomer", "", TP),
-            expr=f"concetrations({p_total}, {{kd1}}, {{kd2}})['monomer']",
+            expr=f"concentrations({p_total}, {{kd1}}, {{kd2}})['monomer']",
         ),
         "c_dimer": ParamLocalSetting(
             name_setting=NameSetting("c_dimer", "", TP),
-            expr=f"concetrations({p_total}, {{kd1}}, {{kd2}})['dimer']",
+            expr=f"concentrations({p_total}, {{kd1}}, {{kd2}})['dimer']",
         ),
         "c_trimer": ParamLocalSetting(
             name_setting=NameSetting("c_trimer", "", TP),
-            expr=f"concetrations({p_total}, {{kd1}}, {{kd2}})['trimer']",
+            expr=f"concentrations({p_total}, {{kd1}}, {{kd2}})['trimer']",
         ),
         "kab": ParamLocalSetting(
             name_setting=NameSetting("kab", "", TP),
@@ -233,6 +209,7 @@ def register() -> None:
         setting_maker=make_settings_3st_monomer_dimer_trimer,
     )
     user_functions = {
+        "concentrations": calculate_concentrations,
         "concetrations": calculate_concentrations,
         "populations": calculate_populations,
         "rates": calculate_rates,

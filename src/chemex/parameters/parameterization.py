@@ -29,6 +29,7 @@ from chemex.configuration.method_plan import (
     RoleAction as MethodRoleAction,
 )
 from chemex.configuration.methods import Method
+from chemex.exceptions import ChemExError
 from chemex.nmr.rates import rate_functions
 from chemex.parameters.name import ParamName
 from chemex.parameters.relaxation import SealedRelaxationDomains
@@ -84,7 +85,7 @@ class ConstraintCycleError(ParameterizationError):
     code = "cycle"
 
 
-class ConstraintDomainError(ParameterizationError):
+class ConstraintDomainError(ChemExError, ParameterizationError):
     code = "domain_error"
 
 

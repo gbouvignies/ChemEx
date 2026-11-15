@@ -280,6 +280,25 @@ def _format_parameter_expression(error: ChemExError) -> str | None:
     return None
 
 
+def _format_parameterization(error: ChemExError) -> str | None:
+    from chemex.parameters.parameterization import ConstraintDomainError
+
+    if not isinstance(error, ConstraintDomainError):
+        return None
+    reason = (
+        str(error.__cause__)
+        if isinstance(error.__cause__, (ArithmeticError, ValueError))
+        else error.detail
+    )
+    return _fields(
+        "The parameter state is scientifically invalid.",
+        ("Reason", reason),
+        *_analysis_fields(error),
+        *_preserved_fields(error),
+        ("Next", "Check the parameter values and constraints."),
+    )
+
+
 def _format_deterministic(error: ChemExError) -> str | None:
     from chemex.optimize.native_deterministic import NativeDeterministicAnalysisError
 
@@ -363,6 +382,7 @@ _FORMATTERS: dict[str, _Formatter] = {
     "chemex.optimize.resampling": _format_resampling,
     "chemex.parameters.database": _format_parameter_expression,
     "chemex.parameters.feasible_coordinates": _format_scientific,
+    "chemex.parameters.parameterization": _format_parameterization,
     "chemex.toml": _format_toml,
 }
 

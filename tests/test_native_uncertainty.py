@@ -1531,6 +1531,44 @@ def test_scientific_constraint_requires_and_uses_declared_numerical_capability()
         for item in analytic_evidence.constraint_jacobian.function_partial_diagnostics
     )
 
+    def _fail_inactive_partial(_kab: float, _kba: float) -> float:
+        raise ValueError("inactive partial should not be evaluated")
+
+    inactive_analytic = FunctionAnalyticPartialCapability(
+        function_id="pop_2st",
+        component="pa",
+        implementation_identity="pop-2st-pa-active-only-v1",
+        partials=(
+            lambda kab, kba: -kba / (kab + kba) ** 2,
+            _fail_inactive_partial,
+        ),
+    )
+    zero = (0.0,)
+    differentiated = uncertainty_module._differentiate_function(
+        FunctionExpression(
+            "pop_2st",
+            (ReferenceExpression("__KAB"), ReferenceExpression("__KBA")),
+            "pa",
+        ),
+        {
+            "__KAB": uncertainty_module._DerivativeValue(
+                20.0, (1.0,), frozenset({"__KAB"})
+            ),
+            "__KBA": uncertainty_module._DerivativeValue(100.0, zero, frozenset()),
+        },
+        1,
+        parameterization,
+        base_policy,
+        compile_constraint_linearization_capabilities(
+            parameterization,
+            (output_id,),
+            (inactive_analytic,),
+        ),
+    )
+    assert differentiated.gradient == pytest.approx((-100.0 / 120.0**2,))
+    assert len(differentiated.function_partial_diagnostics) == 1
+    assert differentiated.function_partial_diagnostics[0].argument_index == 0
+
 
 def test_scientific_function_capability_uses_one_sided_stencil_at_zero_domain() -> None:
     capability = FunctionFiniteDifferenceCapability(
