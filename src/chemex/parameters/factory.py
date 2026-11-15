@@ -7,6 +7,7 @@ from chemex.configuration.base import ExperimentConfiguration
 from chemex.configuration.conditions import Conditions
 from chemex.models.factory import model_factory
 from chemex.nmr.basis import Basis
+from chemex.nmr.rates import supports_model_free
 from chemex.parameters.database import ParameterStore
 from chemex.parameters.parameterization import (
     ParameterDeclarationContribution,
@@ -171,8 +172,13 @@ class ParameterFactory:
                 conditions,
             )
             settings_kinetics = model_factory.create_for_model(basis.model, conditions)
+            has_model_free = basis.model.model_free or supports_model_free(
+                basis.spin_system
+            )
             settings = settings_kinetics | settings_spins
-            settings_mf = settings_kinetics | settings_spins_mf
+            settings_mf = (
+                (settings_kinetics | settings_spins_mf) if has_model_free else {}
+            )
             self._settings_cache[key] = (
                 settings,
                 settings_mf,
@@ -363,7 +369,7 @@ class ParameterFactory:
                 self._relaxation_blocks.update(
                     self._relaxation_blocks_for_basis(basis, native_name_map)
                 )
-                if not self.parameter_store.model.model_free:
+                if not self.parameter_store.model.model_free and settings_mf:
                     model_free_owned_ids = frozenset(
                         name_map_mf[name]
                         for name in kinetic_names
@@ -393,7 +399,8 @@ class ParameterFactory:
                 self._native_construction_error = error
 
         self.parameter_store.add_multiple(parameters)
-        self.parameter_store.add_multiple_mf(parameters_mf)
+        if parameters_mf:
+            self.parameter_store.add_multiple_mf(parameters_mf)
 
         selection = set(name_map) & basis.required_names
 
@@ -452,7 +459,10 @@ class ParameterFactory:
 
     def build_model_free_parameter_model(self) -> SealedParameterModel | None:
         """Build the native model-free bootstrap used by ordinary models."""
-        if self.parameter_store.model.model_free:
+        if (
+            self.parameter_store.model.model_free
+            or not self._model_free_definition_contributions
+        ):
             return None
         definitions = canonicalize_definitions(
             self._model_free_definition_contributions,

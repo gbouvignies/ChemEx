@@ -5,7 +5,7 @@ from copy import deepcopy
 from chemex.configuration.conditions import Conditions
 from chemex.nmr.basis import Basis
 from chemex.nmr.constants import J_COUPLINGS
-from chemex.nmr.rates import get_model_free_expressions
+from chemex.nmr.rates import get_model_free_expressions, supports_model_free
 from chemex.parameters.setting import LocalSettings, NameSetting, ParamLocalSetting
 from chemex.parameters.temperature_shifts import (
     add_reference_shift_polynomial,
@@ -26,12 +26,19 @@ def _update_expr_for_proton_exchange(
     state: str,
     basis: Basis,
 ) -> None:
-    # As 1HN sites exchange with water, the "expr" should be modified accordingly
-    # for spin system including an amide proton
-    if basis.spin_system == "hn":
+    # Align default anti-phase relaxation expressions with Redfield physics and
+    # preserve I <-> S symmetry across heteronuclear orientations:
+    # - When S carries strong external longitudinal relaxation (1H-1H dipolar /
+    #   water exchange for "nh"/"ch", or 15N-1HN dipolar/CSA for "cn"), R2a(I)
+    #   exceeds R2(I) by R1a(IS) - R1(I) (up to small 3*d_IS^2*J(w_S)), so
+    #   r1a_is is kept independent and r2a_i = r2_i + r1a_is - r1_i.
+    # - In the reversed orientations ("hn", "hc"), I = 1H and S = 15N/13C has
+    #   minimal external dipolar relaxation, so R2a(I) < R2(I) is approximated
+    #   by r2_i - r1_s while S anti-phase r2a_s uses r2_s + r1a_is - r1_s.
+    if basis.spin_system in {"hn", "hc"}:
         expr = f"{{r2_s_{state}}} + {{r1a_is_{state}}} - {{r1_s_{state}}}"
         settings[f"r2a_s_{state}"].expr = expr
-    elif basis.spin_system == "nh":
+    elif basis.spin_system in {"nh", "ch", "cn"}:
         expr = f"{{r2_i_{state}}} + {{r1a_is_{state}}} - {{r1_i_{state}}}"
         settings[f"r2a_i_{state}"].expr = expr
         settings[f"r1a_is_{state}"].expr = ""
@@ -334,9 +341,11 @@ def build_spin_param_settings(
     for state in basis.model.states:
         all_settings.update(create_base_param_settings(basis, state, conditions))
 
-    all_settings_mf = _build_model_free_settings(all_settings, basis, conditions)
-
     settings = _select_relevant_settings(all_settings, basis)
+    if not basis.model.model_free and not supports_model_free(basis.spin_system):
+        return settings, {}
+
+    all_settings_mf = _build_model_free_settings(all_settings, basis, conditions)
     settings_mf = _select_relevant_settings(all_settings_mf, basis)
 
     # Add back to `settings_mf` the parameters that were selected in `settings`,

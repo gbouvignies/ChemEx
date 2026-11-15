@@ -6,7 +6,7 @@ from itertools import product
 import numpy as np
 
 from chemex.nmr.basis import Basis
-from chemex.nmr.constants import XI_RATIO
+from chemex.nmr.constants import SIGNED_XI_RATIO, XI_RATIO
 from chemex.parameters.spin_system.nucleus import Nucleus
 from chemex.typing import Array
 
@@ -45,7 +45,7 @@ def build_equilibrium_magnetization(
     """Build the thermal equilibrium magnetization for a basis."""
     magnetization = _zero_magnetization(basis)
     for state, (name, nucleus) in product(basis.model.states, basis.nuclei.items()):
-        scale = par_values.get(f"p{state}", 0.0) * XI_RATIO.get(nucleus, 1.0)
+        scale = par_values.get(f"p{state}", 0.0) * SIGNED_XI_RATIO.get(nucleus, 1.0)
         magnetization += basis.vectors.get(f"{name}e_{state}", 0.0) * scale
         magnetization += basis.vectors.get(f"{name}z_{state}", 0.0) * scale
     return magnetization

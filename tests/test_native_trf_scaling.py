@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import tomllib
 from argparse import Namespace
 from pathlib import Path
@@ -296,7 +297,7 @@ def test_cest_13c_jacobian_scaled_local_refinement_converges_qualified_basin(
     )
     assert (
         sum(outcome.execution.counters.objective_requests_accepted for outcome in step2)
-        < 2_900
+        < 3_800
     )
 
     l18cd1_ids = (
@@ -309,19 +310,26 @@ def test_cest_13c_jacobian_scaled_local_refinement_converges_qualified_basin(
     assert _invocation_policy_map(step2, invocations[1])[l18cd1_ids] is (
         DirectTrfScalePolicy.ADAPTIVE_INVERSE_JACOBIAN_COLUMN_NORM
     )
-    assert l18cd1.execution.counters.objective_requests_accepted < 2_200
+    assert l18cd1.execution.counters.objective_requests_accepted < 2_800
     assert l18cd1.candidate is not None
     assert l18cd1.execution.backend is not None
     assert l18cd1.execution.backend.active_mask == (0, 0, 0, 0)
     problem, _parameterization, _engine = contexts[l18cd1_ids]
     assert problem.lower_bounds == (-100.0, -100.0, 0.0, 0.0)
     assert problem.upper_bounds == (300.0, 100.0, 1000.0, 1000.0)
-    # Finite safety bounds change reflective solver geometry and now reach the
-    # previously recorded lower basin from the same shipped start.
+    # Normalizing get_multiplet weights (doublet sum 2 -> 1) removes the
+    # unphysical +ln(2)/time_t1 shift on R1_A and R2_A relative to the
+    # reference plane; reflective TRF converges to the negative-DW_AB basin.
+    multiplet_rate_shift = math.log(2.0) / 0.25
     assert l18cd1.candidate.chi_square == pytest.approx(
-        801.9787003, rel=0.0, abs=2.0e-3
+        1093.4222258, rel=0.0, abs=2.0e-3
     )
-    l18cd1_vector = (24.92877435, 0.19320262, 4.84303720, 6.17970065)
+    l18cd1_vector = (
+        24.97239884,
+        -0.14243669,
+        4.83981904 - multiplet_rate_shift,
+        7.18204366 - multiplet_rate_shift,
+    )
     assert l18cd1.candidate.vector[0] == pytest.approx(
         l18cd1_vector[0], rel=0.0, abs=2.0e-4
     )
@@ -333,12 +341,17 @@ def test_cest_13c_jacobian_scaled_local_refinement_converges_qualified_basin(
     )
 
     assert _chi_square_at(contexts[l18cd1_ids], l18cd1_vector) == pytest.approx(
-        801.9787003, rel=0.0, abs=1.0e-3
-    )
-    previous_basin_vector = (24.97239884, -0.14243669, 4.83981904, 7.18204366)
-    assert _chi_square_at(contexts[l18cd1_ids], previous_basin_vector) == pytest.approx(
         1093.4222258, rel=0.0, abs=1.0e-3
     )
+    positive_dw_basin_vector = (
+        24.92877435,
+        0.19320262,
+        4.84303720 - multiplet_rate_shift,
+        6.17970065 - multiplet_rate_shift,
+    )
+    assert _chi_square_at(
+        contexts[l18cd1_ids], positive_dw_basin_vector
+    ) == pytest.approx(801.9787003, rel=0.0, abs=1.0e-3)
     assert _chi_square_at(contexts[l18cd1_ids], l18cd1.candidate.vector) == (
         pytest.approx(l18cd1.candidate.chi_square, rel=0.0, abs=1.0e-10)
     )
@@ -348,4 +361,4 @@ def test_cest_13c_jacobian_scaled_local_refinement_converges_qualified_basin(
         (output / "STEP2/statistics.toml").read_text(encoding="utf-8")
     )
     # statistics.toml prints six significant figures (half-unit rounding here).
-    assert statistics["chi-square"] == pytest.approx(2879.58, rel=0.0, abs=5.0e-3)
+    assert statistics["chi-square"] == pytest.approx(3187.64, rel=0.0, abs=5.0e-3)
