@@ -45,7 +45,10 @@ J_COUPLINGS = {
 }
 
 
-# Residue-specific scalar coupling values with neighboring carbons (in Hz)
+# Effective residue-specific 1,2J_CC and 1,2J_CN (and 1,2J_NC) scalar couplings
+# in Hz for uniformly 13C, 15N-labeled samples. Experiment builders activate
+# this table when "13c" is in conditions.label and implicitly assume 15N
+# labeling; partner-isotope identity (13C vs 15N) is not tracked separately.
 J_EFF: dict[str, dict[str, tuple[float, ...]]] = {
     "a": {
         "n": (-7.7, -10.7, -14.4),
@@ -287,7 +290,12 @@ class Distribution:
 
 
 def get_multiplet(symbol: str, nucleus: str) -> Distribution:
-    """Calculate the multiplet pattern with normalized component weights."""
+    """Calculate the normalized multiplet pattern from ``J_EFF``.
+
+    ``J_EFF`` combines active ``13C-13C`` and ``13C-15N`` scalar couplings
+    assuming uniform ``13C, 15N`` labeling; coupled partner isotopes are not
+    filtered separately by ``"15n"`` in ``Conditions.label``.
+    """
     multiplet = [0.0]
     for coupling in J_EFF[symbol.lower()][nucleus.lower()]:
         doublet = coupling * 0.5 * np.array([[-1.0], [1.0]], dtype=np.float64)

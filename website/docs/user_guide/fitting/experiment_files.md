@@ -170,6 +170,10 @@ For a uniformly <sup>13</sup>C-labeled, perdeuterated sample:
 label = ["13C", "2H"]
 ```
 
+:::note
+In <sup>13</sup>C and <sup>15</sup>N CEST, D-CEST, and COS-CEST experiments, including `"13C"` activates the effective <sup>1,2</sup>J<sub>CC</sub> and <sup>1,2</sup>J<sub>CN</sub> scalar-coupling multiplets assuming the sample is also uniformly <sup>15</sup>N-labeled. Including or omitting `"15N"` in `label` does not separately toggle <sup>13</sup>C–<sup>15</sup>N couplings, so `[U-13C, unlabeled-15N]` and `[selective-13C, U-15N]` coupling patterns are not yet distinguished.
+:::
+
 ### `[data]`
 
 The `[data]` section specifies data file locations, spin system assignments, and methods for error estimation and data filtering.
