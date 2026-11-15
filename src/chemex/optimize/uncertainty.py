@@ -6339,6 +6339,7 @@ def _analytic_function_partials(
     expression: FunctionExpression,
     arguments: tuple[float, ...],
     capability: FunctionAnalyticPartialCapability,
+    active_indices: tuple[int, ...] | None = None,
 ) -> tuple[tuple[float, ...], tuple[FunctionPartialDiagnostic, ...]]:
     capability.validate_implementations()
     if len(capability.partials) != len(arguments):
@@ -6346,9 +6347,16 @@ def _analytic_function_partials(
             f"Scientific function {expression.function_id!r} capability has the "
             "wrong arity"
         )
+    selected_indices = (
+        tuple(range(len(arguments))) if active_indices is None else active_indices
+    )
+    active_set = frozenset(selected_indices)
     estimates: list[float] = []
     diagnostics: list[FunctionPartialDiagnostic] = []
     for index, partial in enumerate(capability.partials):
+        if index not in active_set:
+            estimates.append(0.0)
+            continue
         try:
             estimate = _finite(
                 partial(*arguments),
@@ -6424,17 +6432,17 @@ def _differentiate_function(
         )
     function = parameterization.binder[expression.function_id]
     argument_values = tuple(item.value for item in arguments)
+    active_indices = tuple(
+        index
+        for index, argument in enumerate(arguments)
+        if any(component != 0.0 for component in argument.gradient)
+    )
     if isinstance(capability, FunctionFiniteDifferenceCapability):
         if len(capability.argument_scales) != len(arguments):
             raise UncertaintyConstructionError(
                 f"Scientific function {expression.function_id!r} capability has the "
                 "wrong arity"
             )
-        active_indices = tuple(
-            index
-            for index, argument in enumerate(arguments)
-            if any(component != 0.0 for component in argument.gradient)
-        )
         partial_function = (
             _normalized_population_partial
             if capability.normalized_population_components
@@ -6461,6 +6469,7 @@ def _differentiate_function(
             expression,
             argument_values,
             capability,
+            active_indices,
         )
     value = _scientific_function_output(expression, function, argument_values)
     gradient = tuple(

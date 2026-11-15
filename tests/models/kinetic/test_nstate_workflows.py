@@ -841,3 +841,101 @@ def test_block_recovery_retains_pa_face_warning(
         assert operation.complete_evidence.simple_bound_warning_ids == warned
     for local_ids in workflow.component_local_ids[:expected_completed]:
         assert local_ids["pd"] in warned
+
+
+def test_disconnected_static_mixture_zero_pair_qualifies_active_uncertainties() -> None:
+    session = AnalysisSession.create()
+    session.set_model("4st")
+    basis = Basis(type="iz", spin_system="nh", model=session.model.spec)
+    spin_system = SpinSystem.from_name("G23N-HN")
+    conditions = Conditions(
+        h_larmor_frq=600.0,
+        temperature=25.0,
+        p_total=1.0e-3,
+        l_total=2.0e-3,
+    )
+    settings = model_factory.create("4st", conditions)
+    local_ids = {
+        name: setting.name_setting.get_param_name(spin_system, conditions).id_
+        for name, setting in settings.items()
+    }
+    config = SimpleNamespace(
+        conditions=conditions,
+        to_be_fitted=SimpleNamespace(rates=[], model_free=[]),
+    )
+    session.parameter_factory.create_parameters(
+        config,  # ty: ignore[invalid-argument-type]
+        basis=basis,
+        spin_system=spin_system,
+    )
+    session.parameters.set_defaults(
+        [
+            (ParamName.from_section("pb"), DefaultSetting(0.0)),
+            (ParamName.from_section("pc"), DefaultSetting(0.0)),
+            (ParamName.from_section("pd"), DefaultSetting(0.2)),
+            (ParamName.from_section("kex_bc"), DefaultSetting(0.0)),
+            (ParamName.from_section("kex_ad"), DefaultSetting(400.0)),
+        ]
+    )
+    assert session.parameter_factory.try_seal_definitions()
+    assert session.try_build_analysis_values()
+
+    metadata = np.asarray((0.25, 0.5, 0.8, 1.1, 1.5, 2.0))
+    data = Data(
+        exp=np.asarray(0.25 * metadata**3, dtype=np.float64),
+        err=np.full(metadata.shape, 1.0e-4),
+        metadata=metadata,
+    )
+    profile = Profile(
+        data,
+        cast("Spectrometer", _NStateSpectrometer(spin_system)),
+        cast("PulseSequence", _NStatePulseSequence()),
+        {name: local_ids[name] for name in ("pb", "pc", "pd")},
+        cast("Any", None),
+        is_scaled=False,
+    )
+    experiments = cast("Any", (SimpleNamespace(profiles=(profile,)),))
+    required_ids = {
+        local_ids[name] for name in ("pa", "pb", "pc", "pd", "kad", "kda", "kbc", "kcb")
+    }
+    parameterization = session.compile_parameterization(
+        Method(
+            fit=["PD"],
+            fix=["PB", "PC", "KEX_BC", "KEX_AD"],
+        ),
+        required_ids,
+    )
+    engine = EvaluationEngine.from_experiments(experiments, parameterization)
+    configuration = session.parameter_factory.sealed_configuration
+    assert configuration is not None
+    problem = OptimizationProblem.from_native(
+        engine.plan,
+        parameterization,
+        configuration,
+        session.analysis_values.snapshot(),
+    )
+    workflow = _NStateWorkflow(
+        session,
+        local_ids,
+        (local_ids,),
+        parameterization,
+        engine,
+        problem,
+    )
+
+    accepted = _fit_workflow(workflow)
+    resolved = accepted.evaluation_result.resolved_values
+    assert resolved[local_ids["kbc"]] == 0.0
+    assert resolved[local_ids["kcb"]] == 0.0
+    uncertainty = _derive_uncertainty(workflow, accepted)
+    pd_error = uncertainty.parameter(local_ids["pd"]).standard_error
+    assert pd_error is not None
+    assert uncertainty.parameter(local_ids["pa"]).standard_error == pytest.approx(
+        pd_error
+    )
+    assert uncertainty.parameter(local_ids["kad"]).standard_error == pytest.approx(
+        400.0 * pd_error
+    )
+    assert uncertainty.parameter(local_ids["kda"]).standard_error == pytest.approx(
+        400.0 * pd_error
+    )

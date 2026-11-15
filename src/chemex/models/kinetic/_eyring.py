@@ -109,6 +109,31 @@ def _positive_float_from_log(log_value: float, *, quantity: str) -> float:
     return value
 
 
+def _nonnegative_derivative_from_log(log_value: float, *, quantity: str) -> float:
+    """Convert a derivative magnitude from log space, allowing benign underflow."""
+    if math.isnan(log_value):
+        msg = f"Eyring log {quantity} must not be NaN"
+        raise ValueError(msg)
+    if log_value > _LOG_MAX_FLOAT:
+        msg = f"Eyring {quantity} exceeds maximum finite binary64 value"
+        raise ValueError(msg)
+    if log_value < _LOG_MIN_POSITIVE_FLOAT:
+        return 0.0
+
+    value = math.exp(log_value)
+    if not math.isfinite(value):
+        msg = f"Eyring {quantity} exceeds maximum finite binary64 value"
+        raise ValueError(msg)
+    return value
+
+
+def _finite_rate_derivative(value: float) -> float:
+    if not math.isfinite(value):
+        msg = "Eyring rate derivative exceeds finite binary64 domain"
+        raise ValueError(msg)
+    return 0.0 if value == 0.0 else value
+
+
 def rate_from_log(log_rate: float) -> float:
     """Convert a positive mathematical rate to binary64 or fail closed."""
     return _positive_float_from_log(log_rate, quantity="rate")
@@ -173,7 +198,7 @@ def rate_partial_initial_enthalpy(
         temperature,
     )
     kelvin = temperature_to_kelvin(temperature)
-    return rate / (constants.R * kelvin)
+    return _finite_rate_derivative(rate / (constants.R * kelvin))
 
 
 def rate_partial_initial_entropy(
@@ -190,7 +215,7 @@ def rate_partial_initial_entropy(
         transition_entropy,
         temperature,
     )
-    return -rate / constants.R
+    return _finite_rate_derivative(-rate / constants.R)
 
 
 def rate_partial_transition_enthalpy(
@@ -200,12 +225,14 @@ def rate_partial_transition_enthalpy(
     transition_entropy: float,
     temperature: float,
 ) -> float:
-    return -rate_partial_initial_enthalpy(
-        initial_enthalpy,
-        initial_entropy,
-        transition_enthalpy,
-        transition_entropy,
-        temperature,
+    return _finite_rate_derivative(
+        -rate_partial_initial_enthalpy(
+            initial_enthalpy,
+            initial_entropy,
+            transition_enthalpy,
+            transition_entropy,
+            temperature,
+        )
     )
 
 
@@ -216,12 +243,14 @@ def rate_partial_transition_entropy(
     transition_entropy: float,
     temperature: float,
 ) -> float:
-    return -rate_partial_initial_entropy(
-        initial_enthalpy,
-        initial_entropy,
-        transition_enthalpy,
-        transition_entropy,
-        temperature,
+    return _finite_rate_derivative(
+        -rate_partial_initial_entropy(
+            initial_enthalpy,
+            initial_entropy,
+            transition_enthalpy,
+            transition_entropy,
+            temperature,
+        )
     )
 
 
@@ -241,7 +270,15 @@ def rate_partial_temperature(
     )
     kelvin = temperature_to_kelvin(temperature)
     activation_enthalpy = transition_enthalpy - initial_enthalpy
-    return rate * (1.0 / kelvin + activation_enthalpy / (constants.R * kelvin * kelvin))
+    direct = rate * (
+        1.0 / kelvin + activation_enthalpy / (constants.R * kelvin * kelvin)
+    )
+    if math.isfinite(direct):
+        return 0.0 if direct == 0.0 else direct
+    scaled = (rate / kelvin) + (rate / (constants.R * kelvin)) * (
+        activation_enthalpy / kelvin
+    )
+    return _finite_rate_derivative(scaled)
 
 
 EYRING_RATE_PARTIALS = (
@@ -327,14 +364,16 @@ def _population_partial(
             direct = population * centered_enthalpy / (constants.R * kelvin * kelvin)
             if direct != 0.0:
                 return direct
-            magnitude = _positive_float_from_log(
+            magnitude = _nonnegative_derivative_from_log(
                 math.log(population)
                 + math.log(abs(centered_enthalpy))
                 - math.log(constants.R)
                 - 2.0 * math.log(kelvin),
                 quantity="population derivative",
             )
-            return math.copysign(magnitude, centered_enthalpy)
+            return (
+                0.0 if magnitude == 0.0 else math.copysign(magnitude, centered_enthalpy)
+            )
 
         coordinate_index = argument_index // 2 + 1
         coordinate_population = populations[coordinate_index]
@@ -357,10 +396,14 @@ def _population_partial(
             if selected
             else coordinate_population
         )
-        magnitude = _positive_float_from_log(
+        if coupling == 0.0:
+            return 0.0
+        magnitude = _nonnegative_derivative_from_log(
             math.log(population) + math.log(coupling) - math.log(denominator),
             quantity="population derivative",
         )
+        if magnitude == 0.0:
+            return 0.0
         if argument_index % 2 == 0:
             return -magnitude if selected else magnitude
         return magnitude if selected else -magnitude

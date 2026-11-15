@@ -795,3 +795,36 @@ def test_sequential_populations_are_invariant_to_every_koff_disconnection(
     assert values["pa"] > 0.0
     assert values["pb"] > 0.0
     assert values["pc"] > 0.0
+
+
+def test_monomer_dimer_trimer_uses_canonical_concentrations_function_and_alias() -> (
+    None
+):
+    from chemex.parameters.userfunctions import user_function_registry
+
+    p_total = 1.0e-3
+    _, _, values = _construct_and_resolve(
+        "3st_monomer_dimer_trimer",
+        p_total,
+        {"kd1": 1.0e-5, "kd2": 2.0e-4, "koff1": 90.0, "koff2": 150.0},
+    )
+    settings = model_factory.create(
+        "3st_monomer_dimer_trimer",
+        Conditions(h_larmor_frq=600.0, temperature=25.0, p_total=p_total),
+    )
+
+    for species in ("c_monomer", "c_dimer", "c_trimer"):
+        assert settings[species].expr.startswith("concentrations(")
+
+    functions = user_function_registry.get("3st_monomer_dimer_trimer")
+    assert "concentrations" in functions
+    assert functions["concetrations"] is functions["concentrations"]
+
+    c_monomer = values["c_monomer"]
+    c_dimer = values["c_dimer"]
+    c_trimer = values["c_trimer"]
+    assert c_monomer + 2.0 * c_dimer + 3.0 * c_trimer == pytest.approx(
+        p_total, rel=1e-14
+    )
+    assert c_monomer**2 / c_dimer == pytest.approx(1.0e-5, rel=1e-13)
+    assert c_monomer * c_dimer / c_trimer == pytest.approx(2.0e-4, rel=1e-13)

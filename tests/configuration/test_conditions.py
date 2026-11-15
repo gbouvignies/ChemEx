@@ -79,3 +79,24 @@ def test_exact_zero_celsius_remains_part_of_condition_identity() -> None:
     assert (
         ParamName("kab", conditions=zero).id_ != ParamName("kab", conditions=absent).id_
     )
+
+
+@pytest.mark.parametrize(
+    "model_name",
+    (
+        "2st_monomer_dimer",
+        "2st_monomer_trimer",
+        "2st_monomer_tetramer",
+        "3st_monomer_dimer_trimer",
+        "3st_monomer_dimer_tetramer",
+    ),
+)
+def test_oligomerization_model_requires_p_total(model_name: str) -> None:
+    with pytest.raises(
+        ValidationError,
+        match=f'To use the "{model_name}" model, "p_total" must be provided',
+    ):
+        ConditionsWithValidations.model_validate(
+            {},
+            context={"model": ModelSpec(name=model_name)},
+        )

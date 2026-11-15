@@ -30,6 +30,32 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   spin-parameter defaults and user-supplied parameter files.
 
 ### Fixed
+- Fixed kinetic model boundary, underflow, and slow-rate scaling defects across
+  `constraints.py`, oligomerization models, Eyring derivatives, and generic
+  N-state workflows:
+  - `pop_4st` now computes equilibrium populations via scale-normalized directed
+    spanning-arborescence weights (with log-space underflow recovery and exact
+    literal-zero isolated-state reduction) rather than unscaled `np.isclose` /
+    `det(mat)` checks, preserving exact rate ratios down to `binary64` subnormal
+    rates and aligning all-zero rate fallbacks across `pop_2st`, `pop_3st`, and
+    `pop_4st`; negative or non-finite rates now raise `ValueError`.
+  - Removed the remaining unchecked `scipy.optimize.root` concentration fallback
+    across oligomerization models (`3st_monomer_dimer_trimer` and siblings),
+    enforcing exact zero concentrations at `p_total == 0.0` and `ValueError`
+    rejection for negative or non-finite `p_total`, accounted for `binary64`
+    subnormal quantization in `concentrations_from_log_fractions` at tiny
+    `p_total`, validated missing `p_total` at experiment configuration load for
+    oligomerization models, and corrected the `concentrations` expression helper
+    name in `3st_monomer_dimer_trimer` (retaining `concetrations` as an alias).
+  - Allowed benign `binary64` derivative underflow to `0.0` in Eyring population
+    and rate analytic partials when the underlying populations/rates are valid
+    and representable, while still failing closed on unrepresentable states or
+    derivative overflow.
+  - Restricted analytic scientific-function partial evaluation during
+    uncertainty propagation to active (non-zero-gradient) arguments so inactive
+    zero-pair edges in disconnected static N-state mixtures do not block
+    uncertainties on active parameters, and formatted `ConstraintDomainError` as
+    a known scientific failure at the CLI boundary.
 - Thermal equilibrium magnetization (`build_equilibrium_magnetization`) now
   uses `SIGNED_XI_RATIO` rather than unsigned `XI_RATIO`, restoring the
   negative Boltzmann polarization sign for negative-$\gamma$ nuclei

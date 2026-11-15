@@ -245,14 +245,28 @@ def concentrations_from_log_fractions(
     correction = 1.0 - math.fsum(tagged_mass_fractions)
     largest_index = max(
         range(len(concentrations)),
-        key=tagged_mass_fractions.__getitem__,
+        key=lambda index: (
+            tagged_mass_fractions[index],
+            math.log(species[index][0]) + species[index][1],
+        ),
     )
     largest_stoichiometry = species[largest_index][0]
-    corrected_largest = (
-        concentrations[largest_index] + correction * p_total / largest_stoichiometry
+    delta = (
+        (correction / largest_stoichiometry) * p_total
+        if p_total < 1.0
+        else correction * (p_total / largest_stoichiometry)
+    )
+    corrected_largest = concentrations[largest_index] + delta
+    subnormal_tolerance = (
+        math.fsum(
+            (stoichiometry * MIN_POSITIVE_FLOAT) / p_total
+            for stoichiometry, _ in species
+        )
+        if p_total < 1.0
+        else 0.0
     )
     if (
-        abs(correction) > _LOG_BALANCE_TOLERANCE
+        abs(correction) > _LOG_BALANCE_TOLERANCE + subnormal_tolerance
         or corrected_largest < 0.0
         or not math.isfinite(corrected_largest)
     ):

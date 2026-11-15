@@ -314,14 +314,59 @@ def test_population_partial_underflow_does_not_invalidate_population() -> None:
         {"a": ZERO, "b": ThermodynamicCoordinate(enthalpy, 0.0)},
         25.0,
     )
-    partial = thermodynamic_population_partials(("pa", "pb"))["pb"][0]
+    partials = thermodynamic_population_partials(("pa", "pb"))
 
     assert populations["b"] > 0.0
-    with pytest.raises(
-        ValueError,
-        match="population derivative.*below binary64 representability",
-    ):
-        partial(enthalpy, 0.0, 25.0)
+    for index in range(len(partials["pb"])):
+        derivative_a = partials["pa"][index](enthalpy, 0.0, 25.0)
+        derivative_b = partials["pb"][index](enthalpy, 0.0, 25.0)
+        assert math.isfinite(derivative_a)
+        assert math.isfinite(derivative_b)
+        assert math.fsum((derivative_a, derivative_b)) == 0.0
+    # At T = 25 °C, d(pb)/d(dh_b) = -pb*(1-pb)/(R*T) ≈ -2.0e-324 underflows binary64 to 0.0.
+    assert partials["pb"][0](enthalpy, 0.0, 25.0) == 0.0
+
+
+def test_rate_partials_handle_benign_underflow_and_tiny_kelvin_safely() -> None:
+    from chemex.models.kinetic._eyring import (
+        EYRING_RATE_PARTIALS,
+        calculate_rate_from_coordinates,
+    )
+
+    minimum = Decimal.from_float(math.nextafter(0.0, 1.0))
+    kelvin = Decimal("298.15")
+    with localcontext() as context:
+        context.prec = 100
+        gas_constant = Decimal("8.31446261815324")
+        kb_over_h = Decimal("1.380649e-23") / Decimal("6.62607015e-34")
+        dh_ab = float(
+            -gas_constant * kelvin * ((2 * minimum) / (kb_over_h * kelvin)).ln()
+        )
+    rate = calculate_rate_from_coordinates(0.0, 0.0, dh_ab, 0.0, 25.0)
+    assert rate > 0.0
+    for partial in EYRING_RATE_PARTIALS:
+        derivative = partial(0.0, 0.0, dh_ab, 0.0, 25.0)
+        assert math.isfinite(derivative)
+    assert EYRING_RATE_PARTIALS[0](0.0, 0.0, dh_ab, 0.0, 25.0) == 0.0
+    assert EYRING_RATE_PARTIALS[1](0.0, 0.0, dh_ab, 0.0, 25.0) == 0.0
+
+    # Near absolute zero, temperature partial must reject overflow with ValueError and keep finite values finite.
+    tiny_celsius = math.nextafter(-constants.zero_Celsius, math.inf)
+    with localcontext() as context:
+        context.prec = 100
+        tiny_k = Decimal.from_float(tiny_celsius + constants.zero_Celsius)
+        tiny_dh = float(
+            -Decimal("8.31446261815324")
+            * tiny_k
+            * (
+                Decimal("1e-50")
+                / ((Decimal("1.380649e-23") / Decimal("6.62607015e-34")) * tiny_k)
+            ).ln()
+        )
+    with pytest.raises(ValueError):
+        EYRING_RATE_PARTIALS[4](1.0e295, 1.0e304, 0.0, 0.0, tiny_celsius)
+    tiny_temp_derivative = EYRING_RATE_PARTIALS[4](0.0, 0.0, tiny_dh, 0.0, tiny_celsius)
+    assert math.isfinite(tiny_temp_derivative)
 
 
 def test_population_partials_preserve_normalized_softmax_coupling() -> None:

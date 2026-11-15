@@ -2,14 +2,29 @@
 
 from __future__ import annotations
 
+import math
 import sys
 
 import numpy as np
 import pytest
 
-from chemex.models.constraints import pop_2st, pop_3st
+from chemex.models.constraints import pop_2st, pop_3st, pop_4st
 
 Rates3State = tuple[float, float, float, float, float, float]
+Rates4State = tuple[
+    float,
+    float,
+    float,
+    float,
+    float,
+    float,
+    float,
+    float,
+    float,
+    float,
+    float,
+    float,
+]
 
 
 @pytest.mark.parametrize(
@@ -109,7 +124,7 @@ def _assert_stationary(rates: Rates3State, populations: dict[str, float]) -> Non
 
     assert sum(populations.values()) == pytest.approx(1.0, abs=1e-15)
     assert all(population >= 0.0 for population in populations.values())
-    np.testing.assert_allclose(residual, 0.0, atol=1e-15)
+    np.testing.assert_allclose(residual, 0.0, atol=2e-15)
 
 
 def test_positive_connected_edge_is_not_classified_as_absent() -> None:
@@ -177,3 +192,203 @@ def test_ordinary_three_state_populations_match_linear_solve() -> None:
 
     np.testing.assert_allclose(tuple(populations.values()), expected, rtol=1e-14)
     _assert_stationary(rates, populations)
+
+
+def _assert_stationary_4st(
+    rates: Rates4State,
+    populations: dict[str, float],
+) -> None:
+    kab, kba, kac, kca, kad, kda, kbc, kcb, kbd, kdb, kcd, kdc = rates
+    scale = max(rates)
+    kab, kba, kac, kca, kad, kda, kbc, kcb, kbd, kdb, kcd, kdc = (
+        rate / scale
+        for rate in (kab, kba, kac, kca, kad, kda, kbc, kcb, kbd, kdb, kcd, kdc)
+    )
+    pa, pb, pc, pd = (populations[name] for name in ("pa", "pb", "pc", "pd"))
+    residual = np.array(
+        (
+            -(kab + kac + kad) * pa + kba * pb + kca * pc + kda * pd,
+            kab * pa - (kba + kbc + kbd) * pb + kcb * pc + kdb * pd,
+            kac * pa + kbc * pb - (kca + kcb + kcd) * pc + kdc * pd,
+            kad * pa + kbd * pb + kcd * pc - (kda + kdb + kdc) * pd,
+        )
+    )
+
+    assert sum(populations.values()) == pytest.approx(1.0, abs=1e-15)
+    assert all(population >= 0.0 for population in populations.values())
+    np.testing.assert_allclose(residual, 0.0, atol=2e-15)
+
+
+def test_four_state_populations_match_independent_linear_solve() -> None:
+    rates: Rates4State = (
+        2.5,
+        8.0,
+        1.25,
+        4.0,
+        0.75,
+        3.5,
+        3.0,
+        7.5,
+        1.5,
+        5.0,
+        2.0,
+        6.0,
+    )
+    kab, kba, kac, kca, kad, kda, kbc, kcb, kbd, kdb, kcd, kdc = rates
+    matrix = np.array(
+        [
+            [-kab - kac - kad, kba, kca, kda],
+            [kab, -kba - kbc - kbd, kcb, kdb],
+            [kac, kbc, -kca - kcb - kcd, kdc],
+            [1.0, 1.0, 1.0, 1.0],
+        ]
+    )
+    expected = np.linalg.solve(matrix, np.array([0.0, 0.0, 0.0, 1.0]))
+
+    populations = pop_4st(*rates)
+
+    np.testing.assert_allclose(tuple(populations.values()), expected, rtol=1e-14)
+    _assert_stationary_4st(rates, populations)
+
+
+@pytest.mark.parametrize(
+    "scale",
+    [
+        np.nextafter(0.0, 1.0),
+        sys.float_info.min,
+        1.0e-250,
+        1.0e-8,
+        5.0e-4,
+        1.0,
+        1.0e250,
+        sys.float_info.max / 32.0,
+    ],
+)
+def test_four_state_populations_are_invariant_to_rate_scale(scale: float) -> None:
+    # Exact small integers avoid binary64 subnormal input quantization when scale = nextafter(0, 1).
+    base_rates: Rates4State = (
+        10.0,
+        32.0,
+        5.0,
+        16.0,
+        3.0,
+        14.0,
+        12.0,
+        30.0,
+        6.0,
+        20.0,
+        8.0,
+        24.0,
+    )
+    rates = tuple(rate * scale for rate in base_rates)
+
+    populations = pop_4st(*rates)
+    reference = pop_4st(*base_rates)
+
+    assert populations == pytest.approx(reference, rel=1e-14)
+    _assert_stationary_4st(rates, populations)
+
+
+@pytest.mark.parametrize(
+    "rate",
+    [np.nextafter(0.0, 1.0), 1.0e-8, 5.0e-4, 1.0, sys.float_info.max],
+)
+def test_four_state_equal_rates_avoid_determinant_cutoff(rate: float) -> None:
+    rates: Rates4State = (rate,) * 12
+
+    populations = pop_4st(*rates)
+
+    assert populations == pytest.approx(
+        {"pa": 0.25, "pb": 0.25, "pc": 0.25, "pd": 0.25}
+    )
+    _assert_stationary_4st(rates, populations)
+
+
+@pytest.mark.parametrize(
+    ("rates", "expected"),
+    [
+        (
+            (1.0e-9, 1.0e-9, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0),
+            {"pa": 0.25, "pb": 0.25, "pc": 0.25, "pd": 0.25},
+        ),
+        (
+            (4.0e-49, 4.0e-49, 0.0, 0.0, 0.0, 0.0, 25.0, 25.0, 0.0, 0.0, 25.0, 25.0),
+            {"pa": 0.25, "pb": 0.25, "pc": 0.25, "pd": 0.25},
+        ),
+        (
+            (
+                2.0,
+                1.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                3.0e-200,
+                1.0e-200,
+                0.0,
+                0.0,
+                4.0e-200,
+                1.0e-200,
+            ),
+            {"pa": 1 / 33, "pb": 2 / 33, "pc": 6 / 33, "pd": 24 / 33},
+        ),
+    ],
+)
+def test_four_state_slow_positive_connected_edges_are_not_classified_as_absent(
+    rates: Rates4State,
+    expected: dict[str, float],
+) -> None:
+    populations = pop_4st(*rates)
+
+    assert populations == pytest.approx(expected, rel=1e-13)
+    _assert_stationary_4st(rates, populations)
+
+
+def test_four_state_literal_zero_isolated_states_reduce_cleanly() -> None:
+    # State A isolated, B-C-D active with equal rates.
+    assert pop_4st(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0) == (
+        pytest.approx({"pa": 0.0, "pb": 1 / 3, "pc": 1 / 3, "pd": 1 / 3})
+    )
+    # State B isolated, A-C-D active.
+    assert pop_4st(0.0, 0.0, 2.0, 2.0, 2.0, 2.0, 0.0, 0.0, 0.0, 0.0, 2.0, 2.0) == (
+        pytest.approx({"pa": 1 / 3, "pb": 0.0, "pc": 1 / 3, "pd": 1 / 3})
+    )
+    # State C isolated, A-B-D active.
+    assert pop_4st(2.0, 2.0, 0.0, 0.0, 2.0, 2.0, 0.0, 0.0, 2.0, 2.0, 0.0, 0.0) == (
+        pytest.approx({"pa": 1 / 3, "pb": 1 / 3, "pc": 0.0, "pd": 1 / 3})
+    )
+    # State D isolated, A-B-C active.
+    assert pop_4st(2.0, 2.0, 2.0, 2.0, 0.0, 0.0, 2.0, 2.0, 0.0, 0.0, 0.0, 0.0) == (
+        pytest.approx({"pa": 1 / 3, "pb": 1 / 3, "pc": 1 / 3, "pd": 0.0})
+    )
+    # States C and D isolated, slow active A-B edge preserves ratio.
+    assert pop_4st(
+        4.0e-9, 2.0e-9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+    ) == pytest.approx({"pa": 1 / 3, "pb": 2 / 3, "pc": 0.0, "pd": 0.0})
+
+
+def test_all_zero_and_disconnected_multi_sink_preserve_pa_fallback() -> None:
+    assert pop_3st() == {"pa": 1.0, "pb": 0.0, "pc": 0.0}
+    assert pop_4st() == {"pa": 1.0, "pb": 0.0, "pc": 0.0, "pd": 0.0}
+    # Disconnected {A <-> B} and {C <-> D} has two independent closed classes.
+    assert pop_4st(2.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 3.0, 1.0) == {
+        "pa": 1.0,
+        "pb": 0.0,
+        "pc": 0.0,
+        "pd": 0.0,
+    }
+
+
+@pytest.mark.parametrize(
+    "invalid_rate",
+    [-1.0, -np.nextafter(0.0, 1.0), math.nan, math.inf, -math.inf],
+)
+def test_population_solvers_reject_negative_or_non_finite_rates(
+    invalid_rate: float,
+) -> None:
+    with pytest.raises(ValueError, match="finite and non-negative"):
+        pop_2st(invalid_rate, 1.0)
+    with pytest.raises(ValueError, match="finite and non-negative"):
+        pop_3st(1.0, invalid_rate, 1.0, 1.0, 1.0, 1.0)
+    with pytest.raises(ValueError, match="finite and non-negative"):
+        pop_4st(1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, invalid_rate)

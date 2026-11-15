@@ -181,4 +181,8 @@ class ConditionsWithValidations(Conditions, frozen=True):
         if "binding" in model_name and are_not_both_set:
             msg = 'To use the "binding" model, "p_total" and "l_total" must be provided'
             raise ValueError(msg)
+
+        if "monomer" in model_name and self.p_total is None:
+            msg = f'To use the "{model_name}" model, "p_total" must be provided'
+            raise ValueError(msg)
         return self

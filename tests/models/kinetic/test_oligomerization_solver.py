@@ -250,39 +250,61 @@ def test_helper_rejects_reconstructed_state_that_violates_mass(
 
 
 @pytest.mark.parametrize(
-    ("model", "arguments"),
+    ("model", "arguments", "species"),
     [
-        pytest.param(model, (p_total, 1e-3), id=f"{model.NAME}-{case}")
-        for model in DIRECT_MODELS
-        for case, p_total in UNSUPPORTED_P_TOTALS
+        pytest.param(model, (0.0, 1e-3), species, id=f"{model.NAME}-zero-p-total")
+        for model, species in (
+            (dimer_model, ("monomer", "dimer")),
+            (trimer_model, ("monomer", "trimer")),
+            (tetramer_model, ("monomer", "tetramer")),
+        )
     ]
     + [
-        pytest.param(model, (p_total, 1e-3, 1e-3), id=f"{model.NAME}-{case}")
-        for model in SEQUENTIAL_MODELS
-        for case, p_total in UNSUPPORTED_P_TOTALS
+        pytest.param(model, (0.0, 1e-3, 1e-3), species, id=f"{model.NAME}-zero-p-total")
+        for model, species in (
+            (dimer_trimer_model, ("monomer", "dimer", "trimer")),
+            (dimer_tetramer_model, ("monomer", "dimer", "tetramer")),
+        )
     ],
 )
-def test_unsupported_p_total_retains_legacy_hybr_policy(
-    monkeypatch: pytest.MonkeyPatch,
+def test_zero_p_total_returns_exact_zero_concentrations_without_legacy_solver(
     model: ModuleType,
     arguments: tuple[float, ...],
+    species: tuple[str, ...],
 ) -> None:
-    legacy_call_count = 0
-    sentinel = tuple(float(index) for index in range(len(arguments)))
-
-    def legacy_root(*_args: object, **_kwargs: object) -> dict[str, tuple[float, ...]]:
-        nonlocal legacy_call_count
-        legacy_call_count += 1
-        return {"x": sentinel}
-
-    calculator = model.calculate_concentrations
-    calculator.cache_clear()
+    assert not hasattr(model, "root")
+    assert not hasattr(model, "calculate_residuals")
+    model.calculate_concentrations.cache_clear()
     try:
-        monkeypatch.setattr(model, "root", legacy_root)
-        calculator(*arguments)
-        assert legacy_call_count == 1
+        assert model.calculate_concentrations(*arguments) == dict.fromkeys(species, 0.0)
     finally:
-        calculator.cache_clear()
+        model.calculate_concentrations.cache_clear()
+
+
+@pytest.mark.parametrize(
+    "p_total",
+    [-1.0, -math.nextafter(0.0, 1.0), math.inf, -math.inf, math.nan],
+)
+@pytest.mark.parametrize("model", (*DIRECT_MODELS, *SEQUENTIAL_MODELS))
+def test_concentration_and_population_functions_reject_negative_or_non_finite_p_total(
+    model: ModuleType,
+    p_total: float,
+) -> None:
+    arguments = (p_total, 1e-3) if model in DIRECT_MODELS else (p_total, 1e-3, 1e-3)
+    model.calculate_concentrations.cache_clear()
+    model.calculate_populations.cache_clear()
+    try:
+        with pytest.raises(
+            ValueError, match="P_total must be finite and strictly positive"
+        ):
+            model.calculate_concentrations(*arguments)
+        with pytest.raises(
+            ValueError, match="P_total must be finite and strictly positive"
+        ):
+            model.calculate_populations(*arguments)
+    finally:
+        model.calculate_concentrations.cache_clear()
+        model.calculate_populations.cache_clear()
 
 
 @pytest.mark.parametrize(
@@ -315,23 +337,45 @@ def test_every_oligomerization_kd_position_rejects_invalid_domain(
         model.calculate_concentrations.cache_clear()
 
 
-@pytest.mark.parametrize("kd", POSITIVE_KD_STRESS)
-@pytest.mark.parametrize("model", (*DIRECT_MODELS, *SEQUENTIAL_MODELS))
-def test_positive_kd_never_dispatches_to_legacy_hybr(
-    monkeypatch: pytest.MonkeyPatch,
-    model: ModuleType,
+@pytest.mark.parametrize(
+    "p_total",
+    [1e-310, 1e-315, 1e-320, math.nextafter(0.0, 1.0)],
+)
+@pytest.mark.parametrize(
+    "kd",
+    [1.0, 1e-315, 1e-320, math.nextafter(0.0, 1.0)],
+)
+def test_subnormal_p_total_reconstructs_physical_concentrations_without_mass_error(
+    p_total: float,
     kd: float,
 ) -> None:
-    def fail_legacy(*_args: object, **_kwargs: object) -> None:
-        pytest.fail("positive KD dispatched to legacy HYBR")
+    minimum = math.nextafter(0.0, 1.0)
+    for solver, stoichiometries in (
+        (calculate_dimer, (("monomer", 1), ("dimer", 2))),
+        (calculate_trimer, (("monomer", 1), ("trimer", 3))),
+        (calculate_tetramer, (("monomer", 1), ("tetramer", 4))),
+    ):
+        concentrations = solver(p_total, kd)
+        _assert_physical_concentrations(concentrations, p_total)
+        mass = math.fsum(
+            stoichiometry * concentrations[name]
+            for name, stoichiometry in stoichiometries
+        )
+        subnormal_bound = sum(s for _, s in stoichiometries) * minimum
+        assert abs(mass - p_total) <= MASS_TOLERANCE * p_total + subnormal_bound
 
-    arguments = (1e-100, kd) if model in DIRECT_MODELS else (1e-100, kd, kd)
-    model.calculate_concentrations.cache_clear()
-    try:
-        monkeypatch.setattr(model, "root", fail_legacy)
-        model.calculate_concentrations(*arguments)
-    finally:
-        model.calculate_concentrations.cache_clear()
+    for solver, stoichiometries in (
+        (calculate_dimer_trimer, (("monomer", 1), ("dimer", 2), ("trimer", 3))),
+        (calculate_dimer_tetramer, (("monomer", 1), ("dimer", 2), ("tetramer", 4))),
+    ):
+        concentrations = solver(p_total, kd, kd)
+        _assert_physical_concentrations(concentrations, p_total)
+        mass = math.fsum(
+            stoichiometry * concentrations[name]
+            for name, stoichiometry in stoichiometries
+        )
+        subnormal_bound = sum(s for _, s in stoichiometries) * minimum
+        assert abs(mass - p_total) <= MASS_TOLERANCE * p_total + subnormal_bound
 
 
 @pytest.mark.parametrize("p_total", [-1.0, math.inf, math.nan])
