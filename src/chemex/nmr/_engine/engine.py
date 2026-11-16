@@ -157,6 +157,12 @@ class ISLiouvillianEngine:
         self._l_carrier_s = self._scaled_liouvillian_term("carrier_s", value)
         self._free_generation += 1
 
+    def _offset_sign(self, ppm: float, spin: str) -> float:
+        if ppm != 0.0:
+            return float(np.sign(ppm))
+        xi = SIGNED_XI_RATIO.get(self.basis.nuclei.get(spin, Nucleus.X), 1.0)
+        return -1.0 if xi >= 0.0 else 1.0
+
     @property
     def offset_i(self) -> float:
         return self.state.offset_i
@@ -167,7 +173,7 @@ class ISLiouvillianEngine:
         self._l_offset_i = self._scaled_liouvillian_term(
             "offset_i",
             value,
-            factor=float(np.sign(self.ppm_i)),
+            factor=self._offset_sign(self.ppm_i, "i"),
         )
         self._free_generation += 1
 
@@ -181,7 +187,7 @@ class ISLiouvillianEngine:
         self._l_offset_s = self._scaled_liouvillian_term(
             "offset_s",
             value,
-            factor=float(np.sign(self.ppm_s)),
+            factor=self._offset_sign(self.ppm_s, "s"),
         )
         self._free_generation += 1
 

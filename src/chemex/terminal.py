@@ -173,6 +173,8 @@ def _format_model(error: ChemExError) -> str | None:
 def _format_experiment(error: ChemExError) -> str | None:
     from chemex.containers.dataset import DatasetLoadError
     from chemex.experiments.experiment_types import (
+        CpmgDutyCycleError,
+        ExperimentalExperimentTypeError,
         ExperimentConfigurationError,
         ExperimentDataError,
         ExperimentFileError,
@@ -202,12 +204,52 @@ def _format_experiment(error: ChemExError) -> str | None:
             ("Reason", "The [experiment] table requires a name field."),
             ("Next", "Run 'chemex info' to list available Experiment Types."),
         )
+    if isinstance(error, ExperimentalExperimentTypeError):
+        reason = (
+            "'cest_15n_test' was renamed to 'wip.cest_15n_test', and experimental "
+            "catalog/wip Experiment Types are disabled by default."
+            if error.legacy_name
+            else "Experimental catalog/wip Experiment Types are disabled by default."
+        )
+        next_step = (
+            "Set name = 'wip.cest_15n_test' and set CHEMEX_ENABLE_WIP=1 to opt in."
+            if error.legacy_name
+            else "Set CHEMEX_ENABLE_WIP=1 (or register_experiments(include_wip=True)) to opt in."
+        )
+        return _fields(
+            "Experimental Experiment Type is disabled.",
+            ("Input", str(error.filename)),
+            ("Experiment Type", error.experiment_type_name),
+            ("Reason", reason),
+            ("Next", next_step),
+        )
     if isinstance(error, UnknownExperimentTypeError):
         return _fields(
             "Experiment Type is not available.",
             ("Input", str(error.filename)),
             ("Experiment Type", error.experiment_type_name),
             ("Next", "Run 'chemex info' to list available Experiment Types."),
+        )
+    if isinstance(error, CpmgDutyCycleError):
+        return _fields(
+            "CPMG pulse duty cycle is invalid.",
+            ("Input", str(error.filename) if error.filename is not None else None),
+            ("Experiment Type", error.experiment_type),
+            ("Spin System", error.spin_system),
+            (
+                "Reason",
+                (
+                    f"ncyc={error.ncyc:g} yields negative delay "
+                    f"{error.delay_name}={error.tau_cp:.6g} s."
+                ),
+            ),
+            (
+                "Next",
+                (
+                    "Reduce ncyc, increase time_t2, or decrease pulse widths so "
+                    "inter-pulse delays remain non-negative."
+                ),
+            ),
         )
     if isinstance(error, ExperimentConfigurationError):
         return _fields(

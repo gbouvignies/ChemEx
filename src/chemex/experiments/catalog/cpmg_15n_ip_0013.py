@@ -10,12 +10,13 @@ from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
 from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import RelaxationDataSettings
 from chemex.configuration.experiment import CpmgSettings
-from chemex.configuration.types import Delay, Frequency, PulseWidth
+from chemex.configuration.types import ChemicalShift, Delay, PulseWidth
 from chemex.containers.data import Data
 from chemex.experiments.experiment_types import (
     ProfileCalculation,
     cpmg_type,
     register_experiment_type,
+    validate_cpmg_tau_cps,
 )
 from chemex.nmr.basis import Basis
 from chemex.nmr.spectrometer import Spectrometer
@@ -33,7 +34,7 @@ class Cpmg15N0013IpSettings(CpmgSettings):
 
     name: Literal["cpmg_15n_ip_0013"]
     time_t2: Delay = Field(description="Total CPMG relaxation delay (seconds)")
-    carrier: Frequency = Field(description="15N carrier frequency (Hz)")
+    carrier: ChemicalShift = Field(description="15N carrier position in ppm")
     pw90: PulseWidth = Field(description="15N 90-degree pulse width (seconds)")
     time_equil: float = Field(
         default=0.0,
@@ -138,6 +139,7 @@ class Cpmg15N0013IpSequence:
         deltas[0.0] = (
             self.settings.pw90 * (self.settings.ncyc_max - 1) + self.settings.time_equil
         )
+        tau_cps = validate_cpmg_tau_cps(EXPERIMENT_NAME, tau_cps, deltas=deltas)
         delays = [
             self.settings.t_neg,
             self.settings.t_pos,

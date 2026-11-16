@@ -12,6 +12,7 @@ from chemex.containers.experiment import NoDuplicateNoiseNotice
 from chemex.experiments import catalog, experiment_types
 from chemex.experiments.catalog import cest_15n, wip
 from chemex.experiments.experiment_types import (
+    ExperimentalExperimentTypeError,
     ExperimentConfigurationError,
     ExperimentDataError,
     ExperimentFileError,
@@ -65,25 +66,73 @@ G2N = "{data_filename}"
     return filename
 
 
-def _discovered_experiment_type_names() -> set[str]:
-    module_names = [
-        *iter_experiment_modules(catalog),
-        *iter_experiment_modules(wip),
-    ]
+def _discovered_catalog_experiment_type_names() -> set[str]:
     return {
-        import_module(module_name).EXPERIMENT_TYPE.name for module_name in module_names
+        import_module(module_name).EXPERIMENT_TYPE.name
+        for module_name in iter_experiment_modules(catalog)
+    }
+
+
+def _discovered_wip_experiment_type_names() -> set[str]:
+    return {
+        import_module(module_name).EXPERIMENT_TYPE.name
+        for module_name in iter_experiment_modules(wip)
     }
 
 
 def test_all_discovered_experiment_types_register_through_public_surface() -> None:
-    expected_names = _discovered_experiment_type_names()
+    catalog_names = _discovered_catalog_experiment_type_names()
+    wip_names = _discovered_wip_experiment_type_names()
+
+    assert len(catalog_names) == 34
+    assert len(wip_names) == 3
+    assert all(name.startswith("wip.") for name in wip_names)
 
     register_experiments()
     registered = experiment_types.registered_experiment_types()
-
-    assert len(expected_names) == 37
-    assert set(registered) == expected_names
+    assert set(registered) == catalog_names
     assert all(name == adapter.name for name, adapter in registered.items())
+
+    register_experiments(include_wip=True)
+    registered_with_wip = experiment_types.registered_experiment_types()
+    assert set(registered_with_wip) == catalog_names | wip_names
+    assert all(name == adapter.name for name, adapter in registered_with_wip.items())
+
+    register_experiments()
+    assert set(experiment_types.registered_experiment_types()) == catalog_names
+
+
+def test_wip_experiment_types_require_explicit_opt_in(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("CHEMEX_ENABLE_WIP", raising=False)
+    register_experiments()
+
+    wip_toml = tmp_path / "wip_cest.toml"
+    wip_toml.write_text('[experiment]\nname = "wip.cest_15n_test"\n', encoding="utf-8")
+    with pytest.raises(ExperimentalExperimentTypeError) as wip_err:
+        experiment_types.open(wip_toml)
+    assert not wip_err.value.legacy_name
+    assert "CHEMEX_ENABLE_WIP=1" in str(wip_err.value)
+
+    legacy_toml = tmp_path / "legacy_cest.toml"
+    legacy_toml.write_text('[experiment]\nname = "cest_15n_test"\n', encoding="utf-8")
+    with pytest.raises(ExperimentalExperimentTypeError) as legacy_err:
+        experiment_types.open(legacy_toml)
+    assert legacy_err.value.legacy_name
+    assert "wip.cest_15n_test" in str(legacy_err.value)
+
+    monkeypatch.setenv("CHEMEX_ENABLE_WIP", "1")
+    register_experiments()
+    try:
+        source = experiment_types.open(wip_toml)
+        assert source.experiment_type_name == "wip.cest_15n_test"
+        with pytest.raises(ExperimentalExperimentTypeError):
+            experiment_types.open(legacy_toml)
+    finally:
+        monkeypatch.delenv("CHEMEX_ENABLE_WIP", raising=False)
+        register_experiments()
 
 
 def test_every_registered_experiment_type_can_be_opened(tmp_path: Path) -> None:

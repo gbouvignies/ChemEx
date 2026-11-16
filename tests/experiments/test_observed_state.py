@@ -77,7 +77,7 @@ def test_cpmg_start_state_list_selects_starting_components() -> None:
         ),
     ],
 )
-def test_start_state_is_applied_to_identity_component_preparation(
+def test_ip_ap_cest_start_state_selects_longitudinal_polarization_only(
     settings_cls,
     data: dict[str, object],
 ) -> None:
@@ -85,7 +85,7 @@ def test_start_state_is_applied_to_identity_component_preparation(
         {**data, "start_state": ["a", "c"]},
     )
 
-    assert settings.start_terms == ["ie_a", "ie_c"]
+    assert settings.start_terms == ["iz_a", "iz_c"]
 
 
 @pytest.mark.parametrize(

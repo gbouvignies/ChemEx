@@ -10,12 +10,13 @@ from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
 from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import RelaxationDataSettings
 from chemex.configuration.experiment import CpmgSettings
-from chemex.configuration.types import Delay, Frequency, PulseWidth
+from chemex.configuration.types import ChemicalShift, Delay, PulseWidth
 from chemex.containers.data import Data
 from chemex.experiments.experiment_types import (
     ProfileCalculation,
     cpmg_type,
     register_experiment_type,
+    validate_cpmg_tau_cps,
 )
 from chemex.nmr.basis import Basis
 from chemex.nmr.constants import GAMMA
@@ -32,7 +33,7 @@ class CpmgCh31HTqDiffSettings(CpmgSettings):
 
     name: Literal["cpmg_ch3_1h_tq_diff"]
     time_t2: Delay = Field(description="Total CPMG relaxation delay (seconds)")
-    carrier: Frequency = Field(description="1H carrier frequency (Hz)")
+    carrier: ChemicalShift = Field(description="1H carrier position in ppm")
     pw90: PulseWidth = Field(description="1H 90-degree pulse width (seconds)")
     delta: float = Field(
         gt=0.0, description="Gradient pulse duration for diffusion encoding (seconds)"
@@ -147,6 +148,7 @@ class CpmgCh31HTqDiffSequence:
             ncyc: self.settings.time_t2 / (4.0 * ncyc) - factor * self.settings.pw90
             for ncyc in ncyc_no_ref
         }
+        tau_cps = validate_cpmg_tau_cps(EXPERIMENT_NAME, tau_cps)
         delays = [self.settings.tau, *tau_cps.values()]
         return tau_cps, delays
 

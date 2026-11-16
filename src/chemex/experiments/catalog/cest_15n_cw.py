@@ -9,7 +9,7 @@ from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
 from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import CestDataSettings
 from chemex.configuration.experiment import B1InhomogeneityMixin, CestSettings
-from chemex.configuration.types import B1Field, Delay, Frequency
+from chemex.configuration.types import B1Field, ChemicalShift, Delay
 from chemex.containers.data import Data
 from chemex.experiments.experiment_types import (
     ProfileCalculation,
@@ -33,8 +33,10 @@ class Cest15NCwSettings(CestSettings, B1InhomogeneityMixin):
 
     name: Literal["cest_15n_cw"]
     time_t1: Delay = Field(description="Length of the CEST block in seconds")
-    carrier: Frequency = Field(description="15N carrier position in Hz")
-    carrier_dec: Frequency = Field(description="1H decoupling carrier position in Hz")
+    carrier: ChemicalShift = Field(description="15N carrier position in ppm")
+    carrier_dec: ChemicalShift = Field(
+        description="1H decoupling carrier position in ppm"
+    )
     b1_frq_dec: B1Field = Field(description="1H decoupling B1 field strength in Hz")
 
     @computed_field

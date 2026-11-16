@@ -10,12 +10,13 @@ from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
 from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import RelaxationDataSettings
 from chemex.configuration.experiment import CpmgSettings
-from chemex.configuration.types import Delay, Frequency, PulseWidth
+from chemex.configuration.types import ChemicalShift, Delay, PulseWidth
 from chemex.containers.data import Data
 from chemex.experiments.experiment_types import (
     ProfileCalculation,
     cpmg_type,
     register_experiment_type,
+    validate_cpmg_tau_cps,
 )
 from chemex.nmr.basis import Basis
 from chemex.nmr.spectrometer import Spectrometer
@@ -30,7 +31,7 @@ class Cpmg1HnApSettings(CpmgSettings):
 
     name: Literal["cpmg_1hn_ap"]
     time_t2: Delay = Field(description="Total CPMG relaxation delay in seconds")
-    carrier: Frequency = Field(description="1H carrier position in Hz")
+    carrier: ChemicalShift = Field(description="1H carrier position in ppm")
     pw90: PulseWidth = Field(description="90-degree pulse width in seconds")
     time_equil_1: Delay = 0.0
     time_equil_2: Delay = 0.0
@@ -100,6 +101,7 @@ class Cpmg1HnApSequence:
         # An ncyc of -1 corresponds to the experiment without the CPMG
         # refocusisng pulses
         tau_cps[-1.0] = 0.5 * self.settings.time_t2
+        tau_cps = validate_cpmg_tau_cps(EXPERIMENT_NAME, tau_cps)
         delays = [
             self.settings.t_neg,
             self.settings.time_equil_1,

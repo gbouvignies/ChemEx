@@ -1,14 +1,21 @@
 """A simple plugin loader for experiment modules."""
 
+from __future__ import annotations
+
 import importlib
+import os
 from collections.abc import Iterator
 from importlib.util import find_spec
 from pkgutil import iter_modules
 from types import ModuleType
 from typing import Protocol, cast
 
-from chemex.experiments import catalog
+from chemex.experiments import catalog, experiment_types
 from chemex.experiments.catalog import wip
+
+WIP_ENV_VAR = "CHEMEX_ENABLE_WIP"
+LEGACY_WIP_EXPERIMENT_NAMES: frozenset[str] = frozenset({"cest_15n_test"})
+_TRUTHY_ENV_VALUES = frozenset({"1", "true", "yes", "on"})
 
 
 class ExperimentModule(Protocol):
@@ -37,19 +44,39 @@ def iter_experiment_modules(package: ModuleType) -> Iterator[str]:
     )
 
 
-def register_experiments() -> None:
-    """Loads and registers all experiment plugins."""
-    modules_to_register = [
-        *iter_experiment_modules(catalog),
-        *iter_experiment_modules(wip),
-    ]
+def wip_experiment_names() -> frozenset[str]:
+    """Return canonical Experiment Type names under ``catalog.wip`` without importing."""
+    return frozenset(
+        f"wip.{module.name}"
+        for module in iter_modules(wip.__path__)
+        if not module.ispkg
+    )
 
-    for module_name in modules_to_register:
+
+def wip_enabled_from_env() -> bool:
+    """Return whether experimental WIP plugins are enabled via environment."""
+    raw = os.environ.get(WIP_ENV_VAR)
+    if raw is None:
+        return False
+    return raw.strip().lower() in _TRUTHY_ENV_VALUES
+
+
+def register_experiments(*, include_wip: bool | None = None) -> None:
+    """Load and register supported catalog plugins (and WIP plugins on explicit opt-in)."""
+    enable_wip = wip_enabled_from_env() if include_wip is None else include_wip
+
+    for module_name in iter_experiment_modules(catalog):
         if find_spec(module_name):
             experiment_module = import_module(module_name)
             experiment_module.register()
-        else:
-            pass
+
+    if enable_wip:
+        for module_name in iter_experiment_modules(wip):
+            if find_spec(module_name):
+                experiment_module = import_module(module_name)
+                experiment_module.register()
+    else:
+        experiment_types.unregister_wip_experiment_types()
 
 
 if __name__ == "__main__":

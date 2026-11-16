@@ -6,7 +6,7 @@ from typing import Protocol
 
 from chemex.configuration.method_plan import MethodPlan
 from chemex.configuration.methods import Method
-from chemex.experiments.loader import register_experiments
+from chemex.experiments.loader import register_experiments, wip_enabled_from_env
 from chemex.models.loader import register_kinetic_settings
 from chemex.models.model import ModelSpec, ModelState
 from chemex.parameters.database import (
@@ -28,7 +28,7 @@ from chemex.parameters.parameterization import (
 from chemex.parameters.values import AnalysisValues
 from chemex.runtime.execution import ExecutionSettings
 
-_PLUGIN_STATE = {"registered": False}
+_PLUGIN_STATE = {"registered": False, "include_wip": False}
 
 
 class ModelController(ModelReader, Protocol):
@@ -67,9 +67,9 @@ class AnalysisSession:
         self.execution = ExecutionSettings() if execution is None else execution
 
     @classmethod
-    def create(cls) -> AnalysisSession:
+    def create(cls, *, include_wip: bool | None = None) -> AnalysisSession:
         """Create a fresh analysis session with isolated runtime state."""
-        ensure_plugins_registered()
+        ensure_plugins_registered(include_wip=include_wip)
         session = cls()
         session.reset()
         return session
@@ -235,16 +235,23 @@ class AnalysisSession:
         )
 
 
-def ensure_plugins_registered() -> None:
-    """Register model and experiment plugins once per process."""
-    if _PLUGIN_STATE["registered"]:
+def ensure_plugins_registered(*, include_wip: bool | None = None) -> None:
+    """Register model and experiment plugins, syncing WIP opt-in state."""
+    resolved_wip = wip_enabled_from_env() if include_wip is None else include_wip
+    if _PLUGIN_STATE["registered"] and _PLUGIN_STATE["include_wip"] == resolved_wip:
         return
 
-    register_kinetic_settings()
-    register_experiments()
+    if not _PLUGIN_STATE["registered"]:
+        register_kinetic_settings()
+    if include_wip is None:
+        register_experiments()
+    else:
+        register_experiments(include_wip=include_wip)
     _PLUGIN_STATE["registered"] = True
+    _PLUGIN_STATE["include_wip"] = resolved_wip
 
 
 def reset_plugin_registration() -> None:
     """Mark plugin registration as pending for a fresh session bootstrap."""
     _PLUGIN_STATE["registered"] = False
+    _PLUGIN_STATE["include_wip"] = False

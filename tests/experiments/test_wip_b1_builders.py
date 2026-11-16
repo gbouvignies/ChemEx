@@ -24,7 +24,7 @@ from chemex.parameters.spin_system import SpinSystem
             cest_15n_test.Cest15NTestConfig,
             cest_15n_test.build_spectrometer,
             {
-                "name": "cest_15n_test",
+                "name": "wip.cest_15n_test",
                 "time_t1": 0.2,
                 "carrier": 118.0,
                 "b1_frq": 25.0,
@@ -101,7 +101,7 @@ def test_wip_builders_use_b1_inhomogeneity_api(
             cest_15n_test.Cest15NTestConfig,
             cest_15n_test.build_spectrometer,
             {
-                "name": "cest_15n_test",
+                "name": "wip.cest_15n_test",
                 "time_t1": 0.2,
                 "carrier": 118.0,
                 "b1_frq": 25.0,

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import tomllib
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, MutableMapping
 from copy import deepcopy
 from dataclasses import dataclass
 from functools import partial
@@ -278,6 +278,54 @@ class UnknownExperimentTypeError(ExperimentBuildError):
 
 
 @dataclass(eq=False)
+class ExperimentalExperimentTypeError(UnknownExperimentTypeError):
+    """An experimental (WIP) Experiment Type was requested without opt-in."""
+
+    legacy_name: bool = False
+
+    def __post_init__(self) -> None:
+        if self.legacy_name:
+            message = (
+                f"Experimental Experiment Type {self.experiment_type_name!r} "
+                "was renamed to 'wip.cest_15n_test' and requires WIP opt-in"
+            )
+        else:
+            message = (
+                f"Experimental Experiment Type {self.experiment_type_name!r} "
+                "is disabled by default; set CHEMEX_ENABLE_WIP=1 to enable it"
+            )
+        ExperimentBuildError.__init__(self, message)
+
+
+class CpmgDutyCycleError(ExperimentBuildError, ValueError):
+    """CPMG pulse widths or cycle counts exceed the relaxation delay."""
+
+    def __init__(
+        self,
+        experiment_type: str,
+        *,
+        ncyc: float,
+        tau_cp: float,
+        delay_name: str = "tau_cp",
+        filename: Path | None = None,
+        spin_system: str | None = None,
+    ) -> None:
+        self.experiment_type = experiment_type
+        self.ncyc = float(ncyc)
+        self.tau_cp = float(tau_cp)
+        self.delay_name = delay_name
+        self.filename = filename
+        self.spin_system = spin_system
+        location = f" in '{filename}'" if filename is not None else ""
+        profile = f" (profile {spin_system})" if spin_system is not None else ""
+        super().__init__(
+            f"CPMG duty cycle exceeded for '{experiment_type}'{location}{profile}: "
+            f"ncyc={self.ncyc:g} yields negative delay "
+            f"{self.delay_name}={self.tau_cp:.6g} s"
+        )
+
+
+@dataclass(eq=False)
 class ExperimentConfigurationError(ExperimentBuildError):
     filename: Path
     error: ValidationError
@@ -307,6 +355,68 @@ _REGISTRY: dict[str, ExperimentType[Any]] = {}
 _SOURCE_STATES: WeakKeyDictionary[ExperimentSource, _SourceState] = WeakKeyDictionary()
 
 
+_DUTY_CYCLE_ATOL = 1e-15
+
+
+def validate_cpmg_tau_cps(
+    experiment_name: str,
+    tau_cps: dict[float, float],
+    *,
+    deltas: MutableMapping[float, float] | None = None,
+) -> dict[float, float]:
+    """Validate that CPMG inter-pulse and compensation delays are non-negative."""
+    validated: dict[float, float] = {}
+    for ncyc, tau_cp in tau_cps.items():
+        delay = float(tau_cp)
+        if delay < -_DUTY_CYCLE_ATOL:
+            raise CpmgDutyCycleError(
+                experiment_name,
+                ncyc=float(ncyc),
+                tau_cp=delay,
+            )
+        validated[float(ncyc)] = 0.0 if delay < 0.0 else delay
+
+    if deltas is not None:
+        for ncyc, delta in list(deltas.items()):
+            delay = float(delta)
+            if delay < -_DUTY_CYCLE_ATOL:
+                raise CpmgDutyCycleError(
+                    experiment_name,
+                    ncyc=float(ncyc),
+                    tau_cp=delay,
+                    delay_name="delta",
+                )
+            if delay < 0.0:
+                deltas[ncyc] = 0.0
+    return validated
+
+
+def _validate_pulse_sequence_delays(
+    pulse_sequence: PulseSequence,
+    metadata: object,
+    *,
+    filename: Path,
+    spin_system: SpinSystem,
+) -> None:
+    """Eagerly validate CPMG inter-pulse delays during Experiment construction."""
+    delay_validator = getattr(pulse_sequence, "_get_delays", None)
+    if delay_validator is None:
+        delay_validator = getattr(pulse_sequence, "_get_tau_cps", None)
+    if not callable(delay_validator):
+        return
+    try:
+        delay_validator(metadata)
+    except CpmgDutyCycleError as error:
+        raise CpmgDutyCycleError(
+            error.experiment_type,
+            ncyc=error.ncyc,
+            tau_cp=error.tau_cp,
+            delay_name=error.delay_name,
+            filename=filename,
+            spin_system=str(spin_system),
+        ) from error
+
+
 def register_experiment_type(experiment_type: ExperimentType[Any]) -> None:
     """Register an adapter, allowing repeated registration of the same object."""
     registered = _REGISTRY.get(experiment_type.name)
@@ -319,6 +429,12 @@ def register_experiment_type(experiment_type: ExperimentType[Any]) -> None:
         )
         raise ValueError(message)
     _REGISTRY[experiment_type.name] = experiment_type
+
+
+def unregister_wip_experiment_types() -> None:
+    """Remove experimental WIP Experiment Types from the active registry."""
+    for name in [key for key in _REGISTRY if key.startswith("wip.")]:
+        del _REGISTRY[name]
 
 
 def registered_experiment_types() -> Mapping[str, ExperimentType[Any]]:
@@ -539,6 +655,19 @@ def open(filename: Path) -> ExperimentSource:
     experiment_type_name = name_config.experiment.name
     experiment_type_ = _REGISTRY.get(experiment_type_name)
     if experiment_type_ is None:
+        from chemex.experiments.loader import (
+            LEGACY_WIP_EXPERIMENT_NAMES,
+            wip_experiment_names,
+        )
+
+        if experiment_type_name in LEGACY_WIP_EXPERIMENT_NAMES:
+            raise ExperimentalExperimentTypeError(
+                filename,
+                experiment_type_name,
+                legacy_name=True,
+            )
+        if experiment_type_name in wip_experiment_names():
+            raise ExperimentalExperimentTypeError(filename, experiment_type_name)
         raise UnknownExperimentTypeError(filename, experiment_type_name)
 
     return _create_source(
@@ -602,6 +731,12 @@ def _build[ConfigT: GenericConfig](
     profiles: list[Profile] = []
     for spin_system, data in selected_dataset:
         calculation = experiment_type_.create_profile_calculation(config, spin_system)
+        _validate_pulse_sequence_delays(
+            calculation.pulse_sequence,
+            data.metadata,
+            filename=source.filename,
+            spin_system=spin_system,
+        )
         filterer = experiment_type_.support.create_filterer(
             config=config,
             spectrometer=calculation.spectrometer,

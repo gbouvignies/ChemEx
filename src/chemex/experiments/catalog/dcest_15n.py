@@ -166,6 +166,7 @@ class DCest15NSequence:
 
     def calculate(self, spectrometer: Spectrometer, data: Data) -> Array:
         offsets = data.metadata
+        spectrometer.offset_i = 0.0
 
         start = spectrometer.get_start_magnetization(
             self.settings.start_terms, Nucleus.N15

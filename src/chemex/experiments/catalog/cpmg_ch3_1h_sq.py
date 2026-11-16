@@ -10,12 +10,13 @@ from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
 from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import RelaxationDataSettings
 from chemex.configuration.experiment import CpmgSettings
-from chemex.configuration.types import Delay, Frequency, PulseWidth
+from chemex.configuration.types import ChemicalShift, Delay, PulseWidth
 from chemex.containers.data import Data
 from chemex.experiments.experiment_types import (
     ProfileCalculation,
     cpmg_type,
     register_experiment_type,
+    validate_cpmg_tau_cps,
 )
 from chemex.nmr.basis import Basis
 from chemex.nmr.spectrometer import Spectrometer
@@ -30,9 +31,9 @@ class CpmgCh31HSqSettings(CpmgSettings):
 
     name: Literal["cpmg_ch3_1h_sq"]
     time_t2: Delay = Field(description="Total CPMG relaxation delay in seconds")
-    carrier: Frequency = Field(description="1H carrier position in Hz")
+    carrier: ChemicalShift = Field(description="1H carrier position in ppm")
     pw90: PulseWidth = Field(description="90-degree pulse width in seconds")
-    ncyc_max: int = Field(description="Maximum number of CPMG cycles")
+    ncyc_max: int = Field(gt=0, description="Maximum number of CPMG cycles")
     taua: float = 2.0e-3
     comp180_flg: bool = True
     ipap_flg: bool = False
@@ -106,6 +107,11 @@ class CpmgCh31HSqSequence:
             / (4.0 * ncyc)
             for ncyc in ncyc_no_ref
         }
+        deltas = {
+            ncyc: float(self.settings.ncyc_max - ncyc) * self.settings.pw90
+            for ncyc in ncyc_no_ref
+        }
+        tau_cps = validate_cpmg_tau_cps(EXPERIMENT_NAME, tau_cps, deltas=deltas)
         delays = [self.settings.taua, *tau_cps.values()]
         return tau_cps, delays
 

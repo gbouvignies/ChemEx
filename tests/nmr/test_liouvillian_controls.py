@@ -55,3 +55,41 @@ def test_missing_s_control_terms_use_zero_liouvillian_matrices() -> None:
     np.testing.assert_allclose(liouvillian._l_offset_s, 0.0)
     np.testing.assert_allclose(liouvillian.l_b1x_s, 0.0)
     np.testing.assert_allclose(liouvillian.l_b1y_s, 0.0)
+
+
+def test_offset_sign_matches_gyromagnetic_convention_without_h_larmor_frq() -> None:
+    """offset_i and offset_s remain active with the physical sign when ppm_i == ppm_s == 0."""
+    basis_nh = Basis(type="ixyzsxyz", spin_system="nh", model=ModelSpec())
+    engine_no_b0 = ISLiouvillianEngine(
+        SpinSystem(name="G23N-HN"),
+        basis_nh,
+        Conditions(),
+    )
+    engine_with_b0 = ISLiouvillianEngine(
+        SpinSystem(name="G23N-HN"),
+        basis_nh,
+        Conditions(h_larmor_frq=600.0),
+    )
+
+    assert engine_no_b0.ppm_i == 0.0
+    assert engine_no_b0.ppm_s == 0.0
+
+    engine_no_b0.offset_i = 125.0
+    engine_no_b0.offset_s = -80.0
+    engine_with_b0.offset_i = 125.0
+    engine_with_b0.offset_s = -80.0
+
+    assert np.any(engine_no_b0._l_offset_i != 0.0)
+    assert np.any(engine_no_b0._l_offset_s != 0.0)
+    np.testing.assert_allclose(
+        engine_no_b0._l_offset_i,
+        engine_with_b0._l_offset_i,
+        rtol=0.0,
+        atol=0.0,
+    )
+    np.testing.assert_allclose(
+        engine_no_b0._l_offset_s,
+        engine_with_b0._l_offset_s,
+        rtol=0.0,
+        atol=0.0,
+    )

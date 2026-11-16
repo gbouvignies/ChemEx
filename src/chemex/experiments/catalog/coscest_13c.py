@@ -10,7 +10,7 @@ from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
 from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import CestDataSettings
 from chemex.configuration.experiment import B1InhomogeneityMixin, MFCestSettings
-from chemex.configuration.types import Delay, Frequency
+from chemex.configuration.types import ChemicalShift, Delay
 from chemex.containers.data import Data
 from chemex.experiments.experiment_types import (
     ProfileCalculation,
@@ -34,7 +34,7 @@ class CosCest13CSettings(MFCestSettings, B1InhomogeneityMixin):
     name: Literal["coscest_13c"]
     time_t1: float = Field(description="Length of the CEST block in seconds")
     time_equil: Delay = 0.0
-    carrier: Frequency = Field(description="13C carrier position in Hz")
+    carrier: ChemicalShift = Field(description="13C carrier position in ppm")
     cos_n: int = Field(description="Number of cosine cycles")
     cos_res: int = 10
 
@@ -141,8 +141,9 @@ class CosCest13CSequence:
 
     def calculate(self, spectrometer: Spectrometer, data: Data) -> Array:
         offsets = data.metadata
+        spectrometer.offset_i = 0.0
 
-        start = spectrometer.get_equilibrium()
+        start = spectrometer.get_start_magnetization(terms=self.settings.start_terms)
 
         d_eq = (
             spectrometer.delays(self.settings.time_equil)

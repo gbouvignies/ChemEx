@@ -9,7 +9,7 @@ from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
 from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import CestDataSettings
 from chemex.configuration.experiment import B1InhomogeneityMixin, CestSettings
-from chemex.configuration.types import Frequency
+from chemex.configuration.types import ChemicalShift
 from chemex.containers.data import Data
 from chemex.experiments.experiment_types import (
     ProfileCalculation,
@@ -32,7 +32,7 @@ class Cest15NTrSettings(CestSettings, B1InhomogeneityMixin):
 
     name: Literal["cest_15n_tr"]
     time_t1: float = Field(description="Length of the CEST block in seconds")
-    carrier: Frequency = Field(description="15N carrier position in Hz")
+    carrier: ChemicalShift = Field(description="15N carrier position in ppm")
     antitrosy: bool = False
 
     @computed_field
