@@ -1162,3 +1162,91 @@ direct_trf.least_squares = interrupt_third_fit
     assert outcome["status"] == "incomplete"
     assert outcome["terminal"] == "interrupted"
     assert outcome["latest_committed_revision"] == 1
+
+
+@pytest.mark.parametrize("exp_name", ("wip.cest_15n_test", "cest_15n_test"))
+def test_cli_reports_disabled_wip_experiment_type_as_known_failure(
+    exp_name: str,
+    tmp_path: Path,
+) -> None:
+    experiment = tmp_path / "wip.toml"
+    experiment.write_text(
+        f'[experiment]\nname = "{exp_name}"\n',
+        encoding="utf-8",
+    )
+    env = os.environ.copy()
+    env.pop("CHEMEX_ENABLE_WIP", None)
+
+    completed = _run(
+        (sys.executable, "-m", "chemex"),
+        "simulate",
+        "-e",
+        str(experiment),
+        "-p",
+        str(PARAMETERS),
+        "-o",
+        str(tmp_path / "output"),
+        "--plot",
+        "nothing",
+        env=env,
+    )
+
+    combined = completed.stdout + completed.stderr
+    assert completed.returncode == 1
+    assert "Experimental Experiment Type is disabled." in completed.stderr
+    assert exp_name in completed.stderr
+    assert "CHEMEX_ENABLE_WIP=1" in completed.stderr
+    assert "unexpected internal error" not in combined
+    assert TRACEBACK_HEADER not in combined
+
+
+@pytest.mark.parametrize("subcommand", ("simulate", "fit"))
+def test_cli_reports_cpmg_duty_cycle_overflow_as_known_failure(
+    subcommand: str,
+    tmp_path: Path,
+) -> None:
+    data_file = tmp_path / "1N-HN.out"
+    data_file.write_text("0 1.0 0.02\n100 0.8 0.02\n", encoding="utf-8")
+    experiment = tmp_path / "bad-duty-cycle.toml"
+    experiment.write_text(
+        """[experiment]
+name = "cpmg_15n_ip"
+carrier = 118.559
+pw90 = 50.0e-6
+time_t2 = 10.0e-3
+
+[conditions]
+h_larmor_frq = 500.0
+temperature = 25.0
+
+[data]
+error = "file"
+path = "."
+
+[data.profiles]
+1N = "1N-HN.out"
+""",
+        encoding="utf-8",
+    )
+
+    completed = _run(
+        (sys.executable, "-m", "chemex"),
+        subcommand,
+        "-e",
+        str(experiment),
+        "-p",
+        str(OLIGOMERIZATION_PARAMETERS),
+        "-o",
+        str(tmp_path / "output"),
+        "--plot",
+        "nothing",
+    )
+
+    combined = completed.stdout + completed.stderr
+    assert completed.returncode == 1
+    assert "CPMG pulse duty cycle is invalid." in completed.stderr
+    assert str(experiment) in completed.stderr
+    assert "cpmg_15n_ip" in completed.stderr
+    assert "negative delay" in completed.stderr
+    assert "unexpected internal error" not in combined
+    assert TRACEBACK_HEADER not in combined

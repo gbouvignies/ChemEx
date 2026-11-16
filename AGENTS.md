@@ -167,9 +167,11 @@ schema in `run_info.py`, or provide an explicit migration and changelog entry.
 Treat imports exercised by tests, benchmarks, and scripts as quasi-public; do
 not casually move or rename them.
 
-- `src/chemex/experiments/catalog/wip/` is experimental but is still
-  auto-discovered, registered, distributed, and checked by Ruff and `ty`. Do
-  not promote or redesign WIP code without maintainer intent.
+- `src/chemex/experiments/catalog/wip/` is experimental (`wip.<module>` names)
+  and excluded from default registration (opt in via `CHEMEX_ENABLE_WIP=1` or
+  `register_experiments(include_wip=True)`), but is still distributed and
+  checked by Ruff and `ty`. Do not promote or redesign WIP code without
+  maintainer intent.
 - `dist/`, `website/build/`, caches, example `Output*` directories, and ChemEx
   result directories are generated/local artifacts. Do not edit or commit them.
 - `uv.lock` and `website/package-lock.json` are generated lock files; change

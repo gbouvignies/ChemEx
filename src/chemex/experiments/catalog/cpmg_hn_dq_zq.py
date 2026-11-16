@@ -10,12 +10,13 @@ from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
 from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import RelaxationDataSettings
 from chemex.configuration.experiment import CpmgSettingsEvenNcycs
-from chemex.configuration.types import Delay, Frequency, PulseWidth
+from chemex.configuration.types import ChemicalShift, Delay, PulseWidth
 from chemex.containers.data import Data
 from chemex.experiments.experiment_types import (
     ProfileCalculation,
     cpmg_type,
     register_experiment_type,
+    validate_cpmg_tau_cps,
 )
 from chemex.nmr.basis import Basis
 from chemex.nmr.spectrometer import Spectrometer
@@ -33,8 +34,8 @@ class CpmgHNDqZqSettings(CpmgSettingsEvenNcycs):
 
     name: Literal["cpmg_hn_dq_zq"]
     time_t2: Delay = Field(description="Total CPMG relaxation delay (seconds)")
-    carrier_h: Frequency = Field(description="1H carrier frequency (Hz)")
-    carrier_n: Frequency = Field(description="15N carrier frequency (Hz)")
+    carrier_h: ChemicalShift = Field(description="1H carrier position in ppm")
+    carrier_n: ChemicalShift = Field(description="15N carrier position in ppm")
     pw90_h: PulseWidth = Field(description="1H 90-degree pulse width (seconds)")
     pw90_n: PulseWidth = Field(description="15N 90-degree pulse width (seconds)")
     dq_flg: bool = Field(
@@ -108,14 +109,15 @@ class CpmgHNDqZqSequence:
 
     def _get_tau_cps(self, ncycs: Array) -> dict[float, float]:
         ncycs_no_ref = ncycs[ncycs > 0]
-        return dict(
+        pw90_max = max(self.settings.pw90_n, self.settings.pw90_h)
+        tau_cps = dict(
             zip(
                 ncycs_no_ref,
-                self.settings.time_t2 / (4.0 * ncycs_no_ref)
-                - 7.0 / 3.0 * self.settings.pw90_n,
+                self.settings.time_t2 / (4.0 * ncycs_no_ref) - 7.0 / 3.0 * pw90_max,
                 strict=True,
             ),
         )
+        return validate_cpmg_tau_cps(EXPERIMENT_NAME, tau_cps)
 
     def _get_phases(self, ncyc: float) -> tuple[Array, Array]:
         ncyc_key = float(ncyc)
@@ -141,8 +143,11 @@ class CpmgHNDqZqSequence:
 
         # Calculation of the spectrometers corresponding to all the delays
         tau_cps = self._get_tau_cps(ncycs)
-        ncyc_list, delay_list = zip(*tau_cps.items(), strict=True)
-        d_cp = dict(zip(ncyc_list, spectrometer.delays(delay_list), strict=True))
+        if tau_cps:
+            ncyc_list, delay_list = zip(*tau_cps.items(), strict=True)
+            d_cp = dict(zip(ncyc_list, spectrometer.delays(delay_list), strict=True))
+        else:
+            d_cp = {}
 
         # Calculation of the spectrometers corresponding to all the pulses
         p9024090_1 = spectrometer.p9024090_nh_1[[0, 1], [0, 1]]

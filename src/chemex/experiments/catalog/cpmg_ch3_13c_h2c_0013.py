@@ -10,12 +10,13 @@ from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
 from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import RelaxationDataSettings
 from chemex.configuration.experiment import CpmgSettingsEvenNcycs
-from chemex.configuration.types import Delay, Frequency, PulseWidth
+from chemex.configuration.types import ChemicalShift, Delay, PulseWidth
 from chemex.containers.data import Data
 from chemex.experiments.experiment_types import (
     ProfileCalculation,
     cpmg_type,
     register_experiment_type,
+    validate_cpmg_tau_cps,
 )
 from chemex.nmr.basis import Basis
 from chemex.nmr.spectrometer import Spectrometer
@@ -30,7 +31,7 @@ class CpmgCh313CH2c0013Settings(CpmgSettingsEvenNcycs):
 
     name: Literal["cpmg_ch3_13c_h2c_0013"]
     time_t2: Delay = Field(description="Total CPMG relaxation delay (seconds)")
-    carrier: Frequency = Field(description="13C carrier frequency (Hz)")
+    carrier: ChemicalShift = Field(description="13C carrier position in ppm")
     pw90: PulseWidth = Field(description="13C 90-degree pulse width (seconds)")
     taub: float = Field(
         default=2.0e-3,
@@ -145,14 +146,15 @@ class CpmgCh313CH2c0013Sequence:
         self, ncycs: Array
     ) -> tuple[dict[float, float], dict[float, float], list[float]]:
         ncycs_above_one = ncycs[ncycs > 1]
-        ncyc_max = max(ncycs)
+        ncyc_max = float(np.max(ncycs)) if ncycs.size else 0.0
         tau_cps = {
             ncyc: self.settings.time_t2 / (4.0 * ncyc) - 0.75 * self.settings.pw90
             for ncyc in ncycs_above_one
         }
-        tau_cps[1.0] = (
-            self.settings.time_t2 / 4.0 - (2.0 / np.pi + 1.5) * self.settings.pw90
-        )
+        if np.any(ncycs == 1.0):
+            tau_cps[1.0] = (
+                self.settings.time_t2 / 4.0 - (2.0 / np.pi + 1.5) * self.settings.pw90
+            )
 
         ncycs_1 = np.floor(np.floor(ncycs * 0.5) * 2 + 0.1)
         ncycs_2 = np.floor(np.floor((ncycs + 1) * 0.5) * 2 + 0.1)
@@ -161,7 +163,8 @@ class CpmgCh313CH2c0013Sequence:
         deltas = {
             ncyc: 0.5 * self.settings.pw90 * (ncyc_max + 1 - ncyc) for ncyc in ncycs_4
         }
-        deltas[0.0] = 0.5 * self.settings.pw90 * (ncyc_max - 1)
+        deltas[0.0] = 0.5 * self.settings.pw90 * max(ncyc_max - 1.0, 0.0)
+        tau_cps = validate_cpmg_tau_cps(EXPERIMENT_NAME, tau_cps, deltas=deltas)
 
         delays = [
             self.settings.t_neg,

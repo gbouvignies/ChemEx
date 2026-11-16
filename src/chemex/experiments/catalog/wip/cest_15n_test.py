@@ -22,13 +22,13 @@ from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
 from chemex.typing import Array
 
-EXPERIMENT_NAME = "cest_15n_test"
+EXPERIMENT_NAME = "wip.cest_15n_test"
 
 OFFSET_REF = 1e4
 
 
 class Cest15NSettings(CestSettings, B1InhomogeneityMixin):
-    name: Literal["cest_15n_test"]
+    name: Literal["wip.cest_15n_test"]
     time_t1: float
     carrier: float
     b1_frq: float

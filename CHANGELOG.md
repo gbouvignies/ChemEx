@@ -28,6 +28,27 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   relaxation rates (`RateCH` / `RateCHDeuterated`). Non-`.mf` `"cn"` runs no
   longer bootstrap unspecified relaxation rates from `RateCH` and instead use
   spin-parameter defaults and user-supplied parameter files.
+- **Experimental `catalog/wip/` opt-in isolation:** Experimental Experiment
+  Types under `chemex.experiments.catalog.wip` are no longer registered by
+  default and now use consistent `wip.<module>` names (`cest_15n_test` was
+  renamed to `wip.cest_15n_test`). Requesting a `wip.*` (or legacy
+  `cest_15n_test`) Experiment Type without setting `CHEMEX_ENABLE_WIP=1` (or
+  calling `register_experiments(include_wip=True)`) fails with a concise known
+  failure explaining how to opt in.
+- **CPMG inter-pulse duty-cycle validation:** All CPMG Experiment Types now
+  validate that computed inter-pulse delays (`tau_cp` and `deltas`) are
+  non-negative and raise `CpmgDutyCycleError` (formatted as a known failure at
+  the CLI boundary during Experiment construction) when `ncyc` or pulse widths
+  exceed `time_t2`, instead of silently evaluating negative-time matrix
+  exponentials. Intentional analytical phase-correction delays
+  (`t_neg = -2 * pw90 / pi`) remain unchanged.
+- **Skewed $B_1$ inhomogeneity domain validation:** `SkewedDistributionConfig`
+  (`type = "skewed"`) now enforces the theoretical Azzalini skew-normal skewness
+  domain `|skewness| < 0.995272` rather than accepting `[-2, 2]` and clipping
+  internally. In `TruncatedSkewedDistributionConfig`
+  (`type = "truncated_skewed"`), `skewness` is explicitly documented as the
+  Azzalini slant/shape parameter $\alpha \in [-10, 10]$ (retained under the
+  `skewness` key for TOML compatibility).
 
 ### Fixed
 - Fixed kinetic model boundary, underflow, and slow-rate scaling defects across
@@ -94,6 +115,34 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
   fast-exchange titrations past 50% saturation and coalescence exceptional
   points, and produces accurate `shift_15n_sqmq` exchange shifts even when
   `CS_A` is omitted.
+- Fixed catalog pulse-sequence preparation, equilibration, $B_1$ distribution
+  quadrature, carrier schemas, and offset-sign edge cases:
+  - `cest_1hn_ip_ap`, `coscest_1hn_ip_ap`, and `cest_ch3_1h_ip_ap` now apply
+    `start_state` to longitudinal polarization (`iz`) after recycle-delay
+    recovery from the full identity bath (`["ie"]`), preserving thermal-bath
+    conservation ($\sum_s I_{e,s} = 1$) across all kinetic states while leaving
+    default `start_state` behavior unchanged; `coscest_13c` now honors
+    `start_state` via `get_start_magnetization(terms=self.settings.start_terms)`.
+  - `dcest_15n`, `dcest_13c`, and `coscest_13c` now reset
+    `spectrometer.offset_i = 0.0` before computing the pre-CEST equilibration
+    propagator `d_eq`, preventing stale RF offsets from prior profile
+    evaluations from contaminating `time_equil` evolution.
+  - Replaced the approximate skewness-to-shape mapping and `|skewness| = 0.01`
+    quadrature branch jump in `chemex.nmr.distributions.skewed` with the exact
+    analytical Azzalini inversion and `scipy.special.ndtr` tail evaluation,
+    removed dead broken CDF/Owen's-$T$ helpers in `truncated_skewed`, and
+    enforced non-negative $B_1$ quadrature nodes across `gaussian`, `hermite`,
+    `skewed`, and `truncated_skewed` at large `scale` up to `1.0`.
+  - Updated `carrier`, `carrier_dec`, `carrier_h`, and `carrier_n` annotations
+    across 23 CPMG and CEST catalog modules from `Frequency` (`Hz`) to
+    `ChemicalShift` (`ppm`) to match runtime chemical-shift semantics.
+  - `cpmg_hn_dq_zq` now subtracts `7/3 * max(pw90_n, pw90_h)` matching half the
+    composite `p9024090_nh` pulse duration and supports reference-only
+    `ncyc = 0` datasets (along with `cpmg_ch3_13c_h2c_0013`).
+  - `ISLiouvillianEngine` now preserves the gyromagnetic frequency-sign
+    convention on `offset_i` and `offset_s` when `h_larmor_frq` is unset
+    (`ppm_i == 0` / `ppm_s == 0`) instead of multiplying the offset Liouvillian
+    by `np.sign(0.0) == 0.0`.
 
 ## [2026.09.2] - 2026-09-23
 

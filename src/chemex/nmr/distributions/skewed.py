@@ -1,7 +1,8 @@
-"""Skewed B1 distribution using skew-normal distribution.
+"""Skewed B1 distribution using the Azzalini skew-normal distribution.
 
-Uses skew-normal distribution with configurable skewness parameter.
-The mode of the distribution is positioned at the nominal B1 value.
+Uses an Azzalini skew-normal distribution parameterized by its theoretical
+standardized third cumulant (skewness, |gamma_1| < 0.99527...) with the mode
+positioned at the nominal B1 value.
 """
 
 from __future__ import annotations
@@ -10,85 +11,73 @@ from typing import Literal
 
 import numpy as np
 from numpy.polynomial.legendre import leggauss
-from pydantic import Field
+from pydantic import Field, field_validator
 from scipy.optimize import minimize_scalar
-from scipy.special import erf
+from scipy.special import ndtr
 
 from chemex.nmr.constants import Distribution
 from chemex.nmr.distributions.registry import DistributionConfig, registry
 
+# Theoretical maximum skewness magnitude for an Azzalini skew-normal random
+# variable: ((4 - pi) / 2) * (2 / (pi - 2))**(3 / 2) ≈ 0.9952717464311563.
+MAX_SKEWNESS: float = float(0.5 * (4.0 - np.pi) * (2.0 / (np.pi - 2.0)) ** 1.5)
+
+
+def _validate_skewness(skewness: float) -> float:
+    """Validate that skewness lies strictly inside the skew-normal domain."""
+    if not np.isfinite(skewness) or abs(skewness) >= MAX_SKEWNESS:
+        msg = (
+            f"Skewness {skewness} is outside the valid Azzalini skew-normal range "
+            f"(-{MAX_SKEWNESS:.6f}, {MAX_SKEWNESS:.6f})"
+        )
+        raise ValueError(msg)
+    return float(skewness)
+
+
+def _skewness_to_alpha_and_omega(skewness: float, scale: float) -> tuple[float, float]:
+    """Invert Azzalini's skewness formula analytically to (alpha, omega).
+
+    For X ~ SN(xi, omega, alpha) with delta = alpha / sqrt(1 + alpha^2):
+        gamma_1 = ((4 - pi) / 2) * (delta * sqrt(2 / pi))^3 / (1 - 2*delta^2/pi)^(3/2)
+        Var(X)  = omega^2 * (1 - 2*delta^2/pi) = scale^2
+    Letting c = (2 * |gamma_1| / (4 - pi))^(2 / 3) gives:
+        2*delta^2/pi = c / (1 + c),   1 - 2*delta^2/pi = 1 / (1 + c),
+        1 - delta^2  = (1 - ((pi - 2) / 2) * c) / (1 + c) > 0,
+        alpha = sign(gamma_1) * sqrt((pi / 2) * c / (1 - ((pi - 2) / 2) * c)),
+        omega = scale * sqrt(1 + c).
+    """
+    _validate_skewness(skewness)
+    if skewness == 0.0:
+        return 0.0, float(scale)
+    c = (2.0 * abs(skewness) / (4.0 - np.pi)) ** (2.0 / 3.0)
+    denom = 1.0 - 0.5 * (np.pi - 2.0) * c
+    alpha = float(np.copysign(np.sqrt(0.5 * np.pi * c / denom), skewness))
+    omega = float(scale * np.sqrt(1.0 + c))
+    return alpha, omega
+
 
 def _skewnorm_pdf(x: np.ndarray, xi: float, omega: float, alpha: float) -> np.ndarray:
-    """Probability density function of skew-normal distribution.
-
-    Parameters
-    ----------
-    x : np.ndarray
-        Values at which to evaluate PDF
-    xi : float
-        Location parameter
-    omega : float
-        Scale parameter (must be > 0)
-    alpha : float
-        Shape parameter (controls skewness)
-
-    Returns
-    -------
-    np.ndarray
-        PDF values at x
-
-    Notes
-    -----
-    PDF formula: f(x) = (2/omega) * phi((x-xi)/omega) * Phi(alpha*(x-xi)/omega)
-    where phi is standard normal PDF and Phi is standard normal CDF
-
-    """
+    """Probability density function of the skew-normal distribution."""
     z = (x - xi) / omega
-
-    # Standard normal PDF
-    phi = (1 / np.sqrt(2 * np.pi)) * np.exp(-0.5 * z * z)
-
-    # Standard normal CDF using error function
-    phi_cdf = 0.5 * (1 + erf(alpha * z / np.sqrt(2)))
-
-    # Skew-normal PDF
-    pdf = (2 / omega) * phi * phi_cdf
-
-    return pdf
+    phi = (1.0 / np.sqrt(2.0 * np.pi)) * np.exp(-0.5 * z * z)
+    return (2.0 / omega) * phi * ndtr(alpha * z)
 
 
 def _compute_mode_location(alpha: float) -> float:
-    """Compute the mode location of standard skew-normal distribution.
-
-    For a skew-normal with xi=0 and omega=1, find the location of the mode
-    (maximum of the PDF). This must be solved numerically.
-
-    Parameters
-    ----------
-    alpha : float
-        Shape parameter (controls skewness)
-
-    Returns
-    -------
-    float
-        Mode location relative to xi (in units of omega)
-
-    """
-    # For symmetric case (alpha=0), mode is at 0
-    if abs(alpha) < 0.01:
+    """Compute the mode of SN(0, 1, alpha), bracketed between 0 and E[Z]."""
+    if alpha == 0.0:
         return 0.0
 
-    # For skewed case, find the maximum of the PDF numerically
-    # Search in a reasonable range
-    search_range = (-3, 3) if alpha > 0 else (-3, 3)
+    delta = alpha / np.sqrt(1.0 + alpha * alpha)
+    mu_z = float(delta * np.sqrt(2.0 / np.pi))
+    low, high = (0.0, mu_z) if mu_z >= 0.0 else (mu_z, 0.0)
 
     result = minimize_scalar(
-        lambda x: -_skewnorm_pdf(np.array([x]), 0.0, 1.0, alpha)[0],
-        bounds=search_range,
+        lambda x: -float(_skewnorm_pdf(np.array([x]), 0.0, 1.0, alpha)[0]),
+        bounds=(low, high),
         method="bounded",
     )
-
-    return result.x
+    return float(result.x)
 
 
 def generate(
@@ -97,127 +86,92 @@ def generate(
     skewness: float,
     res: int,
 ) -> Distribution:
-    """Generate skewed B1 field distribution for ChemEx integration.
+    """Generate a skewed B1 field distribution using Azzalini's skew-normal law.
 
-    Uses skew-normal distribution with **mode at the nominal value**, specified
-    width, and configurable skewness. Falls back to Hermite when |skewness| < 0.01.
-
-    Parameters
-    ----------
-    value : float
-        Nominal B1 field value (mode of the distribution, in kHz or Hz)
-    scale : float
-        Width parameter as fraction of value (e.g., 0.10 = 10% of nominal)
-        Approximately corresponds to std deviation for small skewness
-    skewness : float
-        Skewness parameter (dimensionless)
-        - skewness < 0: left tail extended (negative skew)
-        - skewness ≈ 0: symmetric (Gaussian)
-        - skewness > 0: right tail extended (positive skew)
-        Typical range: -1.5 to +1.5
-    res : int
-        Number of integration points (recommended: 11-21)
-
-    Returns
-    -------
-    Distribution
-        B1 values and weights for numerical integration
-
-    Notes
-    -----
-    The distribution is parameterized so that the **mode** (peak of the PDF)
-    is positioned exactly at the nominal B1 value. This ensures that the most
-    probable B1 value matches the target.
-
+    Uses a skew-normal distribution with its mode positioned at ``value``,
+    relative standard deviation ``scale``, and third standardized moment
+    ``skewness`` strictly inside ``(-MAX_SKEWNESS, MAX_SKEWNESS)``
+    (``|skewness| < 0.99527...``). Exact ``skewness == 0.0`` delegates to
+    Gauss-Hermite quadrature; nonzero skewness uses smooth Gauss-Legendre
+    quadrature truncated below ``B1 = 0``.
     """
-    # Handle edge cases
-    if scale in (0.0, np.inf) or res <= 1:
-        return Distribution(np.array([value]), np.array([1.0]))
+    if value < 0.0:
+        msg = f"Nominal B1 value must be non-negative, got {value}"
+        raise ValueError(msg)
+    if scale < 0.0:
+        msg = f"Scale must be non-negative, got {scale}"
+        raise ValueError(msg)
+    _validate_skewness(skewness)
 
-    # For nearly symmetric distributions, use Hermite (more efficient)
-    if abs(skewness) < 0.01:
+    if value == 0.0 or scale in (0.0, np.inf) or res <= 1:
+        return Distribution(np.array([float(value)]), np.array([1.0]))
+
+    if skewness == 0.0:
         from chemex.nmr.distributions.hermite import generate as hermite_generate
 
         return hermite_generate(value, scale, res)
 
-    # Convert skewness to delta parameter
-    if abs(skewness) < 2.0:
-        delta = np.sign(skewness) * np.power(
-            abs(skewness) / (0.995 * ((4 - np.pi) / 2)), 1 / 3
-        )
-    else:
-        # Asymptotic approximation for extreme skewness
-        delta = np.sign(skewness) * (1.0 - 0.5 / abs(skewness))
-
-    # Ensure delta is in valid range
-    delta = np.clip(delta, -0.995, 0.995)
-
-    # Convert delta to alpha (shape parameter)
-    alpha = delta / np.sqrt(1 - delta**2)
-
-    # Estimate omega (scale parameter) from width
-    skew_factor = 1.0 + 0.15 * abs(skewness)
-    omega = scale * skew_factor
-
-    # Compute mode location for standard skew-normal (xi=0, omega=1)
+    alpha, omega = _skewness_to_alpha_and_omega(skewness, scale)
     mode_rel = _compute_mode_location(alpha)
 
-    # Set xi so that mode is at relative position 1.0 (nominal value)
-    # mode_actual = xi + omega * mode_rel = 1.0
-    # Therefore: xi = 1.0 - omega * mode_rel
+    # Place the skew-normal mode at relative B1 = 1.0 (the nominal value).
     xi = 1.0 - omega * mode_rel
 
-    # Get Gauss-Legendre quadrature nodes and weights
+    # Adapt quadrature support to the skew-normal tail decay while enforcing B1 >= 0.
+    tail_factor = float(np.sqrt(1.0 + alpha * alpha))
+    z_min = -5.0 / tail_factor if alpha > 0.0 else -5.0
+    z_max = 5.0 / tail_factor if alpha < 0.0 else 5.0
+    rel_b1_min = max(0.0, xi + z_min * omega)
+    rel_b1_max = xi + z_max * omega
+
     nodes, weights_gl = leggauss(res)
-
-    # Define integration bounds (capture 99.9% of probability)
-    rel_b1_min = xi - 4.0 * omega
-    rel_b1_max = xi + 4.0 * omega
-
-    # Ensure bounds are positive and reasonable
-    rel_b1_min = max(0.3, rel_b1_min)  # Don't go below 30% of nominal
-    rel_b1_max = min(2.0, rel_b1_max)  # Don't exceed 200% of nominal
-
-    # Transform Gauss-Legendre nodes from [-1, 1] to [rel_b1_min, rel_b1_max]
     rel_b1_values = 0.5 * (rel_b1_max - rel_b1_min) * nodes + 0.5 * (
         rel_b1_max + rel_b1_min
     )
 
-    # Calculate skew-normal PDF at each relative B1 value
     pdf_values = _skewnorm_pdf(rel_b1_values, xi, omega, alpha)
-
-    # Weight by PDF and Jacobian of transformation
     weights = 0.5 * (rel_b1_max - rel_b1_min) * weights_gl * pdf_values
+    weights_sum = float(np.sum(weights))
+    if weights_sum > 0.0:
+        weights = weights / weights_sum
+    else:
+        weights = weights_gl / np.sum(weights_gl)
 
-    # Normalize weights to sum to 1.0
-    weights = weights / np.sum(weights)
-
-    # Convert relative values to absolute B1 values
-    b1_values = rel_b1_values * value
-
-    return Distribution(b1_values, weights)
+    return Distribution(rel_b1_values * value, weights)
 
 
 class SkewedDistributionConfig(DistributionConfig):
-    """Configuration for skewed B1 distribution.
+    """Configuration for Azzalini skew-normal B1 distribution.
 
     Attributes
     ----------
     type : Literal["skewed"]
         Distribution type identifier
     scale : float
-        Width parameter as fraction of nominal value
+        Standard deviation as fraction of nominal value
     res : int
         Number of integration points
     skewness : float
-        Skewness parameter
+        Theoretical skewness (third standardized moment), strictly inside
+        ``(-0.995271..., +0.995271...)``
 
     """
 
     type: Literal["skewed"] = "skewed"
     scale: float = Field(default=0.1, ge=0.0, le=1.0)
     res: int = Field(default=11, ge=1, le=51)
-    skewness: float = Field(default=0.0, ge=-2.0, le=2.0)
+    skewness: float = Field(
+        default=0.0,
+        description=(
+            "Theoretical third standardized moment of the Azzalini skew-normal "
+            "distribution (|skewness| < 0.995272)"
+        ),
+    )
+
+    @field_validator("skewness")
+    @classmethod
+    def _check_skewness_bounds(cls, value: float) -> float:
+        return _validate_skewness(value)
 
     def get_distribution(self, value: float) -> Distribution:
         """Generate the skewed distribution."""

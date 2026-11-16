@@ -20,35 +20,25 @@ def generate(
     scale: float,
     res: int,
 ) -> Distribution:
-    """Generate simple Gaussian distribution with linear grid.
+    """Generate simple Gaussian distribution with a non-negative linear grid.
 
-    Uses a linear grid from -2σ to +2σ with Gaussian PDF weights.
-    This is the original ChemEx implementation for backward compatibility.
-
-    Parameters
-    ----------
-    value : float
-        Nominal B1 field value (kHz or Hz)
-    scale : float
-        Standard deviation as fraction of value (e.g., 0.10 = 10%)
-    res : int
-        Number of grid points
-
-    Returns
-    -------
-    Distribution
-        B1 values and Gaussian PDF weights
-
-    Notes
-    -----
-    - Grid spans [-2, 2] standard deviations
-    - Weights are normalized Gaussian PDF values
-    - Original ChemEx implementation for backward compatibility
-
+    Uses a linear grid from ``max(0, 1 - 2*scale)`` to ``1 + 2*scale`` (in
+    units of ``value``) with Gaussian PDF weights. For ``scale <= 0.5`` this
+    matches the historical ``[-2σ, +2σ]`` ChemEx grid identically while
+    preventing unphysical negative B1 points when ``scale > 0.5``.
     """
-    if scale not in (0.0, np.inf) and res > 1:
-        grid = np.linspace(-2.0, 2.0, res)
-        distribution = grid * scale + 1.0
+    if value < 0.0:
+        msg = f"Nominal B1 value must be non-negative, got {value}"
+        raise ValueError(msg)
+    if scale < 0.0:
+        msg = f"Scale must be non-negative, got {scale}"
+        raise ValueError(msg)
+
+    if value > 0.0 and scale not in (0.0, np.inf) and res > 1:
+        rel_min = max(0.0, 1.0 - 2.0 * scale)
+        rel_max = 1.0 + 2.0 * scale
+        distribution = np.linspace(rel_min, rel_max, res)
+        grid = (distribution - 1.0) / scale
     else:
         grid = np.array([0.0])
         distribution = np.array([1.0])
@@ -63,7 +53,8 @@ class GaussianDistributionConfig(DistributionConfig):
     """Configuration for simple Gaussian B1 distribution with linear grid.
 
     This is the original ChemEx B1 inhomogeneity method using a linear grid
-    from -2 to +2 standard deviations with Gaussian PDF weights.
+    from -2 to +2 standard deviations (clamped below at B1 = 0) with Gaussian
+    PDF weights.
 
     Attributes
     ----------

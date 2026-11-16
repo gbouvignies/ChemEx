@@ -10,12 +10,13 @@ from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
 from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import RelaxationDataSettings
 from chemex.configuration.experiment import CpmgSettingsEvenNcycs
-from chemex.configuration.types import Delay, Frequency, PulseWidth
+from chemex.configuration.types import ChemicalShift, Delay, PulseWidth
 from chemex.containers.data import Data
 from chemex.experiments.experiment_types import (
     ProfileCalculation,
     cpmg_type,
     register_experiment_type,
+    validate_cpmg_tau_cps,
 )
 from chemex.nmr.basis import Basis
 from chemex.nmr.spectrometer import Spectrometer
@@ -30,7 +31,7 @@ class CpmgCh313CH2cSettings(CpmgSettingsEvenNcycs):
 
     name: Literal["cpmg_ch3_13c_h2c"]
     time_t2: Delay = Field(description="Total CPMG relaxation delay in seconds")
-    carrier: Frequency = Field(description="13C carrier position in Hz")
+    carrier: ChemicalShift = Field(description="13C carrier position in ppm")
     pw90: PulseWidth = Field(description="90-degree pulse width in seconds")
     taub: float = 2.0e-3
     time_equil: Delay = 0.0
@@ -96,6 +97,7 @@ class CpmgCh313CH2cSequence:
             ncyc: self.settings.time_t2 / (4.0 * ncyc) - self.settings.pw90
             for ncyc in ncycs_no_ref
         }
+        tau_cps = validate_cpmg_tau_cps(EXPERIMENT_NAME, tau_cps)
         delays = [
             self.settings.t_neg,
             self.settings.taub,

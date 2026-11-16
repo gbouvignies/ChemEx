@@ -16,6 +16,7 @@ from chemex.experiments.experiment_types import (
     ProfileCalculation,
     cpmg_type,
     register_experiment_type,
+    validate_cpmg_tau_cps,
 )
 from chemex.nmr.basis import Basis
 from chemex.nmr.spectrometer import Spectrometer
@@ -83,6 +84,7 @@ class CpmgCh3MqSequence:
     def _get_delays(self, ncycs: Array) -> tuple[dict[float, float], list[float]]:
         ncycs_no_refs = ncycs[ncycs > 0]
         tau_cps = {ncyc: self.settings.time_t2 / (4.0 * ncyc) for ncyc in ncycs_no_refs}
+        tau_cps = validate_cpmg_tau_cps(EXPERIMENT_NAME, tau_cps)
         delays = [self.settings.t_zeta, *tau_cps.values()]
         return tau_cps, delays
 

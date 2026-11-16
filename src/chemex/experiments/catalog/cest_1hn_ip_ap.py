@@ -10,7 +10,7 @@ from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
 from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import CestDataSettingsNoRef
 from chemex.configuration.experiment import B1InhomogeneityMixin, CestSettings
-from chemex.configuration.types import Frequency
+from chemex.configuration.types import ChemicalShift
 from chemex.containers.data import Data
 from chemex.experiments.experiment_types import (
     ProfileCalculation,
@@ -32,7 +32,7 @@ class Cest1HnIpApSettings(CestSettings, B1InhomogeneityMixin):
 
     name: Literal["cest_1hn_ip_ap"]
     time_t1: float = Field(description="Length of the CEST block in seconds")
-    carrier: Frequency = Field(description="1H carrier position in Hz")
+    carrier: ChemicalShift = Field(description="1H carrier position in ppm")
     d1: float = Field(description="Relaxation delay in seconds")
     taua: float = 2.38e-3
     eta_block: int = 0
@@ -40,8 +40,8 @@ class Cest1HnIpApSettings(CestSettings, B1InhomogeneityMixin):
     @computed_field
     @property
     def start_terms(self) -> list[str]:
-        """Starting longitudinal identity components."""
-        return self.get_start_terms("ie")
+        """Starting longitudinal polarization components."""
+        return self.get_start_terms("iz")
 
     @computed_field
     @property
@@ -122,10 +122,11 @@ class Cest1HnIpApSequence:
         pp180_sx = spectrometer.perfect180_s[0]
         pp180_isx = spectrometer.perfect180_i[0] @ spectrometer.perfect180_s[0]
 
-        start = d_taud @ spectrometer.get_start_magnetization(
-            terms=self.settings.start_terms,
+        start = d_taud @ spectrometer.get_start_magnetization(terms=["ie"])
+        start = spectrometer.keep(
+            start,
+            components=["ie", *self.settings.start_terms],
         )
-        start = spectrometer.keep(start, components=["ie", "iz"])
 
         intensities: dict[float, float] = {}
 
