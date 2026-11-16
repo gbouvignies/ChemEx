@@ -122,7 +122,10 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
     recovery from the full identity bath (`["ie"]`), preserving thermal-bath
     conservation ($\sum_s I_{e,s} = 1$) across all kinetic states while leaving
     default `start_state` behavior unchanged; `coscest_13c` now honors
-    `start_state` via `get_start_magnetization(terms=self.settings.start_terms)`.
+    `start_state` via `get_start_magnetization(terms=self.settings.start_terms)`
+    (aligning unscaled simulation normalization with `cest_13c` and `dcest_13c`,
+    while leaving scaled fits and $I / I_0$ profiles unchanged when
+    `start_state` is omitted).
   - `dcest_15n`, `dcest_13c`, and `coscest_13c` now reset
     `spectrometer.offset_i = 0.0` before computing the pre-CEST equilibration
     propagator `d_eq`, preventing stale RF offsets from prior profile

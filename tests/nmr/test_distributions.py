@@ -507,3 +507,9 @@ class TestNonNegativeB1Invariants:
             gen_fn(-1.0, 0.1)
         with pytest.raises(ValueError, match="non-negative"):
             gen_fn(10.0, -0.1)
+        with pytest.raises(ValueError, match="non-negative"):
+            gen_fn(float("nan"), 0.1)
+        with pytest.raises(ValueError, match="non-negative"):
+            gen_fn(float("inf"), 0.1)
+        with pytest.raises(ValueError, match="non-negative"):
+            gen_fn(10.0, float("nan"))

@@ -85,14 +85,19 @@ def generate(
         Non-negative B1 values and normalized quadrature weights.
 
     """
-    if value < 0.0:
-        msg = f"Nominal B1 value must be non-negative, got {value}"
+    if not np.isfinite(value) or value < 0.0:
+        msg = f"Nominal B1 value must be finite and non-negative, got {value}"
         raise ValueError(msg)
-    if scale < 0.0:
+    if np.isnan(scale) or scale < 0.0:
         msg = f"Scale must be non-negative, got {scale}"
         raise ValueError(msg)
+    if not np.isfinite(skewness):
+        msg = f"Skewness slant alpha must be finite, got {skewness}"
+        raise ValueError(msg)
 
-    if lower_bound is not None and (lower_bound < 0.0 or lower_bound > value):
+    if lower_bound is not None and (
+        not np.isfinite(lower_bound) or lower_bound < 0.0 or lower_bound > value
+    ):
         msg = f"lower_bound ({lower_bound}) must satisfy 0 <= lower_bound <= value ({value})"
         raise ValueError(msg)
 

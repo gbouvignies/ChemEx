@@ -27,10 +27,10 @@ def generate(
     matches the historical ``[-2σ, +2σ]`` ChemEx grid identically while
     preventing unphysical negative B1 points when ``scale > 0.5``.
     """
-    if value < 0.0:
-        msg = f"Nominal B1 value must be non-negative, got {value}"
+    if not np.isfinite(value) or value < 0.0:
+        msg = f"Nominal B1 value must be finite and non-negative, got {value}"
         raise ValueError(msg)
-    if scale < 0.0:
+    if np.isnan(scale) or scale < 0.0:
         msg = f"Scale must be non-negative, got {scale}"
         raise ValueError(msg)
 

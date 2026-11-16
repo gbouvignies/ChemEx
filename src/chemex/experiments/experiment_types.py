@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import tomllib
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, MutableMapping
 from copy import deepcopy
 from dataclasses import dataclass
 from functools import partial
@@ -362,7 +362,7 @@ def validate_cpmg_tau_cps(
     experiment_name: str,
     tau_cps: dict[float, float],
     *,
-    deltas: Mapping[float, float] | None = None,
+    deltas: MutableMapping[float, float] | None = None,
 ) -> dict[float, float]:
     """Validate that CPMG inter-pulse and compensation delays are non-negative."""
     validated: dict[float, float] = {}
@@ -377,7 +377,7 @@ def validate_cpmg_tau_cps(
         validated[float(ncyc)] = 0.0 if delay < 0.0 else delay
 
     if deltas is not None:
-        for ncyc, delta in deltas.items():
+        for ncyc, delta in list(deltas.items()):
             delay = float(delta)
             if delay < -_DUTY_CYCLE_ATOL:
                 raise CpmgDutyCycleError(
@@ -386,7 +386,35 @@ def validate_cpmg_tau_cps(
                     tau_cp=delay,
                     delay_name="delta",
                 )
+            if delay < 0.0:
+                deltas[ncyc] = 0.0
     return validated
+
+
+def _validate_pulse_sequence_delays(
+    pulse_sequence: PulseSequence,
+    metadata: object,
+    *,
+    filename: Path,
+    spin_system: SpinSystem,
+) -> None:
+    """Eagerly validate CPMG inter-pulse delays during Experiment construction."""
+    delay_validator = getattr(pulse_sequence, "_get_delays", None)
+    if delay_validator is None:
+        delay_validator = getattr(pulse_sequence, "_get_tau_cps", None)
+    if not callable(delay_validator):
+        return
+    try:
+        delay_validator(metadata)
+    except CpmgDutyCycleError as error:
+        raise CpmgDutyCycleError(
+            error.experiment_type,
+            ncyc=error.ncyc,
+            tau_cp=error.tau_cp,
+            delay_name=error.delay_name,
+            filename=filename,
+            spin_system=str(spin_system),
+        ) from error
 
 
 def register_experiment_type(experiment_type: ExperimentType[Any]) -> None:
@@ -703,21 +731,12 @@ def _build[ConfigT: GenericConfig](
     profiles: list[Profile] = []
     for spin_system, data in selected_dataset:
         calculation = experiment_type_.create_profile_calculation(config, spin_system)
-        delay_validator = getattr(calculation.pulse_sequence, "_get_delays", None)
-        if delay_validator is None:
-            delay_validator = getattr(calculation.pulse_sequence, "_get_tau_cps", None)
-        if callable(delay_validator):
-            try:
-                delay_validator(data.metadata)
-            except CpmgDutyCycleError as error:
-                raise CpmgDutyCycleError(
-                    error.experiment_type,
-                    ncyc=error.ncyc,
-                    tau_cp=error.tau_cp,
-                    delay_name=error.delay_name,
-                    filename=source.filename,
-                    spin_system=str(spin_system),
-                ) from error
+        _validate_pulse_sequence_delays(
+            calculation.pulse_sequence,
+            data.metadata,
+            filename=source.filename,
+            spin_system=spin_system,
+        )
         filterer = experiment_type_.support.create_filterer(
             config=config,
             spectrometer=calculation.spectrometer,

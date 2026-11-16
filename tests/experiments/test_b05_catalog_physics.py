@@ -38,7 +38,10 @@ from chemex.experiments.catalog import (
     dcest_13c,
     dcest_15n,
 )
-from chemex.experiments.experiment_types import CpmgDutyCycleError
+from chemex.experiments.experiment_types import (
+    CpmgDutyCycleError,
+    validate_cpmg_tau_cps,
+)
 from chemex.experiments.loader import register_experiments
 from chemex.models.model import ModelSpec
 from chemex.parameters.spin_system import SpinSystem
@@ -730,3 +733,43 @@ def test_cpmg_hn_dq_zq_uses_max_pw90_and_handles_reference_only_planes() -> None
     ref_calc = calc.pulse_sequence.calculate(calc.spectrometer, ref_data)
     assert ref_calc.shape == (2,)
     np.testing.assert_allclose(ref_calc, [0.85, 0.85], rtol=1e-12)
+
+
+def test_validate_cpmg_tau_cps_clamps_sub_ulp_negative_tau_and_delta() -> None:
+    """Sub-ULP negative floating-point noise in tau_cps and deltas is clamped to 0.0."""
+    deltas = {0.0: -5e-17, 4.0: 1.0e-3}
+    validated = validate_cpmg_tau_cps(
+        "cpmg_15n_ip_0013",
+        {4.0: -2e-17},
+        deltas=deltas,
+    )
+    assert validated == {4.0: 0.0}
+    assert deltas[0.0] == 0.0
+    assert deltas[4.0] == 1.0e-3
+
+
+def test_cpmg_ch3_1h_sq_validates_positive_ncyc_max_and_cycle_cap() -> None:
+    """cpmg_ch3_1h_sq rejects non-positive ncyc_max and data ncyc > ncyc_max."""
+    with pytest.raises(ValueError, match="greater than 0"):
+        cpmg_ch3_1h_sq.CpmgCh31HSqSettings.model_validate(
+            {
+                "name": "cpmg_ch3_1h_sq",
+                "time_t2": 0.04,
+                "carrier": 0.8,
+                "pw90": 10e-6,
+                "ncyc_max": 0,
+            }
+        )
+
+    settings = cpmg_ch3_1h_sq.CpmgCh31HSqSettings.model_validate(
+        {
+            "name": "cpmg_ch3_1h_sq",
+            "time_t2": 0.04,
+            "carrier": 0.8,
+            "pw90": 10e-6,
+            "ncyc_max": 10,
+        }
+    )
+    seq = cpmg_ch3_1h_sq.CpmgCh31HSqSequence(settings)
+    with pytest.raises(CpmgDutyCycleError, match="delta"):
+        seq._get_delays(np.array([0.0, 12.0]))

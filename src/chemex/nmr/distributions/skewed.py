@@ -95,10 +95,10 @@ def generate(
     Gauss-Hermite quadrature; nonzero skewness uses smooth Gauss-Legendre
     quadrature truncated below ``B1 = 0``.
     """
-    if value < 0.0:
-        msg = f"Nominal B1 value must be non-negative, got {value}"
+    if not np.isfinite(value) or value < 0.0:
+        msg = f"Nominal B1 value must be finite and non-negative, got {value}"
         raise ValueError(msg)
-    if scale < 0.0:
+    if np.isnan(scale) or scale < 0.0:
         msg = f"Scale must be non-negative, got {scale}"
         raise ValueError(msg)
     _validate_skewness(skewness)

@@ -33,7 +33,7 @@ class CpmgCh31HSqSettings(CpmgSettings):
     time_t2: Delay = Field(description="Total CPMG relaxation delay in seconds")
     carrier: ChemicalShift = Field(description="1H carrier position in ppm")
     pw90: PulseWidth = Field(description="90-degree pulse width in seconds")
-    ncyc_max: int = Field(description="Maximum number of CPMG cycles")
+    ncyc_max: int = Field(gt=0, description="Maximum number of CPMG cycles")
     taua: float = 2.0e-3
     comp180_flg: bool = True
     ipap_flg: bool = False
