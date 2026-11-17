@@ -1,124 +1,50 @@
-"""Custom B1 distribution with user-defined scales and weights.
-
-Allows users to specify explicit B1 scaling factors and their weights
-directly in the TOML configuration.
-"""
+"""Custom B1 distribution with user-defined relative scales and weights."""
 
 from __future__ import annotations
 
-from typing import Literal
+import math
+from collections.abc import Sequence
+from typing import Any
 
 import numpy as np
-from pydantic import Field, field_validator
-from pydantic_core.core_schema import ValidationInfo
 
 from chemex.nmr.constants import Distribution
-from chemex.nmr.distributions.registry import DistributionConfig, registry
 
 
 def generate(
     value: float,
-    scales: list[float],
-    weights: list[float],
+    scales: Sequence[float],
+    weights: Sequence[float],
 ) -> Distribution:
-    """Generate custom B1 distribution from user-specified scales and weights.
+    """Generate custom B1 distribution from user-specified scales and weights."""
+    if not math.isfinite(value) or value < 0.0:
+        msg = f"Nominal B1 value must be finite and non-negative, got {value}"
+        raise ValueError(msg)
 
-    Parameters
-    ----------
-    value : float
-        Nominal B1 field value (kHz or Hz)
-    scales : list[float]
-        Scaling factors relative to nominal value (e.g., [0.95, 1.0, 1.05])
-    weights : list[float]
-        Weights for each scale (will be normalized to sum to 1.0)
+    scales_array = np.asarray(scales, dtype=float)
+    weights_array = np.asarray(weights, dtype=float)
 
-    Returns
-    -------
-    Distribution
-        B1 values and normalized weights
+    if scales_array.ndim != 1 or scales_array.size == 0:
+        msg = "Custom B1 scales must be a non-empty 1D sequence"
+        raise ValueError(msg)
+    if weights_array.ndim != 1 or weights_array.size != scales_array.size:
+        msg = "scales and weights must have the same non-empty length"
+        raise ValueError(msg)
+    if not np.all(np.isfinite(scales_array)) or np.any(scales_array <= 0.0):
+        msg = "All scales must be finite and positive"
+        raise ValueError(msg)
+    if not np.all(np.isfinite(weights_array)) or np.any(weights_array <= 0.0):
+        msg = "All weights must be finite and positive"
+        raise ValueError(msg)
 
-    Examples
-    --------
-    >>> # Three-point distribution around nominal
-    >>> dist = generate(
-    ...     value=15.95,
-    ...     scales=[0.95, 1.0, 1.05],
-    ...     weights=[0.25, 0.5, 0.25]
-    ... )
-    >>> print(f"B1 values: {dist.values}")
-    >>> print(f"Weights sum: {dist.weights.sum()}")
-
-    Notes
-    -----
-    - Weights are automatically normalized to sum to 1.0
-    - Scales are multiplicative factors applied to the nominal value
-    - Use scales=[1.0] and weights=[1.0] for no inhomogeneity
-
-    """
-    scales_array = np.array(scales, dtype=float)
-    weights_array = np.array(weights, dtype=float)
-
-    # Normalize weights
-    weights_array = weights_array / weights_array.sum()
-
-    # Compute B1 values
-    b1_values = value * scales_array
-
-    return Distribution(b1_values, weights_array)
+    normalized_weights = weights_array / np.sum(weights_array)
+    return Distribution(float(value) * scales_array, normalized_weights)
 
 
-class CustomDistributionConfig(DistributionConfig):
-    """Configuration for custom B1 distribution with user-defined points.
+def __getattr__(name: str) -> Any:
+    if name == "CustomDistributionConfig":
+        from chemex.configuration.b1_config import CustomDistributionConfig
 
-    Attributes
-    ----------
-    type : Literal["custom"]
-        Distribution type identifier
-    scales : list[float]
-        Scaling factors relative to nominal value (e.g., [0.95, 1.0, 1.05])
-        Each scale is multiplied by the nominal B1 value
-    weights : list[float]
-        Weights for each scale point (automatically normalized to sum to 1.0)
-        Must have the same length as scales
-
-    """
-
-    type: Literal["custom"] = "custom"
-    scales: list[float] = Field(min_length=1)
-    weights: list[float] = Field(min_length=1)
-
-    @field_validator("scales")
-    @classmethod
-    def _validate_scales_positive(cls, v: list[float]) -> list[float]:
-        """Ensure all scales are positive."""
-        if any(s <= 0.0 for s in v):
-            msg = "All scales must be positive"
-            raise ValueError(msg)
-        return v
-
-    @field_validator("weights")
-    @classmethod
-    def _validate_weights_positive(cls, v: list[float]) -> list[float]:
-        """Ensure all weights are positive."""
-        if any(w <= 0.0 for w in v):
-            msg = "All weights must be positive"
-            raise ValueError(msg)
-        return v
-
-    @field_validator("weights")
-    @classmethod
-    def _validate_same_length(cls, v: list[float], info: ValidationInfo) -> list[float]:
-        """Ensure scales and weights have the same length."""
-        if "scales" in info.data and len(v) != len(info.data["scales"]):
-            msg = "scales and weights must have the same length"
-            raise ValueError(msg)
-        return v
-
-    def get_distribution(self, value: float) -> Distribution:
-        """Generate the custom distribution."""
-        return generate(value, self.scales, self.weights)
-
-
-def register() -> None:
-    """Register this distribution with the registry."""
-    registry.register("custom", generate, CustomDistributionConfig)
+        return CustomDistributionConfig
+    msg = f"module {__name__!r} has no attribute {name!r}"
+    raise AttributeError(msg)

@@ -2,13 +2,19 @@ from __future__ import annotations
 
 import numpy as np
 
+from chemex.configuration.b1_config import (
+    CustomDistributionConfig,
+    GaussianDistributionConfig,
+)
 from chemex.configuration.conditions import Conditions
 from chemex.models.model import ModelSpec
 from chemex.nmr._engine.engine import ISLiouvillianEngine
 from chemex.nmr.basis import Basis
 from chemex.nmr.constants import Distribution
-from chemex.nmr.distributions.custom import CustomDistributionConfig
-from chemex.nmr.distributions.gaussian import GaussianDistributionConfig
+from chemex.nmr.distributions import custom as custom_dist
+from chemex.nmr.distributions import dephasing as dephasing_dist
+from chemex.nmr.distributions import gaussian as gaussian_dist
+from chemex.nmr.distributions import skewed as skewed_dist
 from chemex.nmr.distributions.gaussian import generate as generate_gaussian
 from chemex.parameters.spin_system import SpinSystem
 
@@ -87,3 +93,15 @@ def test_set_b1_i_inhomogeneity_replaces_custom_distribution_with_gaussian() -> 
     expected = generate_gaussian(10.0, scale=0.15, res=7)
     np.testing.assert_allclose(liouvillian.b1_i_dist.values, expected.values)
     np.testing.assert_allclose(liouvillian.b1_i_dist.weights, expected.weights)
+
+
+def test_lazy_backward_compatible_config_exports_from_distribution_modules() -> None:
+    from chemex.configuration.b1_config import (
+        DephasingConfig,
+        SkewedDistributionConfig,
+    )
+
+    assert custom_dist.CustomDistributionConfig is CustomDistributionConfig
+    assert dephasing_dist.DephasingConfig is DephasingConfig
+    assert gaussian_dist.GaussianDistributionConfig is GaussianDistributionConfig
+    assert skewed_dist.SkewedDistributionConfig is SkewedDistributionConfig

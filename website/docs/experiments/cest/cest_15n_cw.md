@@ -66,11 +66,11 @@ b1_frq_dec = 1000.0
 ## State of the observed resonance [optional, default: "a"]
 # observed_state = "a"
 
-## B1 inhomogeneity distribution (replaces b1_inh_scale/b1_inh_res)
+## B1 inhomogeneity distribution (required)
 [experiment.b1_distribution]
 type = "gaussian"
 scale = 0.1
-res = 11
+# res = 15  # optional override (automatic by default)
 
 [conditions]
 

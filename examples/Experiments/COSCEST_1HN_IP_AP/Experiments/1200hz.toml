@@ -8,7 +8,7 @@ cos_n = 3
 cos_res = 10
 b1_frq = 30.0
 
-b1_distribution = { type = "gaussian", scale = 0.1, res = 3 }
+b1_distribution = { type = "gaussian", scale = 0.1 }
 
 [conditions]
 h_larmor_frq = 800.2

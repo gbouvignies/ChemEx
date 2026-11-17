@@ -9,7 +9,7 @@ from chemex.nmr.constants import Distribution
 
 
 def _default_b1_profile() -> B1Profile:
-    return B1Profile.gaussian(1e32, scale=0.0, res=11)
+    return B1Profile(nominal=1e32)
 
 
 def _default_jeff_distribution() -> Distribution:

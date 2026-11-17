@@ -5,7 +5,7 @@ carrier = 118.000
 pw90 = 96.0e-6
 sw = 120.0
 b1_frq = 3.038
-b1_distribution = { type = "gaussian", scale = 0.1, res = 5 }
+b1_distribution = { type = "gaussian", scale = 0.1 }
 
 [conditions]
 h_larmor_frq = 800.2

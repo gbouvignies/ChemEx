@@ -8,7 +8,7 @@ from pydantic import Field, computed_field
 from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
 from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import CestDataSettingsNoRef
-from chemex.configuration.experiment import B1InhomogeneityMixin, CestSettings
+from chemex.configuration.experiment import CestB1Settings, CestSettings
 from chemex.configuration.types import ChemicalShift
 from chemex.containers.data import Data
 from chemex.experiments.experiment_types import (
@@ -26,7 +26,7 @@ EXPERIMENT_NAME = "cest_ch3_1h_ip_ap"
 OFFSET_REF = 1e4
 
 
-class CestCh31HIpApSettings(CestSettings, B1InhomogeneityMixin):
+class CestCh31HIpApSettings(CestSettings, CestB1Settings):
     """Settings for in-phase/anti-phase CH3 1H CEST experiment."""
 
     name: Literal["cest_ch3_1h_ip_ap"]
@@ -83,7 +83,7 @@ def build_spectrometer(
 
     spectrometer.set_b1_i_inhomogeneity(
         settings.get_b1_nominal(),
-        settings.b1_distribution,
+        settings.get_b1_model(),
     )
 
     spectrometer.detection = settings.detection

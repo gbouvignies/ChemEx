@@ -6,13 +6,15 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
+from chemex.configuration.b1_config import (
+    DephasingConfig,
+    GaussianDistributionConfig,
+)
 from chemex.experiments.catalog.wip import (
     cest_15n_test,
     relaxation_15n_r1rho,
     relaxation_15n_r1rho_eig,
 )
-from chemex.nmr.distributions.dephasing import DephasingConfig
-from chemex.nmr.distributions.gaussian import GaussianDistributionConfig
 from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
 

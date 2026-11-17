@@ -1,515 +1,678 @@
-"""Tests for B1 field inhomogeneity distributions."""
+"""Scientific and numerical tests for the B1 distribution kernel and quadrature."""
 
 from __future__ import annotations
 
+import math
+from typing import Any, Literal
+
 import numpy as np
 import pytest
-from pydantic import ValidationError
-from scipy import stats
+from numpy.polynomial.legendre import leggauss
+from scipy import integrate, stats
+from scipy.special import log_ndtr, ndtr, ndtri
 
 from chemex.configuration.b1_config import parse_distribution_config
-from chemex.nmr.distributions import (
-    gaussian,
-    hermite,
-    registry,
-    skewed,
-    truncated_skewed,
+from chemex.containers.data import Data
+from chemex.experiments.catalog import (
+    cest_1hn_ip_ap,
+    cest_15n,
+    coscest_1hn_ip_ap,
+    dcest_15n,
 )
+from chemex.models.model import ModelSpec
+from chemex.nmr.constants import Distribution
+from chemex.nmr.distributions import (
+    custom,
+    dephasing,
+    gaussian,
+    homogeneous,
+    skewed,
+)
+from chemex.nmr.distributions._quadrature import (
+    MAX_SKEWNESS,
+    compute_skewnorm_mode_z,
+    skewness_to_alpha_and_sigma_z,
+)
+from chemex.parameters.spin_system import SpinSystem
+from chemex.runtime import ensure_plugins_registered
+
+_HALF_LOG_2PI = 0.5 * math.log(2.0 * math.pi)
+_SQRT_2_OVER_PI = math.sqrt(2.0 / math.pi)
 
 
-class TestDistributionRegistry:
-    """Test the distribution registry and plugin system."""
-
-    def test_registry_has_distributions(self):
-        """Test that distributions are auto-registered."""
-        generators = registry.get_all_generators()
-        assert len(generators) > 0
-        assert "gaussian" in generators
-        assert "custom" in generators
-
-    def test_registry_has_config_classes(self):
-        """Test that config classes are registered."""
-        configs = registry.get_all_config_classes()
-        assert len(configs) > 0
-
-    def test_get_gaussian_config_class(self):
-        """Test retrieving a specific config class."""
-        gaussian_config = registry.get_config_class("gaussian")
-        assert gaussian_config is not None
-        instance = gaussian_config()
-        assert instance.type == "gaussian"
-
-    def test_get_nonexistent_generator_fails(self):
-        """Test that requesting an unknown distribution raises an error."""
-        with pytest.raises(ValueError, match="Unknown B1 distribution type"):
-            registry.get_generator("nonexistent")
-
-
-class TestDistributionConfigParsing:
-    """Test parsing distribution configs via the registered plugin union."""
-
-    def test_flat_schema_gaussian(self):
-        """Test flat TOML schema for Gaussian distribution."""
-        config = parse_distribution_config(
-            {
-                "type": "gaussian",
-                "scale": 0.1,
-                "res": 11,
-            }
+def _reference_cest_distribution(
+    nominal: float,
+    scale: float,
+    skewness: float,
+    center: str,
+    *,
+    panels: int = 200,
+    points_per_panel: int = 10,
+) -> Distribution:
+    """Build a 2,000-node composite Gauss-Legendre oracle on p_+(B1)."""
+    alpha, sigma_z = skewness_to_alpha_and_sigma_z(skewness)
+    if alpha == 0.0:
+        m_anchor = 0.0
+        z0 = -1.0 / scale
+        f0 = float(ndtr(np.float64(z0)))
+        s0 = float(ndtr(np.float64(-z0)))
+        z_lo = float(ndtri(np.float64(f0 + 1.0e-9 * s0)))
+        z_hi = -float(ndtri(np.float64(1.0e-9 * s0)))
+    else:
+        delta = alpha / math.sqrt(1.0 + alpha * alpha)
+        m_anchor = (
+            delta * _SQRT_2_OVER_PI
+            if center == "mean"
+            else compute_skewnorm_mode_z(alpha)
         )
-        assert config.type == "gaussian"
-        assert config.scale == 0.1
-        assert config.res == 11
+        z0 = m_anchor - sigma_z / scale
+        f0 = float(stats.skewnorm.cdf(z0, alpha))
+        s0 = float(stats.skewnorm.sf(z0, alpha))
+        z_lo = float(stats.skewnorm.ppf(f0 + 1.0e-9 * s0, alpha))
+        z_hi = float(stats.skewnorm.isf(1.0e-9 * s0, alpha))
 
-    def test_flat_schema_skewed(self):
-        """Test flat TOML schema for skewed distribution."""
-        config = parse_distribution_config(
-            {
-                "type": "skewed",
-                "scale": 0.15,
-                "skewness": -0.5,
-                "res": 11,
-            }
-        )
-        assert config.type == "skewed"
-        assert config.skewness == -0.5
+    gl_x, gl_w = leggauss(points_per_panel)
+    edges = np.linspace(z_lo, z_hi, panels + 1)
+    z_parts: list[np.ndarray] = []
+    lw_parts: list[np.ndarray] = []
+    for idx in range(panels):
+        lo, hi = edges[idx], edges[idx + 1]
+        z = 0.5 * (hi - lo) * gl_x + 0.5 * (hi + lo)
+        lw = np.log(gl_w * 0.5 * (hi - lo)) - 0.5 * z * z
+        if alpha != 0.0:
+            lw = lw + log_ndtr(alpha * z)
+        z_parts.append(z)
+        lw_parts.append(lw)
 
-    def test_flat_schema_custom(self):
-        """Test flat TOML schema for custom distribution."""
-        config = parse_distribution_config(
-            {
-                "type": "custom",
-                "scales": [0.95, 1.0, 1.03],
-                "weights": [0.25, 0.5, 0.25],
-            }
-        )
-        assert config.type == "custom"
-        assert config.scales == [0.95, 1.0, 1.03]
-        assert config.weights == [0.25, 0.5, 0.25]
-
-    def test_unknown_distribution_option_rejected(self):
-        """Test that mistyped distribution options are rejected."""
-        with pytest.raises(ValidationError, match="sclae"):
-            parse_distribution_config(
-                {
-                    "type": "gaussian",
-                    "sclae": 0.2,
-                }
-            )
+    z_all = np.concatenate(z_parts)
+    lw_all = np.concatenate(lw_parts)
+    weights = np.exp(lw_all - np.max(lw_all))
+    weights /= np.sum(weights)
+    scales = np.maximum(0.0, 1.0 + scale * ((z_all - m_anchor) / sigma_z))
+    return Distribution(float(nominal) * scales, weights)
 
 
-class TestGaussianDistribution:
-    """Test Gaussian distribution generation."""
+class TestFiveModelInvariants:
+    """Validate physical support, normalization, flags, and edge inputs across all 5 models."""
 
-    def test_gaussian_generates_correct_shape(self):
-        """Test that Gaussian distribution has correct number of points."""
-        config = parse_distribution_config(
-            {
-                "type": "gaussian",
-                "scale": 0.1,
-                "res": 11,
-            }
-        )
-        dist = config.get_distribution(15.0)
-        assert len(dist.values) == 11
-        assert len(dist.weights) == 11
+    def test_homogeneous_and_dephasing_single_point_contracts(self) -> None:
+        dist_h = homogeneous.generate(25.0)
+        np.testing.assert_allclose(dist_h.values, [25.0])
+        np.testing.assert_allclose(dist_h.weights, [1.0])
+        assert dist_h.dephasing is False
 
-    def test_gaussian_weights_normalized(self):
-        """Test that Gaussian weights sum to 1.0."""
-        config = parse_distribution_config(
-            {
-                "type": "gaussian",
-                "scale": 0.1,
-                "res": 11,
-            }
-        )
-        dist = config.get_distribution(15.0)
-        assert np.isclose(dist.weights.sum(), 1.0)
+        dist_h_zero = homogeneous.generate(0.0)
+        np.testing.assert_allclose(dist_h_zero.values, [0.0])
+        np.testing.assert_allclose(dist_h_zero.weights, [1.0])
 
-    def test_gaussian_centered_at_nominal(self):
-        """Test that Gaussian is approximately centered at nominal value."""
-        config = parse_distribution_config(
-            {
-                "type": "gaussian",
-                "scale": 0.1,
-                "res": 11,
-            }
-        )
-        dist = config.get_distribution(15.0)
-        # Mean should be close to nominal value
-        weighted_mean = np.sum(dist.values * dist.weights)
-        assert np.isclose(weighted_mean, 15.0, rtol=0.01)
+        dist_d = dephasing.generate(25.0)
+        np.testing.assert_allclose(dist_d.values, [25.0])
+        np.testing.assert_allclose(dist_d.weights, [1.0])
+        assert dist_d.dephasing is True
 
-    def test_gaussian_scale_zero_gives_single_point(self):
-        """Test that scale=0 gives a single point distribution."""
-        config = parse_distribution_config(
-            {
-                "type": "gaussian",
-                "scale": 0.0,
-                "res": 11,
-            }
-        )
-        dist = config.get_distribution(15.0)
-        assert len(dist.values) == 1
-        assert dist.values[0] == 15.0
-        assert dist.weights[0] == 1.0
-
-
-class TestHermiteDistribution:
-    """Test Hermite quadrature distribution."""
-
-    def test_hermite_generates_correct_shape(self):
-        """Test that Hermite distribution has correct number of points."""
-        config = parse_distribution_config(
-            {
-                "type": "hermite",
-                "scale": 0.1,
-                "res": 11,
-            }
-        )
-        dist = config.get_distribution(15.0)
-        assert len(dist.values) == 11
-        assert len(dist.weights) == 11
-
-    def test_hermite_weights_normalized(self):
-        """Test that Hermite weights sum to 1.0."""
-        config = parse_distribution_config(
-            {
-                "type": "hermite",
-                "scale": 0.1,
-                "res": 11,
-            }
-        )
-        dist = config.get_distribution(15.0)
-        assert np.isclose(dist.weights.sum(), 1.0)
-
-
-class TestSkewedDistribution:
-    """Test skewed distribution generation."""
-
-    def test_skewed_generates_correct_shape(self):
-        """Test that skewed distribution has correct number of points."""
-        config = parse_distribution_config(
-            {
-                "type": "skewed",
-                "scale": 0.15,
-                "skewness": -0.5,
-                "res": 11,
-            }
-        )
-        dist = config.get_distribution(15.95)
-        assert len(dist.values) == 11
-        assert len(dist.weights) == 11
-
-    def test_skewed_weights_normalized(self):
-        """Test that skewed weights sum to 1.0."""
-        config = parse_distribution_config(
-            {
-                "type": "skewed",
-                "scale": 0.15,
-                "skewness": -0.5,
-                "res": 11,
-            }
-        )
-        dist = config.get_distribution(15.95)
-        assert np.isclose(dist.weights.sum(), 1.0)
-
-    def test_skewed_zero_skewness_uses_hermite(self):
-        """Test that zero skewness falls back to Hermite."""
-        config_skewed = parse_distribution_config(
-            {
-                "type": "skewed",
-                "scale": 0.1,
-                "skewness": 0.0,
-                "res": 11,
-            }
-        )
-        config_hermite = parse_distribution_config(
-            {
-                "type": "hermite",
-                "scale": 0.1,
-                "res": 11,
-            }
-        )
-        dist_skewed = config_skewed.get_distribution(15.0)
-        dist_hermite = config_hermite.get_distribution(15.0)
-        # Should be identical
-        assert np.allclose(dist_skewed.values, dist_hermite.values)
-        assert np.allclose(dist_skewed.weights, dist_hermite.weights)
-
-
-class TestCustomDistribution:
-    """Test user-defined custom distribution."""
-
-    def test_custom_basic(self):
-        """Test basic custom distribution creation."""
-        config = parse_distribution_config(
-            {
-                "type": "custom",
-                "scales": [0.95, 1.0, 1.03],
-                "weights": [0.25, 0.5, 0.25],
-            }
-        )
-        dist = config.get_distribution(15.95)
-        assert len(dist.values) == 3
-        assert len(dist.weights) == 3
-
-    def test_custom_correct_values(self):
-        """Test that custom distribution computes correct B1 values."""
-        config = parse_distribution_config(
-            {
-                "type": "custom",
-                "scales": [0.9, 1.0, 1.1],
-                "weights": [1.0, 1.0, 1.0],
-            }
-        )
-        dist = config.get_distribution(10.0)
-        expected_values = np.array([9.0, 10.0, 11.0])
-        assert np.allclose(dist.values, expected_values)
-
-    def test_custom_weights_normalized(self):
-        """Test that custom weights are auto-normalized."""
-        config = parse_distribution_config(
-            {
-                "type": "custom",
-                "scales": [0.9, 1.0, 1.1],
-                "weights": [1.0, 2.0, 1.0],  # Sum = 4.0
-            }
-        )
-        dist = config.get_distribution(15.0)
-        assert np.isclose(dist.weights.sum(), 1.0)
-        expected_weights = np.array([0.25, 0.5, 0.25])
-        assert np.allclose(dist.weights, expected_weights)
-
-    def test_custom_single_point(self):
-        """Test custom distribution with single point."""
-        config = parse_distribution_config(
-            {
-                "type": "custom",
-                "scales": [1.0],
-                "weights": [1.0],
-            }
-        )
-        dist = config.get_distribution(15.0)
-        assert len(dist.values) == 1
-        assert dist.values[0] == 15.0
-        assert dist.weights[0] == 1.0
-
-    def test_custom_mismatched_lengths_rejected(self):
-        """Test that mismatched scales and weights are rejected."""
-        with pytest.raises(ValidationError, match="same length"):
-            parse_distribution_config(
-                {
-                    "type": "custom",
-                    "scales": [0.95, 1.0, 1.05],
-                    "weights": [0.5, 0.5],  # Wrong length!
-                }
-            )
-
-    def test_custom_negative_scale_rejected(self):
-        """Test that negative scales are rejected."""
-        with pytest.raises(ValidationError, match="positive"):
-            parse_distribution_config(
-                {
-                    "type": "custom",
-                    "scales": [-0.95, 1.0],
-                    "weights": [0.5, 0.5],
-                }
-            )
-
-    def test_custom_negative_weight_rejected(self):
-        """Test that negative weights are rejected."""
-        with pytest.raises(ValidationError, match="positive"):
-            parse_distribution_config(
-                {
-                    "type": "custom",
-                    "scales": [0.95, 1.0],
-                    "weights": [-0.5, 1.5],
-                }
-            )
-
-
-class TestOtherDistributions:
-    """Test other distribution types."""
-
-    @pytest.mark.parametrize("dist_type", ["beta"])
-    def test_distribution_generates(self, dist_type):
-        """Test that distribution generates and has normalized weights."""
-        config = parse_distribution_config(
-            {
-                "type": dist_type,
-                "scale": 0.1,
-                "res": 11,
-            }
-        )
-        dist = config.get_distribution(15.0)
-        assert len(dist.values) > 0
-        assert len(dist.weights) > 0
-        assert np.isclose(dist.weights.sum(), 1.0)
-
-
-class TestSkewedAnalyticalInvariants:
-    """Scientific reference tests for Azzalini skew-normal B1 distributions."""
-
-    @pytest.mark.parametrize(
-        "target_skewness",
-        [-0.98, -0.8, -0.5, -0.1, -0.005, 0.005, 0.1, 0.5, 0.8, 0.98],
-    )
-    def test_skewed_analytical_inversion_reproduces_azzalini_moments(
-        self,
-        target_skewness: float,
-    ) -> None:
-        """Analytical (alpha, omega) inversion matches scipy.stats.skewnorm and quadrature moments."""
-        nominal = 25.0
-        scale = 0.04
-        alpha, omega = skewed._skewness_to_alpha_and_omega(target_skewness, scale)
-        ref_var, ref_skew = stats.skewnorm.stats(alpha, scale=omega, moments="vs")
-        np.testing.assert_allclose(float(ref_var), scale**2, rtol=1e-12, atol=0.0)
-        np.testing.assert_allclose(
-            float(ref_skew),
-            target_skewness,
-            rtol=1e-12,
-            atol=1e-14,
-        )
-
-        dist = skewed.generate(nominal, scale, target_skewness, res=31)
-        rel_values = dist.values / nominal
-        mean = float(np.sum(dist.weights * rel_values))
-        centered = rel_values - mean
-        std = float(np.sqrt(np.sum(dist.weights * centered**2)))
-        empirical_skew = float(np.sum(dist.weights * centered**3) / std**3)
-
-        np.testing.assert_allclose(std, scale, rtol=5e-3)
-        np.testing.assert_allclose(empirical_skew, target_skewness, atol=1.5e-2)
-
-    def test_skewed_smooth_across_small_nonzero_skewness(self) -> None:
-        """Quadrature nodes and weights vary smoothly across |skewness| = 0.01."""
-        d_below = skewed.generate(20.0, 0.1, 0.008, res=15)
-        d_at = skewed.generate(20.0, 0.1, 0.010, res=15)
-        d_above = skewed.generate(20.0, 0.1, 0.012, res=15)
-
-        assert np.max(np.abs(d_at.values - d_below.values)) < 2e-2
-        assert np.max(np.abs(d_above.values - d_at.values)) < 2e-2
-        assert (
-            np.max(np.abs(d_above.values - 2.0 * d_at.values + d_below.values)) < 5e-3
-        )
-        assert np.max(np.abs(d_at.weights - d_below.weights)) < 1e-3
-        assert np.max(np.abs(d_above.weights - d_at.weights)) < 1e-3
-
-    @pytest.mark.parametrize(
-        "invalid_skewness",
-        [
-            -2.0,
-            -1.0,
-            -skewed.MAX_SKEWNESS,
-            skewed.MAX_SKEWNESS,
-            1.0,
-            2.0,
-        ],
-    )
-    def test_skewed_rejects_out_of_domain_skewness(
-        self,
-        invalid_skewness: float,
-    ) -> None:
-        """Skewness outside (-MAX_SKEWNESS, MAX_SKEWNESS) is rejected."""
-        with pytest.raises(ValidationError, match="skew-normal range"):
-            parse_distribution_config(
-                {
-                    "type": "skewed",
-                    "scale": 0.1,
-                    "skewness": invalid_skewness,
-                    "res": 11,
-                }
-            )
-        with pytest.raises(ValueError, match="skew-normal range"):
-            skewed.generate(20.0, 0.1, invalid_skewness, 11)
-
-
-class TestTruncatedSkewedDistribution:
-    """Tests for truncated skew-normal B1 distribution."""
-
-    def test_dead_broken_cdf_helpers_are_absent(self) -> None:
-        assert not hasattr(truncated_skewed, "_skewnorm_cdf")
-        assert not hasattr(truncated_skewed, "_owens_t_approx")
-
-    @pytest.mark.parametrize("alpha", [-8.0, -0.8, 0.0, 5.0])
-    @pytest.mark.parametrize("scale", [0.1, 0.5, 1.0])
-    def test_truncated_skewed_respects_bounds_and_slant_parameter(
-        self,
-        alpha: float,
-        scale: float,
-    ) -> None:
-        nominal = 20.0
-        config = parse_distribution_config(
-            {
-                "type": "truncated_skewed",
-                "scale": scale,
-                "skewness": alpha,
-                "res": 15,
-            }
-        )
-        dist = config.get_distribution(nominal)
-        assert len(dist.values) == 15
-        assert np.all(dist.values >= 0.0)
-        assert np.all(dist.values <= nominal)
-        assert np.all(dist.weights > 0.0)
-        np.testing.assert_allclose(dist.weights.sum(), 1.0, rtol=0.0, atol=1e-13)
-
-
-class TestNonNegativeB1Invariants:
-    """Ensure all B1 distributions produce non-negative nodes across allowed scales."""
+        for fn in (homogeneous.generate, dephasing.generate):
+            for bad in (-1.0, float("nan"), float("inf")):
+                with pytest.raises(ValueError, match="non-negative"):
+                    fn(bad)
 
     @pytest.mark.parametrize(
         ("dist_type", "extra"),
         [
             ("gaussian", {}),
-            ("hermite", {}),
-            ("skewed", {"skewness": -0.7}),
-            ("skewed", {"skewness": 0.7}),
-            ("truncated_skewed", {"skewness": -2.0}),
+            ("skewed", {"skewness": -0.75, "center": "mode"}),
+            ("skewed", {"skewness": -0.75, "center": "mean"}),
+            ("skewed", {"skewness": 0.75, "center": "mode"}),
+            ("skewed", {"skewness": 0.75, "center": "mean"}),
         ],
     )
-    @pytest.mark.parametrize("scale", [0.05, 0.25, 0.6, 1.0])
-    @pytest.mark.parametrize("res", [5, 11, 25])
-    def test_distribution_nodes_are_non_negative_and_ordered(
+    @pytest.mark.parametrize("scale", [0.05, 0.25, 0.5, 1.0])
+    @pytest.mark.parametrize("res", [5, 13, 25])
+    def test_quadrature_nodes_non_negative_ordered_and_normalized(
         self,
         dist_type: str,
-        extra: dict[str, float],
+        extra: dict[str, object],
         scale: float,
         res: int,
     ) -> None:
         config = parse_distribution_config(
-            {
-                "type": dist_type,
-                "scale": scale,
-                "res": res,
-                **extra,
-            }
+            {"type": dist_type, "scale": scale, "res": res, **extra}
         )
         dist = config.get_distribution(25.0)
-        assert len(dist.values) == res
+        assert dist.dephasing is False
+        assert dist.values.size == res
+        assert dist.weights.size == res
         assert np.all(dist.values >= 0.0)
         assert np.all(np.diff(dist.values) > 0.0)
-        assert np.all(dist.weights >= 0.0)
-        np.testing.assert_allclose(dist.weights.sum(), 1.0, rtol=0.0, atol=1e-13)
+        assert np.all(dist.weights > 0.0)
+        np.testing.assert_allclose(dist.weights.sum(), 1.0, rtol=0.0, atol=1.0e-13)
+
+    @pytest.mark.parametrize("tiny_scale", [0.0, 1.0e-12, 1.0e-100])
+    def test_zero_and_subnormal_scales_remain_finite_and_centered(
+        self,
+        tiny_scale: float,
+    ) -> None:
+        for fn in (
+            lambda s: gaussian.generate(25.0, s, res=15),
+            lambda s: skewed.generate(25.0, s, -0.6, res=15, center="mode"),
+            lambda s: skewed.generate(25.0, s, -0.6, res=15, center="mean"),
+        ):
+            dist = fn(tiny_scale)
+            assert np.all(np.isfinite(dist.values))
+            assert np.all(np.isfinite(dist.weights))
+            assert np.all(dist.weights > 0.0)
+            np.testing.assert_allclose(dist.weights.sum(), 1.0, rtol=0.0, atol=1.0e-13)
+            np.testing.assert_allclose(
+                np.sum(dist.values * dist.weights), 25.0, rtol=1.0e-8, atol=0.0
+            )
+
+    def test_zero_nominal_or_res_one_collapses_to_single_point(self) -> None:
+        for dist in (
+            gaussian.generate(0.0, 0.1, res=15),
+            gaussian.generate(20.0, 0.1, res=1),
+            skewed.generate(0.0, 0.1, -0.5, res=15, center="mode"),
+            skewed.generate(20.0, 0.1, -0.5, res=1, center="mean"),
+        ):
+            assert dist.values.size == 1
+            np.testing.assert_allclose(dist.weights, [1.0])
 
     @pytest.mark.parametrize(
         "gen_fn",
         [
             lambda v, s: gaussian.generate(v, s, 11),
-            lambda v, s: hermite.generate(v, s, 11),
-            lambda v, s: skewed.generate(v, s, 0.2, 11),
-            lambda v, s: truncated_skewed.generate(v, s, -0.8, 11),
+            lambda v, s: skewed.generate(v, s, 0.2, 11, center="mode"),
         ],
     )
-    def test_negative_nominal_or_scale_rejected(self, gen_fn) -> None:
-        with pytest.raises(ValueError, match="non-negative"):
-            gen_fn(-1.0, 0.1)
-        with pytest.raises(ValueError, match="non-negative"):
-            gen_fn(10.0, -0.1)
-        with pytest.raises(ValueError, match="non-negative"):
-            gen_fn(float("nan"), 0.1)
-        with pytest.raises(ValueError, match="non-negative"):
-            gen_fn(float("inf"), 0.1)
-        with pytest.raises(ValueError, match="non-negative"):
-            gen_fn(10.0, float("nan"))
+    def test_negative_or_non_finite_nominal_or_scale_rejected(self, gen_fn) -> None:
+        for v, s in [
+            (-1.0, 0.1),
+            (10.0, -0.1),
+            (float("nan"), 0.1),
+            (float("inf"), 0.1),
+            (10.0, float("nan")),
+        ]:
+            with pytest.raises(ValueError, match="non-negative"):
+                gen_fn(v, s)
+
+    @pytest.mark.parametrize(
+        "invalid_skewness",
+        [-2.0, -1.0, -MAX_SKEWNESS, MAX_SKEWNESS, 1.0, 2.0, float("nan")],
+    )
+    def test_skewed_rejects_out_of_domain_skewness(
+        self, invalid_skewness: float
+    ) -> None:
+        with pytest.raises(ValueError, match="skew-normal range"):
+            skewed.generate(20.0, 0.1, invalid_skewness, 11, center="mode")
+
+    def test_custom_normalizes_and_validates_standalone_calls(self) -> None:
+        dist = custom.generate(15.0, [1.1, 0.9, 1.0], [1.0, 2.0, 1.0])
+        assert dist.dephasing is False
+        np.testing.assert_allclose(dist.values, [16.5, 13.5, 15.0])
+        np.testing.assert_allclose(dist.weights, [0.25, 0.5, 0.25])
+
+        for args in [
+            (-1.0, [1.0], [1.0]),
+            (15.0, [], []),
+            (15.0, [0.9, 1.0], [1.0]),
+            (15.0, [0.0, 1.0], [0.5, 0.5]),
+            (15.0, [-0.1, 1.0], [0.5, 0.5]),
+            (15.0, [float("nan")], [1.0]),
+            (15.0, [1.0], [0.0]),
+            (15.0, [1.0], [float("inf")]),
+        ]:
+            with pytest.raises(ValueError):
+                custom.generate(*args)
+
+
+class TestPositiveConditionedMomentsAndModeSolver:
+    """Compare quadrature moments to scipy.integrate.quad and validate the mode solver."""
+
+    @pytest.mark.parametrize("scale", [0.05, 0.25, 0.6])
+    def test_gaussian_moments_match_positive_conditioned_quad(
+        self,
+        scale: float,
+    ) -> None:
+        nominal = 20.0
+        dist = gaussian.generate(nominal, scale=scale, res=35)
+        q_mean = float(np.sum(dist.values * dist.weights))
+        q_var = float(np.sum(((dist.values - q_mean) ** 2) * dist.weights))
+
+        sigma = scale * nominal
+        surv_zero = float(stats.norm.sf(0.0, loc=nominal, scale=sigma))
+
+        def pdf_pos(b: float) -> float:
+            return float(stats.norm.pdf(b, loc=nominal, scale=sigma)) / surv_zero
+
+        b_upper = float(stats.norm.isf(1.0e-12 * surv_zero, loc=nominal, scale=sigma))
+        b_lo = float(
+            stats.norm.ppf(
+                1.0 - surv_zero + 1.0e-5 * surv_zero, loc=nominal, scale=sigma
+            )
+        )
+        b_hi = float(stats.norm.isf(1.0e-5 * surv_zero, loc=nominal, scale=sigma))
+        norm_bracket = 1.0 - 2.0e-5
+
+        b_mean, _ = integrate.quad(
+            lambda b: b * pdf_pos(b) / norm_bracket,
+            b_lo,
+            b_hi,
+            epsabs=1.0e-12,
+            epsrel=1.0e-12,
+        )
+        b_var, _ = integrate.quad(
+            lambda b: ((b - b_mean) ** 2) * pdf_pos(b) / norm_bracket,
+            b_lo,
+            b_hi,
+            epsabs=1.0e-12,
+            epsrel=1.0e-12,
+        )
+        np.testing.assert_allclose(q_mean, b_mean, rtol=1.0e-9, atol=0.0)
+        np.testing.assert_allclose(q_var, b_var, rtol=1.0e-8, atol=0.0)
+
+        full_mean, _ = integrate.quad(
+            lambda b: b * pdf_pos(b), 0.0, b_upper, epsabs=1.0e-12, epsrel=1.0e-12
+        )
+        full_var, _ = integrate.quad(
+            lambda b: ((b - full_mean) ** 2) * pdf_pos(b),
+            0.0,
+            b_upper,
+            epsabs=1.0e-12,
+            epsrel=1.0e-12,
+        )
+        np.testing.assert_allclose(q_mean, full_mean, rtol=1.0e-4, atol=0.0)
+        np.testing.assert_allclose(q_var, full_var, rtol=5.0e-4, atol=0.0)
+
+    @pytest.mark.parametrize("center", ["mode", "mean"])
+    @pytest.mark.parametrize("skewness", [-0.85, -0.4, 0.4, 0.85])
+    @pytest.mark.parametrize("scale", [0.05, 0.25])
+    def test_skewed_moments_match_positive_conditioned_quad(
+        self,
+        center: Literal["mode", "mean"],
+        skewness: float,
+        scale: float,
+    ) -> None:
+        nominal = 25.0
+        dist = skewed.generate(
+            nominal,
+            scale=scale,
+            skewness=skewness,
+            res=35,
+            center=center,
+        )
+        q_mean = float(np.sum(dist.values * dist.weights))
+        q_var = float(np.sum(((dist.values - q_mean) ** 2) * dist.weights))
+
+        alpha, sigma_z = skewness_to_alpha_and_sigma_z(skewness)
+        omega = scale * nominal / sigma_z
+        delta = alpha / math.sqrt(1.0 + alpha * alpha)
+        anchor_z = (
+            delta * _SQRT_2_OVER_PI
+            if center == "mean"
+            else compute_skewnorm_mode_z(alpha)
+        )
+        xi = nominal - omega * anchor_z
+
+        surv_zero = float(stats.skewnorm.sf(0.0, alpha, loc=xi, scale=omega))
+
+        def pdf_pos(b: float) -> float:
+            return float(stats.skewnorm.pdf(b, alpha, loc=xi, scale=omega)) / surv_zero
+
+        b_upper = float(
+            stats.skewnorm.isf(1.0e-12 * surv_zero, alpha, loc=xi, scale=omega)
+        )
+        b_lo = float(
+            stats.skewnorm.ppf(
+                1.0 - surv_zero + 1.0e-5 * surv_zero, alpha, loc=xi, scale=omega
+            )
+        )
+        b_hi = float(stats.skewnorm.isf(1.0e-5 * surv_zero, alpha, loc=xi, scale=omega))
+        norm_bracket = 1.0 - 2.0e-5
+
+        b_mean, _ = integrate.quad(
+            lambda b: b * pdf_pos(b) / norm_bracket,
+            b_lo,
+            b_hi,
+            epsabs=1.0e-11,
+            epsrel=1.0e-11,
+        )
+        b_var, _ = integrate.quad(
+            lambda b: ((b - b_mean) ** 2) * pdf_pos(b) / norm_bracket,
+            b_lo,
+            b_hi,
+            epsabs=1.0e-11,
+            epsrel=1.0e-11,
+        )
+        np.testing.assert_allclose(q_mean, b_mean, rtol=1.0e-8, atol=0.0)
+        np.testing.assert_allclose(q_var, b_var, rtol=1.0e-7, atol=0.0)
+
+        full_mean, _ = integrate.quad(
+            lambda b: b * pdf_pos(b), 0.0, b_upper, epsabs=1.0e-11, epsrel=1.0e-11
+        )
+        full_var, _ = integrate.quad(
+            lambda b: ((b - full_mean) ** 2) * pdf_pos(b),
+            0.0,
+            b_upper,
+            epsabs=1.0e-11,
+            epsrel=1.0e-11,
+        )
+        np.testing.assert_allclose(q_mean, full_mean, rtol=1.0e-4, atol=0.0)
+        np.testing.assert_allclose(q_var, full_var, rtol=5.0e-4, atol=0.0)
+
+    @pytest.mark.parametrize(
+        "alpha",
+        [
+            1.0e-10,
+            1.0e-6,
+            1.0e-3,
+            0.05,
+            0.166992,
+            0.5,
+            1.814141,
+            2.0,
+            10.0,
+            50.0,
+            200.0,
+        ],
+    )
+    def test_skewnorm_mode_solver_machine_precision_and_antisymmetry(
+        self, alpha: float
+    ) -> None:
+        z_mode = compute_skewnorm_mode_z(alpha)
+        az = alpha * z_mode
+        ratio = math.exp(
+            -0.5 * az * az - _HALF_LOG_2PI - float(log_ndtr(np.float64(az)))
+        )
+        residual = -z_mode + alpha * ratio
+        assert abs(residual) < 1.0e-14
+        assert compute_skewnorm_mode_z(-alpha) == -z_mode
+
+    @pytest.mark.parametrize("center", ["mode", "mean"])
+    @pytest.mark.parametrize("scale", [0.05, 0.15, 0.5])
+    def test_skewed_zero_skewness_reduces_identically_to_gaussian(
+        self,
+        center: Literal["mode", "mean"],
+        scale: float,
+    ) -> None:
+        dist_s = skewed.generate(
+            18.5,
+            scale,
+            0.0,
+            res=15,
+            center=center,
+        )
+        dist_g = gaussian.generate(18.5, scale, res=15)
+        np.testing.assert_allclose(dist_s.values, dist_g.values, rtol=0.0, atol=1.0e-15)
+        np.testing.assert_allclose(
+            dist_s.weights, dist_g.weights, rtol=0.0, atol=1.0e-15
+        )
+
+
+class TestFiniteDifferenceSmoothnessForFitting:
+    """Verify TRF finite-difference smoothness for future joint B1 fitting."""
+
+    @staticmethod
+    def _eval_cest_normalized(skewness: float, center: str) -> np.ndarray:
+        ensure_plugins_registered()
+        model = ModelSpec.from_name("2st")
+        cfg = cest_15n.Cest15NConfig.model_validate(
+            {
+                "experiment": {
+                    "name": "cest_15n",
+                    "time_t1": 0.5,
+                    "carrier": 118.0,
+                    "b1_frq": 25.0,
+                    "b1_distribution": {
+                        "type": "skewed",
+                        "scale": 0.1,
+                        "skewness": skewness,
+                        "center": center,
+                        "res": 25,
+                    },
+                },
+                "conditions": {"h_larmor_frq": 600.0},
+                "data": {},
+            },
+            context={"model": model},
+        )
+        cfg.model = model
+        cfg.experiment.model_name = model.name
+        calc = cest_15n.create_profile_calculation(cfg, SpinSystem(name="G23N-HN"))
+        calc.spectrometer.update(
+            {
+                "pa": 0.9,
+                "pb": 0.1,
+                "kab": 20.0,
+                "kba": 180.0,
+                "cs_i_a": 118.0,
+                "cs_i_b": 114.0,
+                "r1_i_a": 1.5,
+                "r1_i_b": 1.5,
+                "r2_i_a": 2.0,
+                "r2_i_b": 2.0,
+            }
+        )
+        offsets = np.array([-2.0e4, -300.0, -240.0, -100.0, -15.0, 0.0, 15.0])
+        data = Data(
+            exp=np.ones_like(offsets), err=np.ones_like(offsets), metadata=offsets
+        )
+        intensities = calc.pulse_sequence.calculate(calc.spectrometer, data)
+        return intensities[1:] / intensities[0]
+
+    @pytest.mark.parametrize("center", ["mode", "mean"])
+    @pytest.mark.parametrize("skewness", [-0.85, -0.4, -0.02, 0.0, 0.02, 0.4, 0.85])
+    def test_trf_forward_derivative_matches_central_difference(
+        self,
+        center: str,
+        skewness: float,
+    ) -> None:
+        h_trf = 1.4901161193847656e-8
+        h_central = 1.0e-5
+        y0 = self._eval_cest_normalized(skewness, center)
+        df_trf = (self._eval_cest_normalized(skewness + h_trf, center) - y0) / h_trf
+        df_central = (
+            self._eval_cest_normalized(skewness + h_central, center)
+            - self._eval_cest_normalized(skewness - h_central, center)
+        ) / (2.0 * h_central)
+        np.testing.assert_allclose(df_trf, df_central, rtol=2.0e-3, atol=2.0e-6)
+
+    @pytest.mark.parametrize(
+        ("center", "min_slope"), [("mode", 1.0e-5), ("mean", 1.0e-7)]
+    )
+    def test_skewness_parameterization_is_linearly_regular_at_zero(
+        self,
+        center: str,
+        min_slope: float,
+    ) -> None:
+        d1 = self._eval_cest_normalized(1.0e-3, center) - self._eval_cest_normalized(
+            -1.0e-3, center
+        )
+        d2 = self._eval_cest_normalized(2.0e-3, center) - self._eval_cest_normalized(
+            -2.0e-3, center
+        )
+        max_d1 = float(np.max(np.abs(d1)))
+        assert max_d1 > min_slope
+        assert float(np.max(np.abs(d2))) / max_d1 == pytest.approx(2.0, rel=2.0e-2)
+
+
+class TestIndependentReferenceQuadratureAccuracy:
+    """Verify automatic resolution against 2,000-node reference across CEST families."""
+
+    _N_PARAMS = {
+        "pa": 0.9,
+        "pb": 0.1,
+        "kab": 20.0,
+        "kba": 180.0,
+        "cs_i_a": 118.0,
+        "cs_i_b": 114.0,
+        "r1_i_a": 1.5,
+        "r1_i_b": 1.5,
+        "r2_i_a": 2.0,
+        "r2_i_b": 2.0,
+    }
+    _HN_PARAMS = {
+        "pa": 0.9,
+        "pb": 0.1,
+        "kab": 20.0,
+        "kba": 180.0,
+        "cs_i_a": 8.0,
+        "cs_i_b": 7.5,
+        "cs_s_a": 118.0,
+        "cs_s_b": 115.0,
+        "j_is_a": -92.0,
+        "j_is_b": -92.0,
+        "r1_i_a": 1.5,
+        "r1_i_b": 1.5,
+        "r1_s_a": 1.2,
+        "r1_s_b": 1.2,
+        "r1a_is_a": 2.0,
+        "r1a_is_b": 2.0,
+        "r2_i_a": 2.0,
+        "r2_i_b": 2.0,
+        "r2a_i_a": 2.5,
+        "r2a_i_b": 2.5,
+        "etaz_i_a": 0.2,
+        "etaz_i_b": 0.2,
+        "etaxy_i_a": 0.5,
+        "etaxy_i_b": 0.5,
+    }
+    _N_OFFSETS = np.array([-2.0e4, -300.0, -240.0, -100.0, -15.0, 0.0, 15.0])
+    _H_OFFSETS = np.array([-2.0e4, -400.0, -300.0, -120.0, -20.0, 0.0, 20.0])
+
+    @pytest.mark.parametrize(
+        ("module", "spin_name", "exp_cfg", "params", "offsets", "b1_cfg"),
+        [
+            (
+                cest_15n,
+                "G23N-HN",
+                {"name": "cest_15n", "time_t1": 0.5, "carrier": 118.0, "b1_frq": 15.0},
+                _N_PARAMS,
+                _N_OFFSETS,
+                {"type": "gaussian", "scale": 0.1},
+            ),
+            (
+                cest_15n,
+                "G23N-HN",
+                {"name": "cest_15n", "time_t1": 0.5, "carrier": 118.0, "b1_frq": 60.0},
+                _N_PARAMS,
+                _N_OFFSETS,
+                {"type": "gaussian", "scale": 0.1},
+            ),
+            (
+                cest_15n,
+                "G23N-HN",
+                {"name": "cest_15n", "time_t1": 0.5, "carrier": 118.0, "b1_frq": 150.0},
+                _N_PARAMS,
+                _N_OFFSETS,
+                {"type": "gaussian", "scale": 0.1},
+            ),
+            (
+                cest_15n,
+                "G23N-HN",
+                {"name": "cest_15n", "time_t1": 0.5, "carrier": 118.0, "b1_frq": 25.0},
+                _N_PARAMS,
+                _N_OFFSETS,
+                {"type": "skewed", "scale": 0.1, "skewness": -0.90, "center": "mode"},
+            ),
+            (
+                cest_15n,
+                "G23N-HN",
+                {"name": "cest_15n", "time_t1": 0.5, "carrier": 118.0, "b1_frq": 25.0},
+                _N_PARAMS,
+                _N_OFFSETS,
+                {"type": "skewed", "scale": 0.1, "skewness": -0.99, "center": "mean"},
+            ),
+            (
+                cest_1hn_ip_ap,
+                "G23HN-N",
+                {
+                    "name": "cest_1hn_ip_ap",
+                    "time_t1": 0.4,
+                    "carrier": 8.0,
+                    "b1_frq": 25.0,
+                    "d1": 0.6,
+                    "eta_block": 4,
+                },
+                _HN_PARAMS,
+                _H_OFFSETS,
+                {"type": "skewed", "scale": 0.1, "skewness": -0.90, "center": "mode"},
+            ),
+            (
+                coscest_1hn_ip_ap,
+                "G23HN-N",
+                {
+                    "name": "coscest_1hn_ip_ap",
+                    "time_t1": 0.4,
+                    "carrier": 8.0,
+                    "b1_frq": 25.0,
+                    "d1": 0.6,
+                    "cos_n": 3,
+                    "sw": 800.0,
+                },
+                _HN_PARAMS,
+                _H_OFFSETS,
+                {"type": "skewed", "scale": 0.1, "skewness": -0.90, "center": "mode"},
+            ),
+            (
+                dcest_15n,
+                "G23N-HN",
+                {
+                    "name": "dcest_15n",
+                    "time_t1": 0.3,
+                    "carrier": 118.0,
+                    "b1_eff": 20.0,
+                    "pw90": 40.0e-6,
+                    "sw": 700.0,
+                },
+                _N_PARAMS,
+                _N_OFFSETS,
+                {"type": "skewed", "scale": 0.1, "skewness": -0.90, "center": "mode"},
+            ),
+        ],
+    )
+    def test_auto_res_matches_2000_node_reference_within_1e_4(
+        self,
+        module: Any,
+        spin_name: str,
+        exp_cfg: dict[str, object],
+        params: dict[str, float],
+        offsets: np.ndarray,
+        b1_cfg: dict[str, Any],
+    ) -> None:
+        ensure_plugins_registered()
+        model = ModelSpec.from_name("2st")
+        config = module.EXPERIMENT_TYPE.config_type.model_validate(
+            {
+                "experiment": {**exp_cfg, "b1_distribution": b1_cfg},
+                "conditions": {"h_larmor_frq": 600.0},
+                "data": {},
+            },
+            context={"model": model},
+        )
+        config.model = model
+        config.experiment.model_name = model.name
+
+        calc_auto = module.EXPERIMENT_TYPE.create_profile_calculation(
+            config, SpinSystem(name=spin_name)
+        )
+        calc_auto.spectrometer.update(params)
+        data = Data(
+            exp=np.ones_like(offsets), err=np.ones_like(offsets), metadata=offsets
+        )
+        y_auto = calc_auto.pulse_sequence.calculate(calc_auto.spectrometer, data)
+        ratio_auto = y_auto[1:] / y_auto[0]
+
+        nominal = config.experiment.get_b1_nominal()
+        dist_ref = _reference_cest_distribution(
+            nominal,
+            float(b1_cfg["scale"]),
+            float(b1_cfg.get("skewness", 0.0)),
+            str(b1_cfg.get("center", "mean")),
+        )
+        calc_ref = module.EXPERIMENT_TYPE.create_profile_calculation(
+            config, SpinSystem(name=spin_name)
+        )
+        calc_ref.spectrometer.set_b1_i_distribution(dist_ref, nominal=nominal)
+        calc_ref.spectrometer.update(params)
+        y_ref = calc_ref.pulse_sequence.calculate(calc_ref.spectrometer, data)
+        ratio_ref = y_ref[1:] / y_ref[0]
+
+        assert float(np.max(np.abs(ratio_auto - ratio_ref))) <= 1.0e-4

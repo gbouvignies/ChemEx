@@ -1,16 +1,16 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Literal, Self
 
 import numpy as np
 from numpy.linalg import matrix_power
-from pydantic import Field, computed_field
+from pydantic import Field, computed_field, model_validator
 
 from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
 from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import CestDataSettingsNoRef
-from chemex.configuration.experiment import B1InhomogeneityMixin, CestSettings
-from chemex.configuration.types import ChemicalShift
+from chemex.configuration.experiment import CestB1Settings, CestSettings
+from chemex.configuration.types import ChemicalShift, NonNegativeInt
 from chemex.containers.data import Data
 from chemex.experiments.experiment_types import (
     ProfileCalculation,
@@ -27,7 +27,7 @@ EXPERIMENT_NAME = "cest_1hn_ip_ap"
 OFFSET_REF = 1e4
 
 
-class Cest1HnIpApSettings(CestSettings, B1InhomogeneityMixin):
+class Cest1HnIpApSettings(CestSettings, CestB1Settings):
     """Settings for in-phase/anti-phase 1H-15N CEST experiment."""
 
     name: Literal["cest_1hn_ip_ap"]
@@ -35,7 +35,23 @@ class Cest1HnIpApSettings(CestSettings, B1InhomogeneityMixin):
     carrier: ChemicalShift = Field(description="1H carrier position in ppm")
     d1: float = Field(description="Relaxation delay in seconds")
     taua: float = 2.38e-3
-    eta_block: int = 0
+    eta_block: NonNegativeInt = 0
+
+    @model_validator(mode="after")
+    def _validate_eta_block_dephasing(self) -> Self:
+        if (
+            self.eta_block > 0
+            and self.b1_distribution is not None
+            and self.b1_distribution.type == "dephasing"
+        ):
+            msg = (
+                'b1_distribution = { type = "dephasing" } cannot be used when '
+                "'eta_block' > 0 in 'cest_1hn_ip_ap'. Use "
+                'type = "gaussian", type = "skewed", type = "custom", or '
+                'type = "homogeneous".'
+            )
+            raise ValueError(msg)
+        return self
 
     @computed_field
     @property
@@ -94,7 +110,7 @@ def build_spectrometer(
 
     spectrometer.set_b1_i_inhomogeneity(
         settings.get_b1_nominal(),
-        settings.b1_distribution,
+        settings.get_b1_model(),
     )
 
     spectrometer.detection = settings.detection

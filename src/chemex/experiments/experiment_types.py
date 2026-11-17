@@ -32,7 +32,11 @@ from chemex.containers.dataset import (
     load_relaxation_dataset,
     load_shift_dataset,
 )
-from chemex.containers.experiment import Experiment, NoiseEstimateNotice
+from chemex.containers.experiment import (
+    DeprecatedB1InhomogeneityNotice,
+    Experiment,
+    NoiseEstimateNotice,
+)
 from chemex.containers.profile import Filterer, Profile, PulseSequence
 from chemex.exceptions import ChemExError
 from chemex.filterers import (
@@ -219,10 +223,10 @@ class ExperimentBuildResult:
     """A complete Experiment and nonfatal notices produced while building it."""
 
     experiment: Experiment
-    notices: tuple[NoiseEstimateNotice, ...] = ()
+    notices: tuple[ExperimentNotice, ...] = ()
 
 
-type ExperimentNotice = NoiseEstimateNotice
+type ExperimentNotice = NoiseEstimateNotice | DeprecatedB1InhomogeneityNotice
 
 
 class ExperimentBuildError(ChemExError):
@@ -773,7 +777,19 @@ def _build[ConfigT: GenericConfig](
         config.data.error,
         global_error=config.data.global_error,
     )
-    return ExperimentBuildResult(experiment, experiment.noise_notices)
+    notices: list[ExperimentNotice] = []
+    legacy_b1 = getattr(config.experiment, "legacy_b1_deprecation", None)
+    if legacy_b1 is not None:
+        legacy_fields, replacement = legacy_b1
+        notices.append(
+            DeprecatedB1InhomogeneityNotice(
+                source.filename,
+                legacy_fields,
+                replacement,
+            )
+        )
+    notices.extend(experiment.noise_notices)
+    return ExperimentBuildResult(experiment, tuple(notices))
 
 
 def build(

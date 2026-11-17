@@ -1,20 +1,16 @@
 from __future__ import annotations
 
-from typing import Literal, Self
+from typing import Literal
 
 import numpy as np
 from numpy.linalg import matrix_power
-from pydantic import Field, computed_field, model_validator
+from pydantic import Field, computed_field
 
 from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
 from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import CestDataSettings
-from chemex.configuration.experiment import (
-    B1InhomogeneityMixin,
-    MFCestSettings,
-    normalize_b1_eff_alias,
-)
-from chemex.configuration.types import B1Field, ChemicalShift, Delay
+from chemex.configuration.experiment import DCestSettings
+from chemex.configuration.types import ChemicalShift
 from chemex.containers.data import Data
 from chemex.experiments.experiment_types import (
     ProfileCalculation,
@@ -35,70 +31,11 @@ EXPERIMENT_NAME = "dcest_15n"
 OFFSET_REF = 1e4
 
 
-class DCest15NSettings(MFCestSettings, B1InhomogeneityMixin):
+class DCest15NSettings(DCestSettings):
     """D-CEST 15N experiment settings with DANTE pulse train."""
 
     name: Literal["dcest_15n"]
-    time_t1: Delay = Field(description="CEST relaxation delay (seconds)")
-    time_equil: Delay = Field(
-        default=0.0,
-        description="Equilibration delay at end of CEST period (seconds)",
-    )
     carrier: ChemicalShift = Field(description="15N carrier position during CEST (ppm)")
-    # Effective B1 for the equivalent continuous-wave CEST irradiation.
-    # Accept both 'b1_eff' (preferred) and 'b1_frq' (alias) in configs.
-    b1_eff: B1Field = Field(
-        ...,
-        description="Effective B1 field for DANTE excitation (Hz)",
-    )
-
-    _normalize_b1_eff_alias = model_validator(mode="before")(normalize_b1_eff_alias)
-
-    @model_validator(mode="after")
-    def _validate_dcest_fields(self) -> Self:
-        """Validate D-CEST requires pw90 for hardware B1."""
-        if self.pw90 is None:
-            msg = (
-                "D-CEST experiments require 'pw90' (hardware B1 pulse width). "
-                "Both 'pw90' and 'b1_eff' (alias: 'b1_frq') must be specified."
-            )
-            raise ValueError(msg)
-        return self
-
-    # D-CEST convention: the B1 inhomogeneity distribution should be centered
-    # on the hardware B1 set by pw90, regardless of whether b1_frq is also
-    # provided. We therefore override the nominal B1 used to build the
-    # distribution to always derive it from pw90.
-    def get_b1_nominal(self) -> float:
-        """Get nominal B1 from hardware pw90 for distribution centering."""
-        if self.pw90 is None:
-            msg = (
-                "For D-CEST, 'pw90' must be specified to define the nominal B1 "
-                "used for the B1 distribution."
-            )
-            raise ValueError(msg)
-        return 1.0 / (4.0 * float(self.pw90))
-
-    @computed_field
-    @property
-    def pw_dante(self) -> float:
-        """Duration of each DANTE pulse (seconds)."""
-        if self.pw90 is None:
-            msg = "pw90 must be specified for DANTE pulse calculation"
-            raise ValueError(msg)
-        return 4.0 * float(self.pw90) * float(self.b1_eff) / float(self.sw)
-
-    @computed_field
-    @property
-    def tau_dante(self) -> float:
-        """Inter-pulse delay in DANTE train (seconds)."""
-        return 1.0 / self.sw - self.pw_dante
-
-    @computed_field
-    @property
-    def ncyc_dante(self) -> int:
-        """Number of DANTE pulses in the train."""
-        return int(self.time_t1 * self.sw + 0.1)
 
     @computed_field
     @property
@@ -141,7 +78,7 @@ def build_spectrometer(config: DCest15NConfig, spin_system: SpinSystem) -> Spect
 
     spectrometer.set_b1_i_inhomogeneity(
         settings.get_b1_nominal(),
-        settings.b1_distribution,
+        settings.get_b1_model(),
     )
 
     spectrometer.detection = settings.detection

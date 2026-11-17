@@ -8,6 +8,7 @@ from rich.live import Live
 
 from chemex.configuration.methods import Selection
 from chemex.containers.experiment import (
+    DeprecatedB1InhomogeneityNotice,
     NoDuplicateNoiseNotice,
     UnsupportedNoiseMethodNotice,
 )
@@ -17,6 +18,7 @@ from chemex.experiments.experiment_types import ExperimentNotice
 from chemex.messages import (
     console,
     get_reading_exp_text,
+    print_deprecated_b1_inhomogeneity_warning,
     print_loading_experiments,
     print_no_duplicate_warning,
     print_not_implemented_noise_method_warning,
@@ -33,6 +35,12 @@ def _print_notice(notice: ExperimentNotice) -> None:
         )
     elif isinstance(notice, NoDuplicateNoiseNotice):
         print_no_duplicate_warning(notice.filename)
+    elif isinstance(notice, DeprecatedB1InhomogeneityNotice):
+        print_deprecated_b1_inhomogeneity_warning(
+            notice.filename,
+            notice.legacy_fields,
+            notice.replacement,
+        )
 
 
 def build_experiments(

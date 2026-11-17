@@ -24,10 +24,11 @@ Experiment files consist of three main sections:
 
 ```toml title="experiment.toml"
 [experiment]
-name         = "cest_15n"
-time_t1      = 0.5
-carrier      = 118.987
-b1_frq       = 26.3
+name            = "cest_15n"
+time_t1         = 0.5
+carrier         = 118.987
+b1_frq          = 26.3
+b1_distribution = { type = "gaussian", scale = 0.1 }
 
 [conditions]
 h_larmor_frq = 499.243
@@ -63,9 +64,92 @@ The `[experiment]` section defines the type and settings of the pulse sequence. 
 | `carrier`            | Carrier position during the experiment, in ppm.                                                 |
 | `time_t2`, `time_t1` | Relaxation delays in seconds (e.g., for CPMG relaxation dispersion experiments).                |
 | `pw90`               | 90-degree pulse width, in seconds.                                                              |
-| `b1_frq`             | B1 radio-frequency field strength, in Hz.                                                       |
+| `b1_frq`             | B1 radio-frequency field strength, in Hz (or legacy alias for `b1_eff` in D-CEST).              |
+| `b1_distribution`    | Required B1 field inhomogeneity model for CEST, cos-CEST, and D-CEST experiments.               |
 | `observed_state`     | Observed state; final-magnetization experiments also accept a list whose components are summed. |
 | `start_state`        | Optional state or list of states used for non-equilibrium starting magnetization.               |
+
+#### `b1_distribution`
+
+All CEST, cos-CEST, and D-CEST experiment modules require an explicit
+`b1_distribution` table in `[experiment]`. For continuous-wave CEST and
+cos-CEST modules, you must also provide exactly one of `b1_frq` (Hz) or `pw90`
+(seconds, giving nominal B<sub>1</sub> = 1 / (4 · `pw90`)); D-CEST modules
+require both `pw90` and `b1_eff`.
+
+ChemEx provides five `b1_distribution` models:
+
+- **`"gaussian"`** — Normal distribution with mean `B1_nom` and standard
+  deviation `scale * B1_nom`, conditioned on physical non-negative support
+  (`B1 >= 0`):
+
+  ```toml
+  b1_distribution = { type = "gaussian", scale = 0.1 }
+  ```
+
+- **`"skewed"`** — Azzalini skew-normal distribution conditioned on `B1 >= 0`,
+  with fractional width `scale`, third standardized moment `skewness` in
+  `(-0.995272, 0.995272)`, and an **explicit** `center = "mode"` or
+  `center = "mean"` specifying which summary of the parent distribution equals
+  `B1_nom`:
+
+  ```toml
+  b1_distribution = { type = "skewed", scale = 0.05, skewness = -0.7, center = "mode" }
+  ```
+
+- **`"custom"`** — Discrete empirical relative-field profile (`scales` =
+  `B1 / B1_nom` > 0 and positive `weights`, automatically normalized),
+  recommended when an experimental B1 distribution has been measured (e.g., from
+  Fourier-transformed nutation data):
+
+  ```toml
+  [experiment.b1_distribution]
+  type    = "custom"
+  scales  = [0.85, 0.92, 0.97, 1.00, 1.02]
+  weights = [0.05, 0.15, 0.30, 0.40, 0.10]
+  ```
+
+- **`"dephasing"`** — Complete transverse dephasing along the effective field,
+  restricted to uninterrupted continuous-wave CEST (`cest_13c`, `cest_15n`,
+  `cest_15n_cw`, `cest_15n_tr`, `cest_1hn_ap`, `cest_ch3_1h_ip_ap`, and
+  `cest_1hn_ip_ap` with `eta_block = 0`) when on-resonance oscillations are
+  excluded via `filter_offsets`:
+
+  ```toml
+  b1_distribution = { type = "dephasing" }
+  ```
+
+  This mode is rejected on `dcest_*`, `coscest_*`, and `cest_1hn_ip_ap` with
+  `eta_block > 0`.
+
+- **`"homogeneous"`** — Ideal single-point RF field (`B1 = B1_nom`):
+
+  ```toml
+  b1_distribution = { type = "homogeneous" }
+  ```
+
+For `"gaussian"` and `"skewed"`, omitting `res` automatically selects and locks
+an odd Gauss–Legendre quadrature node count (`13 <= res <= 651`) at experiment
+construction from the RF nutation angle across the distribution support, holding
+integration accuracy within `1e-4` normalized CEST intensity without jitter
+during fitting. An explicit integer `res` (`1 <= res <= 651`) can still be set
+to override automatic selection.
+
+:::note Experimental B1 calibration and asymmetry
+Standard 1D pulse calibrations (`pw90`) do not uniquely determine probe RF
+asymmetry or whether the calibrated nominal field corresponds to the
+distribution's mode or mean. Use `"custom"` when a measured profile is available,
+or check sensitivity across plausible `"gaussian"` and `"skewed"` profiles when
+fitting near-resonance features.
+:::
+
+**Migration notes:**
+- Legacy `b1_inh_scale` and `b1_inh_res` remain accepted for one release with a
+  deprecation warning and map directly to `b1_distribution`.
+- `"hermite"` has been consolidated into `"gaussian"`.
+- `"beta"` and `"truncated_skewed"` have been removed because hard upper cutoffs
+  at `B1_nom` are unphysical; replace them with `"skewed"`, `"gaussian"`, or
+  `"custom"`.
 
 #### `observed_state`
 

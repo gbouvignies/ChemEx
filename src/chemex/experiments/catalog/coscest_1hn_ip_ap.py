@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import ClassVar, Literal
 
 import numpy as np
 from numpy.linalg import matrix_power
@@ -9,8 +9,8 @@ from pydantic import Field, computed_field
 from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
 from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import CestDataSettingsNoRef
-from chemex.configuration.experiment import B1InhomogeneityMixin, MFCestSettings
-from chemex.configuration.types import ChemicalShift
+from chemex.configuration.experiment import CestB1Settings, MFCestSettings
+from chemex.configuration.types import ChemicalShift, Delay
 from chemex.containers.data import Data
 from chemex.experiments.experiment_types import (
     ProfileCalculation,
@@ -27,11 +27,13 @@ EXPERIMENT_NAME = "coscest_1hn_ip_ap"
 OFFSET_REF = 1e4
 
 
-class CosCest1HnIpApSettings(MFCestSettings, B1InhomogeneityMixin):
+class CosCest1HnIpApSettings(MFCestSettings, CestB1Settings):
     """Settings for cosine-modulated 1H-15N in-phase/anti-phase CEST experiment."""
 
+    allows_dephasing: ClassVar[bool] = False
+
     name: Literal["coscest_1hn_ip_ap"]
-    time_t1: float = Field(description="Length of the CEST block in seconds")
+    time_t1: Delay = Field(description="Length of the CEST block in seconds")
     carrier: ChemicalShift = Field(description="1H carrier position in ppm")
     cos_n: int = Field(description="Number of cosine cycles")
     cos_res: int = 10
@@ -87,7 +89,7 @@ def build_spectrometer(
 
     spectrometer.set_b1_i_inhomogeneity(
         settings.get_b1_nominal(),
-        settings.b1_distribution,
+        settings.get_b1_model(),
     )
 
     spectrometer.detection = settings.detection
