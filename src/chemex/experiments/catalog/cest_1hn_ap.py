@@ -9,7 +9,7 @@ from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
 from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import CestDataSettings
 from chemex.configuration.experiment import CestB1Settings, CestSettings
-from chemex.configuration.types import ChemicalShift
+from chemex.configuration.types import ChemicalShift, Delay
 from chemex.containers.data import Data
 from chemex.experiments.experiment_types import (
     ProfileCalculation,
@@ -30,7 +30,7 @@ class Cest1HnApSettings(CestSettings, CestB1Settings):
     """Settings for anti-phase 1H-15N CEST experiment."""
 
     name: Literal["cest_1hn_ap"]
-    time_t1: float = Field(description="Length of the CEST block in seconds")
+    time_t1: Delay = Field(description="Length of the CEST block in seconds")
     carrier: ChemicalShift = Field(description="1H carrier position in ppm")
     start_from_observed_by_default: ClassVar[bool] = True
 

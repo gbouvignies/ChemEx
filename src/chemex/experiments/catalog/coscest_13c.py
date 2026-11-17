@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import ClassVar, Literal
+from typing import Literal
 
 import numpy as np
 from numpy.linalg import matrix_power
@@ -9,7 +9,7 @@ from pydantic import Field, computed_field
 from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
 from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import CestDataSettings
-from chemex.configuration.experiment import CestB1Settings, MFCestSettings
+from chemex.configuration.experiment import CosCestSettings
 from chemex.configuration.types import ChemicalShift, Delay
 from chemex.containers.data import Data
 from chemex.experiments.experiment_types import (
@@ -28,17 +28,12 @@ EXPERIMENT_NAME = "coscest_13c"
 OFFSET_REF = 1e4
 
 
-class CosCest13CSettings(MFCestSettings, CestB1Settings):
+class CosCest13CSettings(CosCestSettings):
     """Settings for cosine-modulated 13C CEST experiment."""
 
-    allows_dephasing: ClassVar[bool] = False
-
     name: Literal["coscest_13c"]
-    time_t1: Delay = Field(description="Length of the CEST block in seconds")
     time_equil: Delay = 0.0
     carrier: ChemicalShift = Field(description="13C carrier position in ppm")
-    cos_n: int = Field(description="Number of cosine cycles")
-    cos_res: int = 10
 
     @computed_field
     @property

@@ -25,6 +25,8 @@ from chemex.nmr.constants import Distribution
 QUAD_TAIL_EPS: float = 1e-5
 AUTO_RES_MIN: int = 13
 AUTO_RES_MAX: int = 651
+RES_MAX: int = 2049
+CUSTOM_MAX_POINTS: int = 4096
 
 # Theoretical maximum skewness magnitude for an Azzalini skew-normal variable:
 # ((4 - pi) / 2) * (2 / (pi - 2))**(3 / 2) ~= 0.9952717464311563.
@@ -46,10 +48,13 @@ def validate_nominal_and_scale(value: float, scale: float) -> None:
 
 def validate_skewness(skewness: float) -> float:
     """Validate that skewness lies strictly inside the Azzalini domain."""
-    if not math.isfinite(skewness) or abs(skewness) >= MAX_SKEWNESS:
+    if not math.isfinite(skewness):
+        msg = f"Skewness must be finite, got {skewness}"
+        raise ValueError(msg)
+    if abs(skewness) >= MAX_SKEWNESS:
         msg = (
             f"Skewness {skewness} is outside the valid Azzalini skew-normal range "
-            f"(-{MAX_SKEWNESS:.6f}, {MAX_SKEWNESS:.6f})"
+            f"(-{MAX_SKEWNESS:.12g}, {MAX_SKEWNESS:.12g})"
         )
         raise ValueError(msg)
     return float(skewness)
@@ -67,8 +72,10 @@ def validate_center(center: str) -> Literal["mode", "mean"]:
 
 def validate_res(res: int) -> int:
     """Validate an explicit quadrature node count."""
-    if isinstance(res, bool) or not isinstance(res, int) or res < 1:
-        msg = f"Resolution 'res' must be a positive integer, got {res}"
+    if isinstance(res, bool) or not isinstance(res, int) or not (1 <= res <= RES_MAX):
+        msg = (
+            f"Resolution 'res' must be an integer between 1 and {RES_MAX}, got {res!r}"
+        )
         raise ValueError(msg)
     return res
 
@@ -174,7 +181,24 @@ def auto_quadrature_res(
     alpha: float = 0.0,
 ) -> int:
     """Choose odd Gauss-Legendre resolution for <= 1e-4 CEST integration error."""
+    if not (
+        math.isfinite(span_s)
+        and math.isfinite(b1_eff_hz)
+        and math.isfinite(t_sat_s)
+        and math.isfinite(alpha)
+    ):
+        msg = (
+            "Automatic B1 quadrature inputs must be finite "
+            f"(got b1_eff_hz={b1_eff_hz}, t_sat_s={t_sat_s}, alpha={alpha})."
+        )
+        raise ValueError(msg)
     cyc_q = abs(span_s * b1_eff_hz * t_sat_s)
+    if not math.isfinite(cyc_q):
+        msg = (
+            "Automatic B1 quadrature nutation cycle count overflowed for "
+            f"b1_eff_hz={b1_eff_hz}, t_sat_s={t_sat_s}."
+        )
+        raise ValueError(msg)
     abs_alpha = abs(alpha)
     d_rabi = 0.5 * math.pi * cyc_q + 3.5 * (cyc_q ** (1.0 / 3.0))
     d_skew = (
@@ -184,7 +208,33 @@ def auto_quadrature_res(
     )
     min_nodes = math.ceil(max(float(AUTO_RES_MIN), 5.5 + math.hypot(d_rabi, d_skew)))
     n_odd = min_nodes if min_nodes % 2 == 1 else min_nodes + 1
-    return min(AUTO_RES_MAX, n_odd)
+    if n_odd > AUTO_RES_MAX:
+        msg = (
+            f"Automatic B1 quadrature requires res = {n_odd}, exceeding the "
+            f"automatic resolution limit ({AUTO_RES_MAX}) due to ~{cyc_q:.1f} "
+            "RF nutation cycles across the B1 distribution. Verify 'b1_frq'/"
+            "'pw90' and 'time_t1' units, specify an explicit 'res' "
+            f"(1..{RES_MAX}) in [experiment.b1_distribution] if high cost or "
+            'coarser sampling is intended, or use type = "dephasing" for '
+            "pure continuous-wave CEST when major-dip oscillations are masked."
+        )
+        raise ValueError(msg)
+    return n_odd
+
+
+def _validate_oscillation_inputs(
+    b1_eff_hz: float,
+    t_sat_s: float,
+) -> tuple[float, float]:
+    b1_val = float(b1_eff_hz)
+    t_val = float(t_sat_s)
+    if not math.isfinite(b1_val) or b1_val < 0.0:
+        msg = f"Effective B1 must be finite and non-negative, got {b1_eff_hz}"
+        raise ValueError(msg)
+    if not math.isfinite(t_val) or t_val < 0.0:
+        msg = f"Saturation duration must be finite and non-negative, got {t_sat_s}"
+        raise ValueError(msg)
+    return b1_val, t_val
 
 
 def resolve_gaussian_res(
@@ -195,14 +245,16 @@ def resolve_gaussian_res(
     res: int | None = None,
 ) -> int:
     """Resolve the fixed integer resolution for a Gaussian B1 distribution."""
-    validate_nominal_and_scale(max(0.0, float(b1_eff_hz)), scale)
-    if scale == 0.0 or res == 1:
-        return 1
+    b1_val, t_val = _validate_oscillation_inputs(b1_eff_hz, t_sat_s)
+    validate_nominal_and_scale(b1_val, scale)
     if res is not None:
-        return validate_res(res)
+        checked_res = validate_res(res)
+        return 1 if scale == 0.0 else checked_res
+    if scale == 0.0:
+        return 1
     _, sigma_z, _, z_lo, z_hi = _standardized_bracket(scale, 0.0, "mean")
     span_s = (scale / sigma_z) * (z_hi - z_lo)
-    return auto_quadrature_res(span_s, float(b1_eff_hz), float(t_sat_s), 0.0)
+    return auto_quadrature_res(span_s, b1_val, t_val, 0.0)
 
 
 def resolve_skewed_res(
@@ -215,16 +267,18 @@ def resolve_skewed_res(
     res: int | None = None,
 ) -> int:
     """Resolve the fixed integer resolution for a skew-normal B1 distribution."""
-    validate_nominal_and_scale(max(0.0, float(b1_eff_hz)), scale)
+    b1_val, t_val = _validate_oscillation_inputs(b1_eff_hz, t_sat_s)
+    validate_nominal_and_scale(b1_val, scale)
     validate_skewness(skewness)
     validate_center(center)
-    if scale == 0.0 or res == 1:
-        return 1
     if res is not None:
-        return validate_res(res)
+        checked_res = validate_res(res)
+        return 1 if scale == 0.0 else checked_res
+    if scale == 0.0:
+        return 1
     alpha, sigma_z, _, z_lo, z_hi = _standardized_bracket(scale, skewness, center)
     span_s = (scale / sigma_z) * (z_hi - z_lo)
-    return auto_quadrature_res(span_s, float(b1_eff_hz), float(t_sat_s), alpha)
+    return auto_quadrature_res(span_s, b1_val, t_val, alpha)
 
 
 def build_skewed_or_gaussian(

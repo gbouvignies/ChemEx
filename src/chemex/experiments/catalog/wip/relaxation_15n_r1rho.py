@@ -65,7 +65,7 @@ def build_spectrometer(
     spectrometer.carrier_i = settings.carrier
     spectrometer.set_b1_i_inhomogeneity(
         settings.get_b1_nominal(),
-        settings.b1_distribution,
+        settings.get_b1_model(),
     )
 
     spectrometer.detection = settings.detection

@@ -9,6 +9,7 @@ from typing import Any
 import numpy as np
 
 from chemex.nmr.constants import Distribution
+from chemex.nmr.distributions._quadrature import CUSTOM_MAX_POINTS
 
 
 def generate(
@@ -26,6 +27,12 @@ def generate(
 
     if scales_array.ndim != 1 or scales_array.size == 0:
         msg = "Custom B1 scales must be a non-empty 1D sequence"
+        raise ValueError(msg)
+    if scales_array.size > CUSTOM_MAX_POINTS:
+        msg = (
+            f"Custom B1 distribution supports at most {CUSTOM_MAX_POINTS} points, "
+            f"got {scales_array.size}"
+        )
         raise ValueError(msg)
     if weights_array.ndim != 1 or weights_array.size != scales_array.size:
         msg = "scales and weights must have the same non-empty length"

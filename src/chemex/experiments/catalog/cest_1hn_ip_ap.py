@@ -10,7 +10,7 @@ from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
 from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import CestDataSettingsNoRef
 from chemex.configuration.experiment import CestB1Settings, CestSettings
-from chemex.configuration.types import ChemicalShift, NonNegativeInt
+from chemex.configuration.types import ChemicalShift, Delay, NonNegativeInt
 from chemex.containers.data import Data
 from chemex.experiments.experiment_types import (
     ProfileCalculation,
@@ -31,10 +31,10 @@ class Cest1HnIpApSettings(CestSettings, CestB1Settings):
     """Settings for in-phase/anti-phase 1H-15N CEST experiment."""
 
     name: Literal["cest_1hn_ip_ap"]
-    time_t1: float = Field(description="Length of the CEST block in seconds")
+    time_t1: Delay = Field(description="Length of the CEST block in seconds")
     carrier: ChemicalShift = Field(description="1H carrier position in ppm")
-    d1: float = Field(description="Relaxation delay in seconds")
-    taua: float = 2.38e-3
+    d1: Delay = Field(description="Relaxation delay in seconds")
+    taua: Delay = 2.38e-3
     eta_block: NonNegativeInt = 0
 
     @model_validator(mode="after")

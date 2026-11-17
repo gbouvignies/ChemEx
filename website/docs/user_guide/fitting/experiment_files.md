@@ -89,7 +89,7 @@ ChemEx provides five `b1_distribution` models:
 
 - **`"skewed"`** — Azzalini skew-normal distribution conditioned on `B1 >= 0`,
   with fractional width `scale`, third standardized moment `skewness` in
-  `(-0.995272, 0.995272)`, and an **explicit** `center = "mode"` or
+  `(-0.9952717, 0.9952717)`, and an **explicit** `center = "mode"` or
   `center = "mean"` specifying which summary of the parent distribution equals
   `B1_nom`:
 
@@ -120,7 +120,11 @@ ChemEx provides five `b1_distribution` models:
   ```
 
   This mode is rejected on `dcest_*`, `coscest_*`, and `cest_1hn_ip_ap` with
-  `eta_block > 0`.
+  `eta_block > 0`. Because `"dephasing"` zeroes Liouvillian eigenmodes via a
+  hard imaginary-part cutoff (`|Im(λ)| >= 1e-6 s⁻¹`), it can introduce step
+  discontinuities near resonance or near non-Hermitian exceptional points; use
+  `"gaussian"`, `"skewed"`, or `"custom"` when near-resonance or transitional
+  exchange-regime smoothness matters.
 
 - **`"homogeneous"`** — Ideal single-point RF field (`B1 = B1_nom`):
 
@@ -130,16 +134,20 @@ ChemEx provides five `b1_distribution` models:
 
 For `"gaussian"` and `"skewed"`, omitting `res` automatically selects and locks
 an odd Gauss–Legendre quadrature node count (`13 <= res <= 651`) at experiment
-construction from the RF nutation angle across the distribution support, holding
-integration accuracy within `1e-4` normalized CEST intensity without jitter
-during fitting. An explicit integer `res` (`1 <= res <= 651`) can still be set
-to override automatic selection.
+construction from the RF nutation action across the distribution support,
+holding integration accuracy within `1e-4` normalized CEST intensity without
+jitter during fitting. If the required automatic node count exceeds `651`, ChemEx
+raises a configuration error rather than silently clamping and returning
+under-resolved intensities. An explicit integer `res` (`1 <= res <= 2049`) can
+be set to override automatic selection.
 
 :::note Experimental B1 calibration and asymmetry
 Standard 1D pulse calibrations (`pw90`) do not uniquely determine probe RF
 asymmetry or whether the calibrated nominal field corresponds to the
-distribution's mode or mean. Use `"custom"` when a measured profile is available,
-or check sensitivity across plausible `"gaussian"` and `"skewed"` profiles when
+distribution's mode or mean. Lower χ² obtained by varying phenomenological
+`scale` or `skewness` on unmasked CEST/D-CEST data does not establish the true
+probe distribution. Use `"custom"` when a measured profile is available, or
+check sensitivity across plausible `"gaussian"` and `"skewed"` profiles when
 fitting near-resonance features.
 :::
 

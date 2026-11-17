@@ -45,7 +45,12 @@ from chemex.experiments.catalog.wip import (
 from chemex.experiments.experiment_types import ExperimentConfigurationError
 from chemex.experiments.loader import register_experiments
 from chemex.models.model import ModelSpec
-from chemex.nmr.distributions._quadrature import MAX_SKEWNESS
+from chemex.nmr.distributions._quadrature import (
+    AUTO_RES_MAX,
+    CUSTOM_MAX_POINTS,
+    MAX_SKEWNESS,
+    RES_MAX,
+)
 from chemex.runtime import AnalysisSession, ensure_plugins_registered
 
 ROOT = Path(__file__).parents[2]
@@ -753,3 +758,371 @@ path = "."
             )
             assert config.experiment.legacy_b1_deprecation is None, str(toml_path)
             assert config.experiment.b1_distribution is not None, str(toml_path)
+
+    def test_explicit_res_override_and_custom_caps(self) -> None:
+        g_high = parse_distribution_config(
+            {"type": "gaussian", "scale": 0.1, "res": 801}
+        )
+        assert isinstance(g_high, GaussianDistributionConfig)
+        assert g_high.res == 801
+
+        s_max = parse_distribution_config(
+            {
+                "type": "skewed",
+                "scale": 0.1,
+                "skewness": -0.5,
+                "center": "mode",
+                "res": RES_MAX,
+            }
+        )
+        assert isinstance(s_max, SkewedDistributionConfig)
+        assert s_max.res == RES_MAX
+
+        for bad_res in (RES_MAX + 1, 0, -5):
+            with pytest.raises(ValidationError):
+                parse_distribution_config(
+                    {"type": "gaussian", "scale": 0.1, "res": bad_res}
+                )
+
+        with pytest.raises(ValidationError):
+            parse_distribution_config(
+                {
+                    "type": "custom",
+                    "scales": [1.0] * (CUSTOM_MAX_POINTS + 1),
+                    "weights": [1.0] * (CUSTOM_MAX_POINTS + 1),
+                }
+            )
+
+    def test_malformed_b1_distribution_and_invalid_skew_center_diagnostics(
+        self,
+    ) -> None:
+        with pytest.raises((ValidationError, ValueError), match="must be a table"):
+            parse_distribution_config("gaussian")
+
+        with pytest.raises((ValidationError, ValueError), match="must be a table"):
+            parse_distribution_config(0.1)
+
+        with pytest.raises(ValidationError, match="must be a table"):
+            cest_15n.Cest15NSettings.model_validate(
+                {
+                    "name": "cest_15n",
+                    "time_t1": 0.5,
+                    "carrier": 118.0,
+                    "b1_frq": 25.0,
+                    "b1_distribution": ["gaussian"],
+                }
+            )
+
+        with pytest.raises(
+            (ValidationError, ValueError), match="Invalid 'center' 'median'"
+        ):
+            parse_distribution_config(
+                {
+                    "type": "skewed",
+                    "scale": 0.1,
+                    "skewness": -0.5,
+                    "center": "median",
+                }
+            )
+
+        with pytest.raises(ValidationError, match="outside the valid Azzalini") as err:
+            parse_distribution_config(
+                {
+                    "type": "skewed",
+                    "scale": 0.1,
+                    "skewness": 0.9952719,
+                    "center": "mode",
+                }
+            )
+        assert "0.995272" not in str(err.value)
+
+    def test_auto_res_overflow_is_configuration_error_and_clean_cli_exit(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        with pytest.raises(ValidationError, match=f"exceeding.*{AUTO_RES_MAX}"):
+            cest_15n.Cest15NSettings.model_validate(
+                {
+                    "name": "cest_15n",
+                    "time_t1": 0.5,
+                    "carrier": 118.0,
+                    "b1_frq": 5000.0,
+                    "b1_distribution": {"type": "gaussian", "scale": 0.1},
+                }
+            )
+
+        # Providing explicit res within (AUTO_RES_MAX, RES_MAX] still succeeds.
+        explicit = cest_15n.Cest15NSettings.model_validate(
+            {
+                "name": "cest_15n",
+                "time_t1": 0.5,
+                "carrier": 118.0,
+                "b1_frq": 5000.0,
+                "b1_distribution": {"type": "gaussian", "scale": 0.1, "res": 801},
+            }
+        )
+        assert explicit.get_b1_distribution().values.size == 801
+
+        data_file = tmp_path / "10N-HN.out"
+        data_file.write_text("-20000 1.0 0.02\n0 0.5 0.02\n", encoding="utf-8")
+        exp_file = tmp_path / "overflow.toml"
+        exp_file.write_text(
+            """[experiment]
+name = "cest_15n"
+time_t1 = 0.5
+carrier = 118.0
+b1_frq = 5000.0
+b1_distribution = { type = "gaussian", scale = 0.1 }
+
+[conditions]
+h_larmor_frq = 600.0
+
+[data]
+path = "."
+
+[data.profiles]
+10N-HN = "10N-HN.out"
+""",
+            encoding="utf-8",
+        )
+        param_file = tmp_path / "params.toml"
+        param_file.write_text("[GLOBAL]\nPB = 0.1\nKEX_AB = 100.0\n", encoding="utf-8")
+        completed = subprocess.run(  # noqa: S603 - fixed local python entrypoint check
+            [
+                sys.executable,
+                "-m",
+                "chemex",
+                "simulate",
+                "-e",
+                str(exp_file),
+                "-p",
+                str(param_file),
+                "-o",
+                str(tmp_path / "out_overflow"),
+                "--plot",
+                "nothing",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        combined = completed.stdout + completed.stderr
+        assert completed.returncode == 1
+        assert "Experiment configuration is invalid" in completed.stderr
+        assert f"({AUTO_RES_MAX})" in completed.stderr
+        assert "unexpected internal error" not in combined
+        assert "Traceback" not in combined
+
+    @pytest.mark.parametrize("bad_sw", [0.0, -10.0, float("nan"), float("-inf")])
+    def test_cw_cest_rejects_invalid_sw_while_keeping_default_inf(
+        self,
+        bad_sw: float,
+    ) -> None:
+        default_cw = cest_15n.Cest15NSettings.model_validate(
+            {
+                "name": "cest_15n",
+                "time_t1": 0.5,
+                "carrier": 118.0,
+                "b1_frq": 25.0,
+                "b1_distribution": {"type": "gaussian", "scale": 0.1},
+            }
+        )
+        assert default_cw.sw == float("inf")
+
+        with pytest.raises(ValidationError, match="sw"):
+            cest_15n.Cest15NSettings.model_validate(
+                {
+                    "name": "cest_15n",
+                    "time_t1": 0.5,
+                    "carrier": 118.0,
+                    "b1_frq": 25.0,
+                    "sw": bad_sw,
+                    "b1_distribution": {"type": "gaussian", "scale": 0.1},
+                }
+            )
+
+    @pytest.mark.parametrize(
+        "patch",
+        [
+            {"b1_frq": float("nan")},
+            {"b1_frq": float("inf")},
+            {"b1_frq": -1.0},
+            {"b1_frq": None, "pw90": float("inf")},
+            {"b1_frq": None, "pw90": float("nan")},
+            {"b1_frq": None, "pw90": 0.0},
+            {"time_t1": float("inf")},
+            {"time_t1": float("nan")},
+            {"time_t1": -0.1},
+            {"carrier": float("nan")},
+            {"carrier": float("inf")},
+        ],
+    )
+    def test_cw_cest_rejects_nonfinite_and_invalid_numeric_fields(
+        self,
+        patch: dict[str, object],
+    ) -> None:
+        base: dict[str, object] = {
+            "name": "cest_15n",
+            "time_t1": 0.5,
+            "carrier": 118.0,
+            "b1_frq": 25.0,
+            "b1_distribution": {"type": "homogeneous"},
+        }
+        payload = {**base, **patch}
+        with pytest.raises(ValidationError):
+            cest_15n.Cest15NSettings.model_validate(payload)
+
+    def test_ip_ap_cw_cest_rejects_nonfinite_or_negative_delays(self) -> None:
+        for field_name in ("time_t1", "d1", "taua"):
+            for bad_val in (-0.1, float("nan"), float("inf")):
+                with pytest.raises(ValidationError):
+                    cest_1hn_ip_ap.Cest1HnIpApSettings.model_validate(
+                        {
+                            "name": "cest_1hn_ip_ap",
+                            "time_t1": 0.3,
+                            "carrier": 8.0,
+                            "b1_frq": 25.0,
+                            "d1": 0.5,
+                            field_name: bad_val,
+                            "b1_distribution": {"type": "homogeneous"},
+                        }
+                    )
+
+        with pytest.raises(ValidationError):
+            cest_15n_cw.Cest15NCwSettings.model_validate(
+                {
+                    "name": "cest_15n_cw",
+                    "time_t1": 0.5,
+                    "carrier": 118.0,
+                    "carrier_dec": float("nan"),
+                    "b1_frq": 25.0,
+                    "b1_frq_dec": 200.0,
+                    "b1_distribution": {"type": "homogeneous"},
+                }
+            )
+
+    @pytest.mark.parametrize(
+        "patch",
+        [
+            {"sw": float("inf")},
+            {"sw": float("nan")},
+            {"sw": 0.0},
+            {"sw": -50.0},
+            {"cos_n": 0},
+            {"cos_n": -3},
+            {"cos_n": 2000},
+            {"cos_res": 0},
+            {"cos_res": -1},
+            {"cos_res": 5000},
+            {"time_t1": float("inf")},
+            {"time_t1": 1.0e200, "sw": 1.0e200},
+            {"b1_frq": float("inf")},
+            {"time_equil": float("nan")},
+        ],
+    )
+    def test_coscest_rejects_nonfinite_and_invalid_fields(
+        self,
+        patch: dict[str, object],
+    ) -> None:
+        base: dict[str, object] = {
+            "name": "coscest_13c",
+            "time_t1": 0.5,
+            "carrier": 55.0,
+            "b1_frq": 0.0,
+            "sw": 800.0,
+            "cos_n": 3,
+            "b1_distribution": {"type": "homogeneous"},
+        }
+        with pytest.raises(ValidationError):
+            coscest_13c.CosCest13CSettings.model_validate({**base, **patch})
+
+    @pytest.mark.parametrize(
+        "patch",
+        [
+            {"sw": float("inf")},
+            {"sw": float("nan")},
+            {"sw": -100.0},
+            {"b1_eff": float("inf")},
+            {"b1_eff": float("nan")},
+            {"b1_eff": -1.0},
+            {"pw90": float("inf")},
+            {"pw90": float("nan")},
+            {"pw90": 0.0},
+            {"time_t1": float("inf")},
+            {"time_t1": float("nan")},
+            {"time_t1": -0.2},
+            {"time_equil": float("inf")},
+            {"time_equil": -0.1},
+            {"time_t1": 1.0e200, "sw": 1.0e200, "b1_eff": 0.0},
+        ],
+    )
+    def test_dcest_rejects_nonfinite_and_invalid_fields(
+        self,
+        patch: dict[str, object],
+    ) -> None:
+        base: dict[str, object] = {
+            "name": "dcest_15n",
+            "time_t1": 0.2,
+            "carrier": 118.0,
+            "b1_eff": 20.0,
+            "pw90": 40.0e-6,
+            "sw": 700.0,
+            "b1_distribution": {"type": "gaussian", "scale": 0.1},
+        }
+        with pytest.raises(ValidationError):
+            dcest_15n.DCest15NSettings.model_validate({**base, **patch})
+
+    def test_cli_reports_nonfinite_toml_as_configuration_error(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        data_file = tmp_path / "10N-HN.out"
+        data_file.write_text("-20000 1.0 0.02\n0 0.5 0.02\n", encoding="utf-8")
+        exp_file = tmp_path / "nonfinite_dcest.toml"
+        exp_file.write_text(
+            """[experiment]
+name = "dcest_15n"
+time_t1 = 0.2
+carrier = 118.0
+b1_eff = 20.0
+pw90 = 40.0e-6
+sw = inf
+b1_distribution = { type = "gaussian", scale = 0.1 }
+
+[conditions]
+h_larmor_frq = 600.0
+
+[data]
+path = "."
+
+[data.profiles]
+10N-HN = "10N-HN.out"
+""",
+            encoding="utf-8",
+        )
+        param_file = tmp_path / "params.toml"
+        param_file.write_text("[GLOBAL]\nPB = 0.1\nKEX_AB = 100.0\n", encoding="utf-8")
+        completed = subprocess.run(  # noqa: S603 - fixed local python entrypoint check
+            [
+                sys.executable,
+                "-m",
+                "chemex",
+                "simulate",
+                "-e",
+                str(exp_file),
+                "-p",
+                str(param_file),
+                "-o",
+                str(tmp_path / "out_nonfinite"),
+                "--plot",
+                "nothing",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        combined = completed.stdout + completed.stderr
+        assert completed.returncode == 1
+        assert "Experiment configuration is invalid" in completed.stderr
+        assert "unexpected internal error" not in combined
+        assert "Traceback" not in combined

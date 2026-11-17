@@ -4,6 +4,7 @@ import math
 from string import ascii_lowercase
 from typing import Annotated, Any, ClassVar, Self, TypeVar
 
+import numpy as np
 from pydantic import (
     BaseModel,
     BeforeValidator,
@@ -25,6 +26,7 @@ from chemex.configuration.types import (
     Delay,
     OptionalB1Field,
     PositiveFloat,
+    PositiveInt,
     PulseWidth,
 )
 from chemex.configuration.utils import key_to_lower
@@ -310,6 +312,12 @@ class B1InhomogeneityMixin(BaseModel):
 
         object.__setattr__(self, "b1_inh_scale", None)
         object.__setattr__(self, "b1_inh_res", None)
+        if (
+            not isinstance(self, CestB1Settings)
+            and self.b1_distribution is not None
+            and (self.b1_frq is not None or self.pw90 is not None)
+        ):
+            self.get_b1_model()
         return self
 
     @property
@@ -404,6 +412,9 @@ class CestB1Settings(B1InhomogeneityMixin):
                 'type = "homogeneous".'
             )
             raise ValueError(msg)
+
+        if self.requires_cw_b1_xor:
+            self.get_b1_model()
 
         return self
 
@@ -512,9 +523,53 @@ class CpmgSettingsEvenNcycs(RelaxationSettings):
 class CestSettings(RelaxationSettings):
     sw: float = math.inf
 
+    @field_validator("sw")
+    @classmethod
+    def _validate_cest_sw(cls, value: float) -> float:
+        if math.isnan(value) or value <= 0.0:
+            msg = "'sw' must be positive (or inf for unaliased continuous-wave CEST)"
+            raise ValueError(msg)
+        return value
+
 
 class MFCestSettings(RelaxationSettings):
     sw: PositiveFloat = Field(description="Spectral width (Hz)")
+
+
+class CosCestSettings(MFCestSettings, CestB1Settings):
+    """Shared B1 and cosine-modulated shape settings for cos-CEST experiments."""
+
+    allows_dephasing: ClassVar[bool] = False
+
+    time_t1: Delay = Field(description="Length of the CEST block in seconds")
+    cos_n: PositiveInt = Field(
+        le=1024,
+        description="Number of cosine excitation frequencies",
+    )
+    cos_res: PositiveInt = Field(
+        default=10,
+        le=4096,
+        description="Number of points used to simulate the cosine-modulated shape",
+    )
+
+    def get_b1_oscillation_inputs(self) -> tuple[float, float]:
+        """Return nominal B1 and executed L1 waveform duration for auto-res."""
+        sw = float(self.sw)
+        total_slices = self.time_t1 * sw * self.cos_res
+        if not math.isfinite(total_slices):
+            msg = "Product 'time_t1 * sw * cos_res' must be finite"
+            raise ValueError(msg)
+        dt = 1.0 / (self.cos_res * sw)
+        n_periods = int(self.time_t1 * sw)
+        n_left = int((self.time_t1 * sw - n_periods) * self.cos_res)
+        grid = np.linspace(-np.pi, np.pi, self.cos_res, endpoint=False)
+        n_values = (np.arange(self.cos_n) - 0.5 * (self.cos_n - 1)).reshape(-1, 1)
+        abs_amplitudes = np.abs(np.cos(n_values * grid).sum(axis=0))
+        t_eff_s = dt * (
+            n_periods * float(abs_amplitudes.sum())
+            + float(abs_amplitudes[:n_left].sum())
+        )
+        return self.get_b1_nominal(), t_eff_s
 
 
 class DCestSettings(MFCestSettings, CestB1Settings):
@@ -537,12 +592,15 @@ class DCestSettings(MFCestSettings, CestB1Settings):
 
     @model_validator(mode="after")
     def _validate_dcest_fields(self) -> Self:
-        """Validate D-CEST hardware pw90 and physical DANTE duty cycle."""
+        """Validate D-CEST hardware pw90, DANTE timing, and B1 resolution."""
         if self.pw90 is None:
             msg = (
                 "D-CEST experiments require 'pw90' (hardware B1 pulse width). "
                 "Both 'pw90' and 'b1_eff' (alias: 'b1_frq') must be specified."
             )
+            raise ValueError(msg)
+        if not math.isfinite(self.time_t1 * float(self.sw)):
+            msg = "Product 'time_t1 * sw' must be finite"
             raise ValueError(msg)
         if self.tau_dante < 0.0:
             duty = 4.0 * float(self.pw90) * float(self.b1_eff)
@@ -552,6 +610,7 @@ class DCestSettings(MFCestSettings, CestB1Settings):
                 f"{duty:.3f} must be <= 1.0."
             )
             raise ValueError(msg)
+        self.get_b1_model()
         return self
 
     # D-CEST convention: the B1 inhomogeneity distribution is centered on the

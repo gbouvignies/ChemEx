@@ -30,8 +30,9 @@ from chemex.nmr.b1 import (
 )
 from chemex.nmr.constants import Distribution
 from chemex.nmr.distributions._quadrature import (
-    AUTO_RES_MAX,
+    CUSTOM_MAX_POINTS,
     MAX_SKEWNESS,
+    RES_MAX,
     resolve_gaussian_res,
     resolve_skewed_res,
     validate_skewness,
@@ -130,7 +131,7 @@ class GaussianDistributionConfig(DistributionConfig):
 
     type: Literal["gaussian"] = "gaussian"
     scale: float = Field(default=0.1, ge=0.0, le=1.0, allow_inf_nan=False)
-    res: int | None = Field(default=None, ge=1, le=AUTO_RES_MAX)
+    res: int | None = Field(default=None, ge=1, le=RES_MAX)
 
     def to_b1_model(
         self,
@@ -157,7 +158,7 @@ class SkewedDistributionConfig(DistributionConfig):
         allow_inf_nan=False,
         description=(
             "Theoretical third standardized moment of the parent Azzalini "
-            f"skew-normal distribution (|skewness| < {MAX_SKEWNESS:.6f})"
+            f"skew-normal distribution (|skewness| < {MAX_SKEWNESS:.12g})"
         ),
     )
     center: Literal["mode", "mean"] = Field(
@@ -167,20 +168,28 @@ class SkewedDistributionConfig(DistributionConfig):
             "('mode' or 'mean')"
         ),
     )
-    res: int | None = Field(default=None, ge=1, le=AUTO_RES_MAX)
+    res: int | None = Field(default=None, ge=1, le=RES_MAX)
 
     @model_validator(mode="before")
     @classmethod
     def _require_explicit_center(cls, data: object) -> object:
         normalized = _normalize_str_keys(data)
-        if isinstance(normalized, Mapping) and normalized.get("center") is None:
-            msg = (
-                "'skewed' B1 distribution requires an explicit 'center' "
-                '("mode" or "mean"), e.g.: '
-                'b1_distribution = { type = "skewed", scale = 0.1, '
-                'skewness = -0.5, center = "mode" }'
-            )
-            raise ValueError(msg)
+        if isinstance(normalized, Mapping):
+            center = normalized.get("center")
+            if center is None:
+                msg = (
+                    "'skewed' B1 distribution requires an explicit 'center' "
+                    '("mode" or "mean"), e.g.: '
+                    'b1_distribution = { type = "skewed", scale = 0.1, '
+                    'skewness = -0.5, center = "mode" }'
+                )
+                raise ValueError(msg)
+            if center not in ("mode", "mean"):
+                msg = (
+                    f"Invalid 'center' {center!r} for 'skewed' B1 distribution; "
+                    'must be "mode" or "mean".'
+                )
+                raise ValueError(msg)
         return normalized
 
     @field_validator("skewness")
@@ -214,8 +223,8 @@ class CustomDistributionConfig(DistributionConfig):
     """Configuration for custom B1 distribution with explicit scales and weights."""
 
     type: Literal["custom"] = "custom"
-    scales: list[float] = Field(min_length=1)
-    weights: list[float] = Field(min_length=1)
+    scales: list[float] = Field(min_length=1, max_length=CUSTOM_MAX_POINTS)
+    weights: list[float] = Field(min_length=1, max_length=CUSTOM_MAX_POINTS)
 
     @field_validator("scales")
     @classmethod
@@ -304,6 +313,19 @@ def _validate_distribution_type(dist_type: object) -> None:
         raise ValueError(msg)
 
 
+def _malformed_distribution_message(value: object) -> str:
+    if isinstance(value, str):
+        return (
+            f"'b1_distribution' must be a table (got string {value!r}), e.g.: "
+            'b1_distribution = { type = "gaussian", scale = 0.1 }'
+        )
+    valid = ", ".join(repr(name) for name in VALID_B1_DISTRIBUTION_TYPES)
+    return (
+        f"'b1_distribution' must be a table specifying 'type' "
+        f"(one of: {valid}), got {type(value).__name__}"
+    )
+
+
 def parse_distribution_config(value: object) -> B1DistributionModelConfig:
     """Parse a B1 distribution config against the curated discriminated union."""
     if isinstance(value, DistributionConfig):
@@ -311,5 +333,6 @@ def parse_distribution_config(value: object) -> B1DistributionModelConfig:
     if isinstance(value, Mapping):
         normalized = _normalize_mapping(value)
         _validate_distribution_type(normalized.get("type"))
-        value = normalized
-    return _DISTRIBUTION_ADAPTER.validate_python(value)
+        return _DISTRIBUTION_ADAPTER.validate_python(normalized)
+    msg = _malformed_distribution_message(value)
+    raise ValueError(msg)

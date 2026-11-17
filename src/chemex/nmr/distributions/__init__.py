@@ -13,7 +13,7 @@ configurations:
   integrated via Gauss-Legendre quadrature with automatic or explicit ``res``.
 - **skewed**: Positive-support Azzalini skew-normal distribution parameterized
   by ``scale``, third standardized moment ``skewness``
-  (``|skewness| < 0.995272``), and explicit ``center`` (``"mode"`` or
+  (``|skewness| < 0.9952717``), and explicit ``center`` (``"mode"`` or
   ``"mean"``), reducing smoothly and identically to ``gaussian`` at
   ``skewness = 0.0``.
 - **custom**: User-defined relative ``scales`` and ``weights`` (e.g. from an

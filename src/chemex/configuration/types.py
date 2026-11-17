@@ -6,6 +6,7 @@ the codebase and reduce boilerplate in field definitions.
 
 from __future__ import annotations
 
+import math
 from typing import Annotated
 
 from pydantic import AfterValidator, Field
@@ -13,25 +14,25 @@ from pydantic import AfterValidator, Field
 
 # Validators for common patterns
 def validate_positive(v: float) -> float:
-    """Validate that a value is positive (> 0)."""
-    if v <= 0:
-        msg = f"Must be positive, got {v}"
+    """Validate that a value is finite and positive (> 0)."""
+    if not math.isfinite(v) or v <= 0:
+        msg = f"Must be finite and positive, got {v}"
         raise ValueError(msg)
     return v
 
 
 def validate_non_negative(v: float) -> float:
-    """Validate that a value is non-negative (>= 0)."""
-    if v < 0:
-        msg = f"Must be non-negative, got {v}"
+    """Validate that a value is finite and non-negative (>= 0)."""
+    if not math.isfinite(v) or v < 0:
+        msg = f"Must be finite and non-negative, got {v}"
         raise ValueError(msg)
     return v
 
 
 def validate_probability(v: float) -> float:
-    """Validate that a value is a valid probability [0, 1]."""
-    if not 0.0 <= v <= 1.0:
-        msg = f"Must be between 0 and 1, got {v}"
+    """Validate that a value is finite and in [0, 1]."""
+    if not math.isfinite(v) or not 0.0 <= v <= 1.0:
+        msg = f"Must be finite and between 0 and 1, got {v}"
         raise ValueError(msg)
     return v
 
@@ -39,14 +40,14 @@ def validate_probability(v: float) -> float:
 # Basic constrained types
 PositiveFloat = Annotated[
     float,
-    Field(gt=0.0),
+    Field(gt=0.0, allow_inf_nan=False),
     AfterValidator(validate_positive),
 ]
 """A positive float value (> 0)."""
 
 NonNegativeFloat = Annotated[
     float,
-    Field(ge=0.0),
+    Field(ge=0.0, allow_inf_nan=False),
     AfterValidator(validate_non_negative),
 ]
 """A non-negative float value (>= 0)."""
@@ -65,7 +66,7 @@ NonNegativeInt = Annotated[
 
 Probability = Annotated[
     float,
-    Field(ge=0.0, le=1.0),
+    Field(ge=0.0, le=1.0, allow_inf_nan=False),
     AfterValidator(validate_probability),
 ]
 """A probability value between 0 and 1 (inclusive)."""
@@ -76,6 +77,7 @@ PulseWidth = Annotated[
     float,
     Field(
         gt=0.0,
+        allow_inf_nan=False,
         description="Pulse width in seconds (must be positive)",
     ),
 ]
@@ -84,6 +86,7 @@ PulseWidth = Annotated[
 Frequency = Annotated[
     float,
     Field(
+        allow_inf_nan=False,
         description="Frequency in Hz",
     ),
 ]
@@ -93,6 +96,7 @@ PositiveFrequency = Annotated[
     float,
     Field(
         gt=0.0,
+        allow_inf_nan=False,
         description="Frequency in Hz (must be positive)",
     ),
 ]
@@ -102,6 +106,7 @@ RelaxationTime = Annotated[
     float,
     Field(
         gt=0.0,
+        allow_inf_nan=False,
         description="Relaxation time in seconds (must be positive)",
     ),
 ]
@@ -111,6 +116,7 @@ Delay = Annotated[
     float,
     Field(
         ge=0.0,
+        allow_inf_nan=False,
         description="Time delay in seconds (must be non-negative)",
     ),
 ]
@@ -120,6 +126,7 @@ B1Field = Annotated[
     float,
     Field(
         ge=0.0,
+        allow_inf_nan=False,
         description="B1 field strength in Hz (must be non-negative)",
     ),
 ]
@@ -128,6 +135,7 @@ B1Field = Annotated[
 ChemicalShift = Annotated[
     float,
     Field(
+        allow_inf_nan=False,
         description="Chemical shift in ppm",
     ),
 ]
@@ -137,6 +145,7 @@ ExchangeRate = Annotated[
     float,
     Field(
         ge=0.0,
+        allow_inf_nan=False,
         description="Exchange rate constant in s⁻¹ (must be non-negative)",
     ),
 ]
@@ -147,6 +156,7 @@ Population = Annotated[
     Field(
         ge=0.0,
         le=1.0,
+        allow_inf_nan=False,
         description="Population fraction (0-1)",
     ),
     AfterValidator(validate_probability),

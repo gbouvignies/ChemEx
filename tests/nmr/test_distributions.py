@@ -17,6 +17,7 @@ from chemex.experiments.catalog import (
     cest_1hn_ip_ap,
     cest_15n,
     coscest_1hn_ip_ap,
+    coscest_13c,
     dcest_15n,
 )
 from chemex.models.model import ModelSpec
@@ -29,8 +30,14 @@ from chemex.nmr.distributions import (
     skewed,
 )
 from chemex.nmr.distributions._quadrature import (
+    AUTO_RES_MAX,
+    CUSTOM_MAX_POINTS,
     MAX_SKEWNESS,
+    RES_MAX,
+    auto_quadrature_res,
     compute_skewnorm_mode_z,
+    resolve_gaussian_res,
+    resolve_skewed_res,
     skewness_to_alpha_and_sigma_z,
 )
 from chemex.parameters.spin_system import SpinSystem
@@ -195,12 +202,27 @@ class TestFiveModelInvariants:
 
     @pytest.mark.parametrize(
         "invalid_skewness",
-        [-2.0, -1.0, -MAX_SKEWNESS, MAX_SKEWNESS, 1.0, 2.0, float("nan")],
+        [
+            -2.0,
+            -1.0,
+            -MAX_SKEWNESS,
+            MAX_SKEWNESS,
+            1.0,
+            2.0,
+            float("nan"),
+            float("inf"),
+            float("-inf"),
+        ],
     )
     def test_skewed_rejects_out_of_domain_skewness(
         self, invalid_skewness: float
     ) -> None:
-        with pytest.raises(ValueError, match="skew-normal range"):
+        pattern = (
+            "Skewness must be finite"
+            if not math.isfinite(invalid_skewness)
+            else "skew-normal range"
+        )
+        with pytest.raises(ValueError, match=pattern):
             skewed.generate(20.0, 0.1, invalid_skewness, 11, center="mode")
 
     def test_custom_normalizes_and_validates_standalone_calls(self) -> None:
@@ -669,6 +691,181 @@ class TestIndependentReferenceQuadratureAccuracy:
         )
         calc_ref = module.EXPERIMENT_TYPE.create_profile_calculation(
             config, SpinSystem(name=spin_name)
+        )
+        calc_ref.spectrometer.set_b1_i_distribution(dist_ref, nominal=nominal)
+        calc_ref.spectrometer.update(params)
+        y_ref = calc_ref.pulse_sequence.calculate(calc_ref.spectrometer, data)
+        ratio_ref = y_ref[1:] / y_ref[0]
+
+        assert float(np.max(np.abs(ratio_auto - ratio_ref))) <= 1.0e-4
+
+    def test_auto_res_overflow_raises_instead_of_clamping_while_explicit_override_allows_res_max(
+        self,
+    ) -> None:
+        with pytest.raises(ValueError, match=f"exceeding.*{AUTO_RES_MAX}"):
+            auto_quadrature_res(0.8, 5000.0, 0.5, 0.0)
+
+        with pytest.raises(ValueError, match=f"exceeding.*{AUTO_RES_MAX}"):
+            resolve_gaussian_res(0.1, b1_eff_hz=5000.0, t_sat_s=0.5, res=None)
+
+        with pytest.raises(ValueError, match=f"exceeding.*{AUTO_RES_MAX}"):
+            resolve_skewed_res(
+                0.1, -0.5, "mode", b1_eff_hz=5000.0, t_sat_s=0.5, res=None
+            )
+
+        for bad in (float("nan"), float("inf")):
+            with pytest.raises(ValueError, match="finite"):
+                resolve_gaussian_res(0.0, b1_eff_hz=bad, t_sat_s=0.5, res=1)
+            with pytest.raises(ValueError, match="finite"):
+                auto_quadrature_res(0.8, bad, 0.5, 0.0)
+
+        assert resolve_gaussian_res(0.1, b1_eff_hz=5000.0, t_sat_s=0.5, res=801) == 801
+        assert gaussian.generate(25.0, 0.1, res=801).values.size == 801
+        assert (
+            resolve_gaussian_res(0.1, b1_eff_hz=25.0, t_sat_s=0.5, res=RES_MAX)
+            == RES_MAX
+        )
+        with pytest.raises(ValueError, match=f"between 1 and {RES_MAX}"):
+            gaussian.generate(25.0, 0.1, res=RES_MAX + 1)
+
+    def test_skewness_diagnostic_does_not_round_above_max_and_custom_caps_points(
+        self,
+    ) -> None:
+        with pytest.raises(ValueError, match="outside the valid Azzalini") as err_info:
+            skewed.generate(25.0, 0.1, 0.9952719, 15, center="mode")
+        assert "0.995272" not in str(err_info.value)
+
+        with pytest.raises(ValueError, match="Skewness must be finite"):
+            skewed.generate(25.0, 0.1, float("nan"), 15, center="mode")
+
+        with pytest.raises(ValueError, match=f"at most {CUSTOM_MAX_POINTS}"):
+            custom.generate(
+                15.0,
+                np.ones(CUSTOM_MAX_POINTS + 1),
+                np.ones(CUSTOM_MAX_POINTS + 1),
+            )
+
+    @pytest.mark.parametrize(
+        ("module", "spin_name", "carrier", "extra", "params"),
+        [
+            (
+                coscest_13c,
+                "A10CA",
+                55.0,
+                {},
+                {
+                    "pa": 0.9,
+                    "pb": 0.1,
+                    "kab": 5.0,
+                    "kba": 45.0,
+                    "cs_i_a": 55.0,
+                    "cs_i_b": 52.0,
+                    "r1_i_a": 0.5,
+                    "r1_i_b": 0.5,
+                    "r2_i_a": 1.0,
+                    "r2_i_b": 1.0,
+                },
+            ),
+            (
+                coscest_1hn_ip_ap,
+                "G23HN-N",
+                8.0,
+                {"d1": 0.5},
+                {
+                    "pa": 0.9,
+                    "pb": 0.1,
+                    "kab": 5.0,
+                    "kba": 45.0,
+                    "cs_i_a": 8.0,
+                    "cs_i_b": 7.5,
+                    "cs_s_a": 118.0,
+                    "cs_s_b": 115.0,
+                    "j_is_a": -92.0,
+                    "j_is_b": -92.0,
+                    "r1_i_a": 0.5,
+                    "r1_i_b": 0.5,
+                    "r1_s_a": 0.5,
+                    "r1_s_b": 0.5,
+                    "r1a_is_a": 1.0,
+                    "r1a_is_b": 1.0,
+                    "r2_i_a": 1.0,
+                    "r2_i_b": 1.0,
+                    "r2a_i_a": 1.2,
+                    "r2a_i_b": 1.2,
+                    "etaz_i_a": 0.2,
+                    "etaz_i_b": 0.2,
+                    "etaxy_i_a": 0.5,
+                    "etaxy_i_b": 0.5,
+                },
+            ),
+        ],
+    )
+    @pytest.mark.parametrize(
+        ("cos_n", "sw"),
+        [(3, 1.5), (5, 1.5), (5, 25.0), (9, 1.0)],
+    )
+    @pytest.mark.parametrize(
+        "b1_cfg",
+        [
+            {"type": "gaussian", "scale": 0.2},
+            {"type": "skewed", "scale": 0.25, "skewness": -0.95, "center": "mode"},
+        ],
+    )
+    def test_coscest_l1_waveform_auto_res_handles_overlapping_sidebands(
+        self,
+        module: Any,
+        spin_name: str,
+        carrier: float,
+        extra: dict[str, float],
+        params: dict[str, float],
+        cos_n: int,
+        sw: float,
+        b1_cfg: dict[str, Any],
+    ) -> None:
+        ensure_plugins_registered()
+        model = ModelSpec.from_name("2st")
+        exp_base: dict[str, object] = {
+            "name": module.EXPERIMENT_NAME,
+            "time_t1": 0.5,
+            "carrier": carrier,
+            "b1_frq": 40.0,
+            "sw": sw,
+            "cos_n": cos_n,
+            "cos_res": max(10, 4 * cos_n),
+            **extra,
+        }
+        cfg_auto = module.EXPERIMENT_TYPE.config_type.model_validate(
+            {
+                "experiment": {**exp_base, "b1_distribution": b1_cfg},
+                "conditions": {"h_larmor_frq": 600.0},
+                "data": {},
+            },
+            context={"model": model},
+        )
+        cfg_auto.model = model
+        cfg_auto.experiment.model_name = model.name
+
+        offsets = np.concatenate([[-2.0e4], np.linspace(-180.0, 180.0, 37)])
+        data = Data(
+            exp=np.ones_like(offsets), err=np.ones_like(offsets), metadata=offsets
+        )
+        calc_auto = module.EXPERIMENT_TYPE.create_profile_calculation(
+            cfg_auto, SpinSystem(name=spin_name)
+        )
+        calc_auto.spectrometer.update(params)
+        y_auto = calc_auto.pulse_sequence.calculate(calc_auto.spectrometer, data)
+        ratio_auto = y_auto[1:] / y_auto[0]
+
+        nominal = cfg_auto.experiment.get_b1_nominal()
+        dist_ref = _reference_cest_distribution(
+            nominal,
+            float(b1_cfg["scale"]),
+            float(b1_cfg.get("skewness", 0.0)),
+            str(b1_cfg.get("center", "mean")),
+            panels=80,
+        )
+        calc_ref = module.EXPERIMENT_TYPE.create_profile_calculation(
+            cfg_auto, SpinSystem(name=spin_name)
         )
         calc_ref.spectrometer.set_b1_i_distribution(dist_ref, nominal=nominal)
         calc_ref.spectrometer.update(params)

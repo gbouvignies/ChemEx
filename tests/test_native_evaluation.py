@@ -166,10 +166,13 @@ def test_shipped_two_profile_dcest_plan_matches_direct_profiles_completely() -> 
         atol=1.2e-8,
     )
     np.testing.assert_allclose(outcome.residuals, direct_residuals, rtol=6.0e-13)
+    # Sequential binary64 normalization vs BLAS SIMD np.dot over masked points
+    # plus multi-node propagator ULP differences can differ by a few binary64
+    # ULPs across independent executions on Linux.
     np.testing.assert_allclose(
         [item.normalization_factor for item in outcome.profiles],
         [profile.data.scale for profile in direct_profiles],
-        rtol=6.0e-16,
+        rtol=2.0e-15,
     )
     assert [item.retained_observation_indices for item in outcome.profiles] == [
         tuple(np.flatnonzero(profile.data.mask)) for profile in direct_profiles
@@ -530,7 +533,7 @@ def test_native_plan_matches_direct_complete_profile_evaluation() -> None:
     )
     np.testing.assert_allclose(outcome.residuals, direct_residuals, rtol=6.0e-13)
     assert outcome.profiles[0].normalization_factor == pytest.approx(
-        direct_profile.data.scale, rel=6.0e-16
+        direct_profile.data.scale, rel=2.0e-15
     )
     assert outcome.profiles[0].retained_observation_indices == tuple(
         np.flatnonzero(direct_profile.data.mask)
