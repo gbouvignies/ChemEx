@@ -1,81 +1,37 @@
-"""Gaussian B1 distribution with linear grid.
-
-This is the original ChemEx B1 inhomogeneity distribution method.
-"""
+"""Gaussian B1 distribution with positive-support Gauss-Legendre quadrature."""
 
 from __future__ import annotations
 
-from typing import Literal
-
-import numpy as np
-from pydantic import Field
-from scipy import stats
+from typing import Any
 
 from chemex.nmr.constants import Distribution
-from chemex.nmr.distributions.registry import DistributionConfig, registry
+from chemex.nmr.distributions._quadrature import build_skewed_or_gaussian
 
 
 def generate(
     value: float,
     scale: float,
-    res: int,
+    res: int = 15,
 ) -> Distribution:
-    """Generate simple Gaussian distribution with a non-negative linear grid.
+    """Generate a positive-conditioned Gaussian B1 distribution.
 
-    Uses a linear grid from ``max(0, 1 - 2*scale)`` to ``1 + 2*scale`` (in
-    units of ``value``) with Gaussian PDF weights. For ``scale <= 0.5`` this
-    matches the historical ``[-2σ, +2σ]`` ChemEx grid identically while
-    preventing unphysical negative B1 points when ``scale > 0.5``.
+    Models a Normal distribution with parent mean ``value`` and parent standard
+    deviation ``scale * value`` conditioned on ``B1 >= 0``, integrated by
+    Gauss-Legendre quadrature over its ``[1e-5, 1 - 1e-5]`` quantile support.
     """
-    if not np.isfinite(value) or value < 0.0:
-        msg = f"Nominal B1 value must be finite and non-negative, got {value}"
-        raise ValueError(msg)
-    if np.isnan(scale) or scale < 0.0:
-        msg = f"Scale must be non-negative, got {scale}"
-        raise ValueError(msg)
-
-    if value > 0.0 and scale not in (0.0, np.inf) and res > 1:
-        rel_min = max(0.0, 1.0 - 2.0 * scale)
-        rel_max = 1.0 + 2.0 * scale
-        distribution = np.linspace(rel_min, rel_max, res)
-        grid = (distribution - 1.0) / scale
-    else:
-        grid = np.array([0.0])
-        distribution = np.array([1.0])
-
-    weights = stats.norm.pdf(grid)
-    weights /= weights.sum()
-
-    return Distribution(distribution * value, weights)
+    return build_skewed_or_gaussian(
+        value,
+        scale,
+        skewness=0.0,
+        center="mean",
+        res=res,
+    )
 
 
-class GaussianDistributionConfig(DistributionConfig):
-    """Configuration for simple Gaussian B1 distribution with linear grid.
+def __getattr__(name: str) -> Any:
+    if name == "GaussianDistributionConfig":
+        from chemex.configuration.b1_config import GaussianDistributionConfig
 
-    This is the original ChemEx B1 inhomogeneity method using a linear grid
-    from -2 to +2 standard deviations (clamped below at B1 = 0) with Gaussian
-    PDF weights.
-
-    Attributes
-    ----------
-    type : Literal["gaussian"]
-        Distribution type identifier
-    scale : float
-        Standard deviation as fraction of nominal value (e.g., 0.10 = 10%)
-    res : int
-        Number of grid points
-
-    """
-
-    type: Literal["gaussian"] = "gaussian"
-    scale: float = Field(default=0.1, ge=0.0, le=1.0)
-    res: int = Field(default=11, ge=1, le=51)
-
-    def get_distribution(self, value: float) -> Distribution:
-        """Generate the Gaussian distribution."""
-        return generate(value, self.scale, self.res)
-
-
-def register() -> None:
-    """Register this distribution with the registry."""
-    registry.register("gaussian", generate, GaussianDistributionConfig)
+        return GaussianDistributionConfig
+    msg = f"module {__name__!r} has no attribute {name!r}"
+    raise AttributeError(msg)

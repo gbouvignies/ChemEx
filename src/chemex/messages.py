@@ -1019,6 +1019,24 @@ def print_no_duplicate_warning(filename: Path) -> None:
     console.print()
 
 
+def print_deprecated_b1_inhomogeneity_warning(
+    filename: Path,
+    legacy_fields: tuple[str, ...],
+    replacement: str,
+) -> None:
+    """Warn that legacy B1 inhomogeneity keys are deprecated."""
+    fields_text = " / ".join(repr(field) for field in legacy_fields)
+    warning_message = (
+        f"[yellow] -- WARNING: Experiment {filename.name}[/yellow]: "
+        f"Legacy {fields_text} setting is deprecated and will be removed in a "
+        f"future release. Replace it in [experiment] with: "
+        f"b1_distribution = {replacement}"
+    )
+    console.print()
+    console.print(warning_message)
+    console.print()
+
+
 FITMETHOD_ERROR_MESSAGE = """\
   - "FITMETHOD" is deprecated v1-only syntax and supports only "trf".
     "least_squares" remains an alias only during the v1 compatibility window.

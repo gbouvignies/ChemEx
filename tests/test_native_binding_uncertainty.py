@@ -990,7 +990,7 @@ FIX = ["KD"]
     assert evidence.covariance is not None
     kd_index = jacobian.controlled_ids.index("__KD")
     kd = evidence.accepted_anchor.vector[kd_index]
-    assert kd == pytest.approx(1.0156e-6, rel=2.0e-3)
+    assert kd == pytest.approx(9.7227e-7, rel=2.0e-3)
     assert math.isfinite(evidence.covariance.covariance[kd_index][kd_index])
     fitted = (output / "Parameters" / "fitted.toml").read_text(encoding="utf-8")
     assert "KD" in fitted

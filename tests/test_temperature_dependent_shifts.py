@@ -570,8 +570,7 @@ def _calculate_cest(
                 "time_t1": 0.25,
                 "carrier": 118.0,
                 "b1_frq": 25.0,
-                "b1_inh_scale": 0.0,
-                "b1_inh_res": 1,
+                "b1_distribution": {"type": "homogeneous"},
             },
             "conditions": {
                 "h_larmor_frq": 800.0,

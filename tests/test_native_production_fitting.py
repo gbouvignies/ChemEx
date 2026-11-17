@@ -5849,7 +5849,7 @@ COORDINATES = [
     de_chi_square = tomllib.loads(
         (de_output / "statistics.toml").read_text(encoding="utf-8")
     )["chi-square"]
-    assert direct_chi_square == pytest.approx(271.894, rel=1.0e-4)
+    assert direct_chi_square == pytest.approx(271.467, rel=1.0e-4)
     assert de_chi_square < 0.8 * direct_chi_square
 
 

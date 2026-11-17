@@ -8,7 +8,7 @@ from pydantic import Field, computed_field
 from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
 from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import CestDataSettings
-from chemex.configuration.experiment import B1InhomogeneityMixin, CestSettings
+from chemex.configuration.experiment import CestB1Settings, CestSettings
 from chemex.configuration.types import B1Field, ChemicalShift, Delay
 from chemex.containers.data import Data
 from chemex.experiments.experiment_types import (
@@ -28,7 +28,7 @@ EXPERIMENT_NAME = "cest_15n_cw"
 OFFSET_REF = 1e4
 
 
-class Cest15NCwSettings(CestSettings, B1InhomogeneityMixin):
+class Cest15NCwSettings(CestSettings, CestB1Settings):
     """Settings for constant-wave (CW) 15N CEST experiment."""
 
     name: Literal["cest_15n_cw"]
@@ -88,7 +88,7 @@ def build_spectrometer(
 
     spectrometer.set_b1_i_inhomogeneity(
         settings.get_b1_nominal(),
-        settings.b1_distribution,
+        settings.get_b1_model(),
     )
 
     spectrometer.b1_s = settings.b1_frq_dec

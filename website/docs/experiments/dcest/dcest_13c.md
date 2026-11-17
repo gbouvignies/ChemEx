@@ -50,20 +50,16 @@ sw = 800.0
 ## Effective B1 field for the equivalent continuous-wave CEST irradiation, in Hz
 b1_eff = 25.0  # alias: b1_frq (still supported)
 
-## B1 inhomogeneity distribution (replaces b1_inh_scale/b1_inh_res)
+## B1 inhomogeneity distribution (required; "dephasing" is not valid for D-CEST)
 [experiment.b1_distribution]
-type = "gaussian"  # distribution shape
-scale = 0.1        # fractional standard deviation relative to b1_frq
-res = 11           # number of sampling points across the distribution
+type = "gaussian"  # "gaussian", "skewed", "custom", or "homogeneous"
+scale = 0.1        # fractional standard deviation relative to nominal B1 (1/(4*pw90))
+# res = 15         # optional override (automatic by default)
 
 ## Notes on pw90 vs b1_eff (D-CEST specific):
 ## - The B1 distribution is centered on the nominal B1 implied by pw90 (1/(4*pw90)).
 ## - b1_eff (when provided) is used to compute the DANTE pulse width (pw_dante).
 ## You must provide both for D-CEST. 'b1_frq' remains an alias for b1_eff.
-
-## Notes on pw90 vs b1_frq (D-CEST specific):
-## - The B1 distribution is centered on the nominal B1 implied by pw90 (1/(4*pw90)).
-## - b1_frq (when provided) is used to compute the DANTE pulse width (pw_dante).
 
 ## Equilibration delay at the end of the CEST period, in seconds
 ## [optional, default: 0.0]

@@ -72,14 +72,14 @@ b1_eff = 25.0  # alias: b1_frq (still supported)
 ## width, and τ' the inter-pulse interval. With spectral width sw = 1/τ',
 ## Eq. [S12] gives: τp = (b1_eff / b1_D-CEST) * τ'.
 
-## B1 inhomogeneity distribution (replaces b1_inh_scale/b1_inh_res)
-## type:  distribution family (e.g., "gaussian")
-## scale: relative standard deviation (e.g., 0.1 means 10% width)
-## res:   number of quadrature points used in the distribution
+## B1 inhomogeneity distribution (required; "dephasing" is not valid for D-CEST)
+## type:  "gaussian", "skewed", "custom", or "homogeneous"
+## scale: relative standard deviation relative to nominal B1 (1/(4*pw90))
+## res:   optional quadrature node count override (automatic by default)
 [experiment.b1_distribution]
 type = "gaussian"
 scale = 0.1
-res = 11
+# res = 15  # optional override (automatic by default)
 
 ## Equilibration delay at the end of the CEST period, in seconds
 ## [optional, default: 0.0]

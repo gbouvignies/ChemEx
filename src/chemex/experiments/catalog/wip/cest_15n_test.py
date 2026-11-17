@@ -10,6 +10,7 @@ from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
 from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import CestDataSettings
 from chemex.configuration.experiment import B1InhomogeneityMixin, CestSettings
+from chemex.configuration.types import B1Field, ChemicalShift, Delay
 from chemex.containers.data import Data
 from chemex.experiments.experiment_types import (
     ProfileCalculation,
@@ -29,9 +30,9 @@ OFFSET_REF = 1e4
 
 class Cest15NSettings(CestSettings, B1InhomogeneityMixin):
     name: Literal["wip.cest_15n_test"]
-    time_t1: float
-    carrier: float
-    b1_frq: float
+    time_t1: Delay
+    carrier: ChemicalShift
+    b1_frq: B1Field
     legacy_b1_inh_scale_default: ClassVar[float | None] = 0.1
     legacy_b1_inh_res_default: ClassVar[int | None] = 11
 
@@ -70,7 +71,7 @@ def build_spectrometer(
     spectrometer.carrier_i = settings.carrier
     spectrometer.set_b1_i_inhomogeneity(
         settings.get_b1_nominal(),
-        settings.b1_distribution,
+        settings.get_b1_model(),
     )
 
     spectrometer.detection = settings.detection

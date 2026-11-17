@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from string import ascii_lowercase
-from typing import Annotated, Any, ClassVar, TypeVar
+from typing import Annotated, Any, ClassVar, Self, TypeVar
 
 import numpy as np
 from pydantic import (
@@ -10,18 +10,30 @@ from pydantic import (
     BeforeValidator,
     ConfigDict,
     Field,
+    PrivateAttr,
     ValidationInfo,
+    computed_field,
     field_validator,
     model_validator,
 )
 
-from chemex.configuration.b1_config import parse_distribution_config
-from chemex.configuration.types import OptionalB1Field, PulseWidth
+from chemex.configuration.b1_config import (
+    B1DistributionConfig,
+    parse_distribution_config,
+)
+from chemex.configuration.types import (
+    B1Field,
+    Delay,
+    OptionalB1Field,
+    PositiveFloat,
+    PositiveInt,
+    PulseWidth,
+)
 from chemex.configuration.utils import key_to_lower
 from chemex.models.model import ModelSpec
 from chemex.nmr._engine.detection import build_state_detection_expression
+from chemex.nmr.b1 import B1RuntimeModel, HomogeneousB1Model
 from chemex.nmr.constants import Distribution
-from chemex.nmr.distributions.registry import DistributionConfig
 
 T = TypeVar("T")
 _SUPPORTED_STATES = tuple(ascii_lowercase[:6])
@@ -100,29 +112,48 @@ _StartStateSelection = Annotated[
 
 
 def _legacy_b1_distribution_input(
-    scale: float | None,
-    res: int | None,
-) -> dict[str, object]:
-    current_scale = 0.1 if scale is None else scale
-    if math.isinf(current_scale):
-        return {"type": "dephasing"}
-    return {
-        "type": "gaussian",
-        "scale": current_scale,
-        "res": 11 if res is None else res,
-    }
+    scale: object,
+    res: object,
+) -> tuple[dict[str, object], str]:
+    if isinstance(scale, (int, float)) and not isinstance(scale, bool):
+        if math.isinf(scale):
+            return {"type": "dephasing"}, '{ type = "dephasing" }'
+        if scale == 0.0:
+            return {"type": "homogeneous"}, '{ type = "homogeneous" }'
+    if res == 1 and not isinstance(res, bool):
+        return {"type": "homogeneous"}, '{ type = "homogeneous" }'
+
+    current_scale: object = 0.1 if scale is None else scale
+    scale_text = (
+        f"{current_scale:g}"
+        if isinstance(current_scale, (int, float))
+        and not isinstance(current_scale, bool)
+        else repr(current_scale)
+    )
+    if res is None:
+        return (
+            {"type": "gaussian", "scale": current_scale},
+            f'{{ type = "gaussian", scale = {scale_text} }}',
+        )
+    return (
+        {"type": "gaussian", "scale": current_scale, "res": res},
+        f'{{ type = "gaussian", scale = {scale_text}, res = {res} }}',
+    )
 
 
 def normalize_b1_eff_alias(data: Any) -> Any:
     """Map legacy D-CEST b1_frq input to b1_eff without populating both fields."""
-    if not isinstance(data, dict) or "b1_frq" not in data:
+    if not isinstance(data, dict):
         return data
 
-    b1_frq = data["b1_frq"]
+    normalized = key_to_lower(data)
+    if "b1_frq" not in normalized:
+        return normalized
+
+    b1_frq = normalized["b1_frq"]
     if b1_frq is None:
-        return data
+        return normalized
 
-    normalized = dict(data)
     normalized.pop("b1_frq")
     if "b1_eff" in normalized and normalized["b1_eff"] != b1_frq:
         msg = "Use either 'b1_eff' or its legacy alias 'b1_frq', not both"
@@ -187,6 +218,9 @@ class B1InhomogeneityMixin(BaseModel):
 
     legacy_b1_inh_scale_default: ClassVar[float | None] = None
     legacy_b1_inh_res_default: ClassVar[int | None] = None
+    _legacy_b1_deprecation: tuple[tuple[str, ...], str] | None = PrivateAttr(
+        default=None
+    )
 
     pw90: PulseWidth | None = Field(
         default=None,
@@ -198,7 +232,7 @@ class B1InhomogeneityMixin(BaseModel):
         description="B1 radio-frequency field strength (Hz or kHz)",
         examples=[25.0, 700.0],
     )
-    b1_distribution: DistributionConfig | None = Field(
+    b1_distribution: B1DistributionConfig | None = Field(
         default=None,
         description="B1 distribution configuration (type, scale, res, etc.)",
     )
@@ -215,11 +249,9 @@ class B1InhomogeneityMixin(BaseModel):
 
     @field_validator("b1_distribution", mode="before")
     @classmethod
-    def _parse_b1_distribution(cls, value: object) -> DistributionConfig | None:
+    def _parse_b1_distribution(cls, value: object) -> B1DistributionConfig | None:
         if value is None:
             return None
-        if isinstance(value, dict) and "type" not in value:
-            value = {"type": "gaussian", **value}
         return parse_distribution_config(value)
 
     @model_validator(mode="before")
@@ -228,17 +260,13 @@ class B1InhomogeneityMixin(BaseModel):
         if not isinstance(data, dict):
             return data
 
-        normalized = dict(data)
+        normalized = key_to_lower(data)
         distribution = normalized.get("b1_distribution")
         has_legacy = (
             normalized.get("b1_inh_scale") is not None
             or normalized.get("b1_inh_res") is not None
         )
-        if (
-            has_legacy
-            and distribution is not None
-            and not isinstance(distribution, DistributionConfig)
-        ):
+        if has_legacy and distribution is not None:
             msg = (
                 "Use either 'b1_distribution' or the legacy "
                 "'b1_inh_scale'/'b1_inh_res' fields, not both"
@@ -257,11 +285,45 @@ class B1InhomogeneityMixin(BaseModel):
             normalized["b1_inh_scale"] = scale
         if "b1_inh_res" not in normalized and res is not None:
             normalized["b1_inh_res"] = res
-        normalized["b1_distribution"] = _legacy_b1_distribution_input(
-            scale,
-            res,
-        )
+        legacy_distribution, _ = _legacy_b1_distribution_input(scale, res)
+        normalized["b1_distribution"] = legacy_distribution
         return normalized
+
+    @model_validator(mode="after")
+    def _finalize_legacy_b1_fields(self) -> Self:
+        legacy_fields = tuple(
+            field_name
+            for field_name in ("b1_inh_scale", "b1_inh_res")
+            if getattr(self, field_name) is not None
+        )
+        if not legacy_fields:
+            return self
+
+        cls = type(self)
+        if (
+            cls.legacy_b1_inh_scale_default is None
+            and cls.legacy_b1_inh_res_default is None
+        ):
+            _, replacement = _legacy_b1_distribution_input(
+                self.b1_inh_scale,
+                self.b1_inh_res,
+            )
+            self._legacy_b1_deprecation = (legacy_fields, replacement)
+
+        object.__setattr__(self, "b1_inh_scale", None)
+        object.__setattr__(self, "b1_inh_res", None)
+        if (
+            not isinstance(self, CestB1Settings)
+            and self.b1_distribution is not None
+            and (self.b1_frq is not None or self.pw90 is not None)
+        ):
+            self.get_b1_model()
+        return self
+
+    @property
+    def legacy_b1_deprecation(self) -> tuple[tuple[str, ...], str] | None:
+        """Return legacy fields and suggested replacement when explicitly used."""
+        return self._legacy_b1_deprecation
 
     def get_b1_nominal(self) -> float:
         """Nominal B1 value for distribution generation."""
@@ -272,18 +334,89 @@ class B1InhomogeneityMixin(BaseModel):
         msg = "Either 'b1_frq' or 'pw90' must be provided"
         raise ValueError(msg)
 
+    def get_b1_oscillation_inputs(self) -> tuple[float, float]:
+        """Return (effective_B1_Hz, saturation_duration_s) for auto-res."""
+        t_sat = float(getattr(self, "time_t1", 0.5))
+        return self.get_b1_nominal(), t_sat
+
+    def get_b1_model(self) -> B1RuntimeModel:
+        """Lower b1_distribution to an immutable runtime B1 model."""
+        if self.b1_distribution is None:
+            return HomogeneousB1Model()
+        b1_eff_hz, t_sat_s = self.get_b1_oscillation_inputs()
+        return self.b1_distribution.to_b1_model(
+            b1_eff_hz=b1_eff_hz,
+            t_sat_s=t_sat_s,
+        )
+
     def get_b1_distribution(self) -> Distribution:
-        """Generate B1 distribution using typed plugin configuration."""
+        """Generate concrete B1 nodes and weights for this experiment."""
         nominal = self.get_b1_nominal()
+        model = self.get_b1_model()
+        if model is None:
+            return HomogeneousB1Model().get_distribution(nominal)
+        return model.get_distribution(nominal)
+
+
+class CestB1Settings(B1InhomogeneityMixin):
+    """Mandatory explicit B1 configuration for CEST-family experiments."""
+
+    allows_dephasing: ClassVar[bool] = True
+    requires_cw_b1_xor: ClassVar[bool] = True
+
+    @model_validator(mode="after")
+    def _validate_cest_b1_settings(self) -> Self:
+        if self.requires_cw_b1_xor:
+            if self.b1_frq is None and self.pw90 is None:
+                msg = (
+                    "Either 'b1_frq' (Hz) or 'pw90' (s) must be provided in "
+                    "[experiment] to define the B1 field."
+                )
+                raise ValueError(msg)
+            if self.b1_frq is not None and self.pw90 is not None:
+                msg = "Use either 'b1_frq' or 'pw90' in [experiment], not both."
+                raise ValueError(msg)
 
         if self.b1_distribution is None:
-            # Single-point distribution (no inhomogeneity)
-            return Distribution(
-                values=np.array([nominal]),
-                weights=np.array([1.0]),
+            options = [
+                'b1_distribution = { type = "gaussian", scale = 0.1 }',
+                (
+                    'b1_distribution = { type = "skewed", scale = 0.1, '
+                    'skewness = -0.5, center = "mode" }'
+                ),
+            ]
+            if self.allows_dephasing:
+                options.append('b1_distribution = { type = "dephasing" }')
+            options.extend(
+                (
+                    (
+                        'b1_distribution = { type = "custom", scales = [...], '
+                        "weights = [...] }"
+                    ),
+                    'b1_distribution = { type = "homogeneous" }',
+                )
             )
+            msg = (
+                "CEST-family experiments require an explicit 'b1_distribution' "
+                "in [experiment]. Choose one of: " + "; ".join(options)
+            )
+            raise ValueError(msg)
 
-        return self.b1_distribution.get_distribution(nominal)
+        if self.b1_distribution.type == "dephasing" and not self.allows_dephasing:
+            exp_name = getattr(self, "name", "this experiment")
+            msg = (
+                f'b1_distribution = {{ type = "dephasing" }} is not physically valid '
+                f"for {exp_name!r} because pulse-train or shaped-pulse saturation "
+                "cannot be approximated by continuous-wave transverse dephasing. "
+                'Use type = "gaussian", type = "skewed", type = "custom", or '
+                'type = "homogeneous".'
+            )
+            raise ValueError(msg)
+
+        if self.requires_cw_b1_xor:
+            self.get_b1_model()
+
+        return self
 
 
 class RelaxationSettings(DetectionSettings):
@@ -390,6 +523,129 @@ class CpmgSettingsEvenNcycs(RelaxationSettings):
 class CestSettings(RelaxationSettings):
     sw: float = math.inf
 
+    @field_validator("sw")
+    @classmethod
+    def _validate_cest_sw(cls, value: float) -> float:
+        if math.isnan(value) or value <= 0.0:
+            msg = "'sw' must be positive (or inf for unaliased continuous-wave CEST)"
+            raise ValueError(msg)
+        return value
+
 
 class MFCestSettings(RelaxationSettings):
-    sw: float
+    sw: PositiveFloat = Field(description="Spectral width (Hz)")
+
+
+class CosCestSettings(MFCestSettings, CestB1Settings):
+    """Shared B1 and cosine-modulated shape settings for cos-CEST experiments."""
+
+    allows_dephasing: ClassVar[bool] = False
+
+    time_t1: Delay = Field(description="Length of the CEST block in seconds")
+    cos_n: PositiveInt = Field(
+        le=1024,
+        description="Number of cosine excitation frequencies",
+    )
+    cos_res: PositiveInt = Field(
+        default=10,
+        le=4096,
+        description="Number of points used to simulate the cosine-modulated shape",
+    )
+
+    def get_b1_oscillation_inputs(self) -> tuple[float, float]:
+        """Return nominal B1 and executed L1 waveform duration for auto-res."""
+        sw = float(self.sw)
+        total_slices = self.time_t1 * sw * self.cos_res
+        if not math.isfinite(total_slices):
+            msg = "Product 'time_t1 * sw * cos_res' must be finite"
+            raise ValueError(msg)
+        dt = 1.0 / (self.cos_res * sw)
+        n_periods = int(self.time_t1 * sw)
+        n_left = int((self.time_t1 * sw - n_periods) * self.cos_res)
+        grid = np.linspace(-np.pi, np.pi, self.cos_res, endpoint=False)
+        n_values = (np.arange(self.cos_n) - 0.5 * (self.cos_n - 1)).reshape(-1, 1)
+        abs_amplitudes = np.abs(np.cos(n_values * grid).sum(axis=0))
+        t_eff_s = dt * (
+            n_periods * float(abs_amplitudes.sum())
+            + float(abs_amplitudes[:n_left].sum())
+        )
+        return self.get_b1_nominal(), t_eff_s
+
+
+class DCestSettings(MFCestSettings, CestB1Settings):
+    """Shared B1 and DANTE pulse-train settings for D-CEST experiments."""
+
+    allows_dephasing: ClassVar[bool] = False
+    requires_cw_b1_xor: ClassVar[bool] = False
+
+    time_t1: Delay = Field(description="CEST relaxation delay (seconds)")
+    time_equil: Delay = Field(
+        default=0.0,
+        description="Equilibration delay at end of CEST period (seconds)",
+    )
+    b1_eff: B1Field = Field(
+        ...,
+        description="Effective B1 field for DANTE excitation (Hz)",
+    )
+
+    _normalize_b1_eff_alias = model_validator(mode="before")(normalize_b1_eff_alias)
+
+    @model_validator(mode="after")
+    def _validate_dcest_fields(self) -> Self:
+        """Validate D-CEST hardware pw90, DANTE timing, and B1 resolution."""
+        if self.pw90 is None:
+            msg = (
+                "D-CEST experiments require 'pw90' (hardware B1 pulse width). "
+                "Both 'pw90' and 'b1_eff' (alias: 'b1_frq') must be specified."
+            )
+            raise ValueError(msg)
+        if not math.isfinite(self.time_t1 * float(self.sw)):
+            msg = "Product 'time_t1 * sw' must be finite"
+            raise ValueError(msg)
+        if self.tau_dante < 0.0:
+            duty = 4.0 * float(self.pw90) * float(self.b1_eff)
+            msg = (
+                f"D-CEST DANTE pulse width ({self.pw_dante:.3e} s) exceeds "
+                f"1 / sw ({1.0 / self.sw:.3e} s); duty cycle 4 * pw90 * b1_eff = "
+                f"{duty:.3f} must be <= 1.0."
+            )
+            raise ValueError(msg)
+        self.get_b1_model()
+        return self
+
+    # D-CEST convention: the B1 inhomogeneity distribution is centered on the
+    # hardware B1 set by pw90, while DANTE nutation cycles track b1_eff.
+    def get_b1_nominal(self) -> float:
+        """Get nominal B1 from hardware pw90 for distribution centering."""
+        if self.pw90 is None:
+            msg = (
+                "For D-CEST, 'pw90' must be specified to define the nominal B1 "
+                "used for the B1 distribution."
+            )
+            raise ValueError(msg)
+        return 1.0 / (4.0 * float(self.pw90))
+
+    def get_b1_oscillation_inputs(self) -> tuple[float, float]:
+        """Return effective DANTE CW field and train duration for auto-res."""
+        return float(self.b1_eff), self.ncyc_dante / float(self.sw)
+
+    @computed_field
+    @property
+    def pw_dante(self) -> float:
+        """Duration of each DANTE pulse (seconds)."""
+        if self.pw90 is None:
+            msg = "pw90 must be specified for DANTE pulse calculation"
+            raise ValueError(msg)
+        return 4.0 * float(self.pw90) * float(self.b1_eff) / float(self.sw)
+
+    @computed_field
+    @property
+    def tau_dante(self) -> float:
+        """Inter-pulse delay in DANTE train (seconds)."""
+        return 1.0 / self.sw - self.pw_dante
+
+    @computed_field
+    @property
+    def ncyc_dante(self) -> int:
+        """Number of DANTE pulses in the train."""
+        return int(self.time_t1 * self.sw + 0.1)

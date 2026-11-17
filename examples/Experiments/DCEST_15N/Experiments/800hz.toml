@@ -5,7 +5,10 @@ carrier = 118.66290444
 b1_frq = 20.0
 sw = 800.0
 pw90 = 36.2e-6
-b1_distribution = { type = "beta", scale = 0.1, res = 11 }
+# Phenomenological symmetric choice without a measured B1 nutation profile
+# (lower chi-square than 0.10 reflects sensitivity on unmasked near-resonance
+# points rather than an independent measurement of probe B1 inhomogeneity).
+b1_distribution = { type = "gaussian", scale = 0.05 }
 
 [conditions]
 h_larmor_frq = 1000.29992943

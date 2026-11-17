@@ -11,8 +11,7 @@ from chemex.experiments.catalog.wip import (
     relaxation_15n_r1rho,
     relaxation_15n_r1rho_eig,
 )
-from chemex.nmr.distributions.dephasing import DephasingConfig
-from chemex.nmr.distributions.gaussian import GaussianDistributionConfig
+from chemex.nmr.b1 import DephasingB1Model, GaussianB1Model
 from chemex.nmr.spectrometer import Spectrometer
 from chemex.parameters.spin_system import SpinSystem
 
@@ -62,12 +61,12 @@ def test_wip_builders_use_b1_inhomogeneity_api(
     build_spectrometer: Callable[[Any, SpinSystem], object],
     experiment: dict[str, object],
 ) -> None:
-    calls: list[tuple[float, GaussianDistributionConfig | None]] = []
+    calls: list[tuple[float, GaussianB1Model | None]] = []
 
     def fake_set_b1_i_inhomogeneity(
         _self: Spectrometer,
         nominal: float,
-        distribution: GaussianDistributionConfig | None = None,
+        distribution: GaussianB1Model | None = None,
     ) -> None:
         calls.append((nominal, distribution))
 
@@ -89,7 +88,7 @@ def test_wip_builders_use_b1_inhomogeneity_api(
     assert len(calls) == 1
     nominal, distribution = calls[0]
     assert nominal == experiment["b1_frq"]
-    assert isinstance(distribution, GaussianDistributionConfig)
+    assert isinstance(distribution, GaussianB1Model)
     assert distribution.scale == experiment["b1_inh_scale"]
     assert distribution.res == experiment["b1_inh_res"]
 
@@ -106,7 +105,7 @@ def test_wip_builders_use_b1_inhomogeneity_api(
                 "carrier": 118.0,
                 "b1_frq": 25.0,
             },
-            GaussianDistributionConfig,
+            GaussianB1Model,
             {"scale": 0.1, "res": 11},
         ),
         (
@@ -117,7 +116,7 @@ def test_wip_builders_use_b1_inhomogeneity_api(
                 "carrier": 118.0,
                 "b1_frq": 25.0,
             },
-            DephasingConfig,
+            DephasingB1Model,
             {},
         ),
         (
@@ -128,7 +127,7 @@ def test_wip_builders_use_b1_inhomogeneity_api(
                 "carrier": 118.0,
                 "b1_frq": 25.0,
             },
-            DephasingConfig,
+            DephasingB1Model,
             {},
         ),
     ],
@@ -138,15 +137,15 @@ def test_wip_builders_normalize_default_legacy_b1_settings(
     config_cls: type[BaseModel],
     build_spectrometer: Callable[[Any, SpinSystem], object],
     experiment: dict[str, object],
-    expected_type: type[GaussianDistributionConfig | DephasingConfig],
+    expected_type: type[GaussianB1Model | DephasingB1Model],
     checks: dict[str, object],
 ) -> None:
-    calls: list[tuple[float, GaussianDistributionConfig | DephasingConfig | None]] = []
+    calls: list[tuple[float, GaussianB1Model | DephasingB1Model | None]] = []
 
     def fake_set_b1_i_inhomogeneity(
         _self: Spectrometer,
         nominal: float,
-        distribution: GaussianDistributionConfig | DephasingConfig | None = None,
+        distribution: GaussianB1Model | DephasingB1Model | None = None,
     ) -> None:
         calls.append((nominal, distribution))
 
@@ -171,3 +170,26 @@ def test_wip_builders_normalize_default_legacy_b1_settings(
     assert isinstance(distribution, expected_type)
     for name, value in checks.items():
         assert getattr(distribution, name) == value
+
+
+def test_wip_cest_15n_test_auto_res_uses_time_t1() -> None:
+    def _build_res(time_t1: float) -> int:
+        config = cest_15n_test.Cest15NTestConfig.model_validate(
+            {
+                "experiment": {
+                    "name": "wip.cest_15n_test",
+                    "time_t1": time_t1,
+                    "carrier": 118.0,
+                    "b1_frq": 25.0,
+                    "b1_distribution": {"type": "gaussian", "scale": 0.1},
+                },
+                "conditions": {"h_larmor_frq": 600.0},
+                "data": {},
+            }
+        )
+        spectrometer = cest_15n_test.build_spectrometer(
+            config, SpinSystem(name="G23N-HN")
+        )
+        return spectrometer.b1_i_distribution.values.size
+
+    assert _build_res(1.5) > _build_res(0.1)

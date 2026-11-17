@@ -65,11 +65,15 @@ b1_frq = 25.0
 ## State of the observed resonance [optional, default: "a"]
 # observed_state = "a"
 
-## B1 inhomogeneity distribution (replaces b1_inh_scale/b1_inh_res)
+## Number of ¹H-purge eta_block spin-echo elements [optional, default: 0]
+## Note: b1_distribution type = "dephasing" is valid only when eta_block = 0.
+# eta_block = 0
+
+## B1 inhomogeneity distribution (required)
 [experiment.b1_distribution]
 type = "gaussian"
 scale = 0.1
-res = 11
+# res = 15  # optional override (automatic by default)
 
 [conditions]
 

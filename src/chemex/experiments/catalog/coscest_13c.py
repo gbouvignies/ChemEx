@@ -9,7 +9,7 @@ from pydantic import Field, computed_field
 from chemex.configuration.base import ExperimentConfiguration, ToBeFitted
 from chemex.configuration.conditions import ConditionsWithValidations
 from chemex.configuration.data import CestDataSettings
-from chemex.configuration.experiment import B1InhomogeneityMixin, MFCestSettings
+from chemex.configuration.experiment import CosCestSettings
 from chemex.configuration.types import ChemicalShift, Delay
 from chemex.containers.data import Data
 from chemex.experiments.experiment_types import (
@@ -28,15 +28,12 @@ EXPERIMENT_NAME = "coscest_13c"
 OFFSET_REF = 1e4
 
 
-class CosCest13CSettings(MFCestSettings, B1InhomogeneityMixin):
+class CosCest13CSettings(CosCestSettings):
     """Settings for cosine-modulated 13C CEST experiment."""
 
     name: Literal["coscest_13c"]
-    time_t1: float = Field(description="Length of the CEST block in seconds")
     time_equil: Delay = 0.0
     carrier: ChemicalShift = Field(description="13C carrier position in ppm")
-    cos_n: int = Field(description="Number of cosine cycles")
-    cos_res: int = 10
 
     @computed_field
     @property
@@ -79,7 +76,7 @@ def build_spectrometer(
 
     spectrometer.set_b1_i_inhomogeneity(
         settings.get_b1_nominal(),
-        settings.b1_distribution,
+        settings.get_b1_model(),
     )
 
     spectrometer.detection = settings.detection

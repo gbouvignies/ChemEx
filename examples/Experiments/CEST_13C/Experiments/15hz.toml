@@ -3,6 +3,7 @@ name = "cest_13c"
 time_t1 = 0.3
 carrier = 18.413
 b1_frq = 15.0
+b1_distribution = { type = "gaussian", scale = 0.1 }
 
 [conditions]
 h_larmor_frq = 598.826355

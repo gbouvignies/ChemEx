@@ -52,6 +52,8 @@ def test_cpmg_start_state_list_selects_starting_components() -> None:
                 "name": "cest_1hn_ip_ap",
                 "time_t1": 0.2,
                 "carrier": 8.0,
+                "b1_frq": 25.0,
+                "b1_distribution": {"type": "homogeneous"},
                 "d1": 0.5,
             },
         ),
@@ -61,6 +63,8 @@ def test_cpmg_start_state_list_selects_starting_components() -> None:
                 "name": "cest_ch3_1h_ip_ap",
                 "time_t1": 0.2,
                 "carrier": 0.8,
+                "b1_frq": 25.0,
+                "b1_distribution": {"type": "homogeneous"},
                 "d1": 0.5,
             },
         ),
@@ -70,6 +74,8 @@ def test_cpmg_start_state_list_selects_starting_components() -> None:
                 "name": "coscest_1hn_ip_ap",
                 "time_t1": 0.2,
                 "carrier": 8.0,
+                "b1_frq": 25.0,
+                "b1_distribution": {"type": "homogeneous"},
                 "sw": 1000.0,
                 "cos_n": 2,
                 "d1": 0.5,
@@ -98,6 +104,7 @@ def test_ip_ap_cest_start_state_selects_longitudinal_polarization_only(
                 "time_t1": 0.2,
                 "carrier": 8.0,
                 "b1_frq": 25.0,
+                "b1_distribution": {"type": "homogeneous"},
             },
         ),
         (
@@ -195,6 +202,7 @@ def test_dcest_hd_equilibrium_override_is_not_treated_as_omitted() -> None:
         "carrier": 118.0,
         "b1_eff": 25.0,
         "pw90": 40.0e-6,
+        "b1_distribution": {"type": "homogeneous"},
         "model_name": "2st_hd",
     }
 

@@ -125,6 +125,7 @@ def test_cest_13c_spectrometer_builds_for_uniformly_13c_labeled_aromatics(
                 "time_t1": 0.3,
                 "carrier": 128.0,
                 "b1_frq": 25.0,
+                "b1_distribution": {"type": "homogeneous"},
             },
             "conditions": {
                 "h_larmor_frq": 600.0,
@@ -151,6 +152,7 @@ def test_dcest_15n_spectrometer_builds_for_uniformly_13c_labeled_sec_amide() -> 
                 "b1_eff": 15.0,
                 "pw90": 40.0e-6,
                 "sw": 400.0,
+                "b1_distribution": {"type": "homogeneous"},
             },
             "conditions": {
                 "h_larmor_frq": 600.0,

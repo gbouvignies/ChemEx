@@ -32,6 +32,15 @@ class NoDuplicateNoiseNotice:
     filename: Path
 
 
+@dataclass(frozen=True)
+class DeprecatedB1InhomogeneityNotice:
+    """Report deprecated legacy B1 inhomogeneity keys and their replacement."""
+
+    filename: Path
+    legacy_fields: tuple[str, ...]
+    replacement: str
+
+
 type NoiseEstimateNotice = UnsupportedNoiseMethodNotice | NoDuplicateNoiseNotice
 
 
