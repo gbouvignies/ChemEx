@@ -33,7 +33,7 @@ The same module works for both <sup>13</sup>CH<sub>3</sub>- and <sup>13</sup>CHD
 ## Example
 
 An example recorded on a <sup>13</sup>CH<sub>3</sub>-labeled sample is available
-[here](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/CEST_CH3_1H_IP_AP/).
+[here](https://github.com/ens-nmr/ChemEx/tree/master/examples/Experiments/CEST_CH3_1H_IP_AP/).
 
 ## Sample configuration file
 

@@ -8,7 +8,7 @@ sidebar_label: "¹Hᴺ COS-CEST experiment"
 :::note Files
 
 You can get
-[the example files from the GitHub ChemEx page](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/COSCEST_1HN_IP_AP).
+[the example files from the GitHub ChemEx page](https://github.com/ens-nmr/ChemEx/tree/master/examples/Experiments/COSCEST_1HN_IP_AP).
 
 :::
 

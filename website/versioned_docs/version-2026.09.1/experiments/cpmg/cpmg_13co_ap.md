@@ -34,7 +34,7 @@ the "refocusing" flag, with such option ncyc_cp should be set as even.
 ## Example
 
 An example use of the module is given
-[here](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/CPMG_13CO_AP/).
+[here](https://github.com/ens-nmr/ChemEx/tree/master/examples/Experiments/CPMG_13CO_AP/).
 
 ## Sample configuration file
 

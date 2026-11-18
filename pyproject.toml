@@ -30,10 +30,10 @@ dependencies = [
 ]
 
 [project.urls]
-Changelog = "https://github.com/gbouvignies/ChemEx/releases"
-Documentation = "https://gbouvignies.github.io/ChemEx/"
-Homepage = "https://gbouvignies.github.io/ChemEx/"
-Repository = "https://github.com/gbouvignies/ChemEx"
+Changelog = "https://github.com/ens-nmr/ChemEx/releases"
+Documentation = "https://ens-nmr.github.io/ChemEx/"
+Homepage = "https://ens-nmr.github.io/ChemEx/"
+Repository = "https://github.com/ens-nmr/ChemEx"
 
 [project.scripts]
 chemex = "chemex._entrypoint:main"

@@ -32,7 +32,7 @@ strong enough (> 15 kHz) such that perfect ¹H decoupling can be achieved.
 ## Example
 
 An example use of the module is given
-[here](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/CPMG_15N_IP_0013/).
+[here](https://github.com/ens-nmr/ChemEx/tree/master/examples/Experiments/CPMG_15N_IP_0013/).
 
 ## Sample configuration file
 

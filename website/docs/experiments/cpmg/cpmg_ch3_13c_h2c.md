@@ -30,7 +30,7 @@ of states:
 ## Example
 
 An example use of the module is given
-[here](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/CPMG_CH3_13C_H2C/).
+[here](https://github.com/ens-nmr/ChemEx/tree/master/examples/Experiments/CPMG_CH3_13C_H2C/).
 
 ## Sample configuration file
 

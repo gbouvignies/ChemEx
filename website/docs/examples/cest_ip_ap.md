@@ -8,9 +8,9 @@ sidebar_label: "¹H CEST experiments"
 :::note Files
 
 You can get the example files from the GitHub ChemEx page:
-[backbone](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/CEST_1HN_IP_AP)
+[backbone](https://github.com/ens-nmr/ChemEx/tree/master/examples/Experiments/CEST_1HN_IP_AP)
 and
-[methyl side-chain](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/CEST_CH3_1H_IP_AP)
+[methyl side-chain](https://github.com/ens-nmr/ChemEx/tree/master/examples/Experiments/CEST_CH3_1H_IP_AP)
 sites.
 
 :::

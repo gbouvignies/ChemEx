@@ -26,7 +26,7 @@ states:
 ## Example
 
 An example for studying ¹⁵N-labeled sample is given
-[here](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/COSCEST_1HN_IP_AP/).
+[here](https://github.com/ens-nmr/ChemEx/tree/master/examples/Experiments/COSCEST_1HN_IP_AP/).
 
 ## Sample configuration file
 

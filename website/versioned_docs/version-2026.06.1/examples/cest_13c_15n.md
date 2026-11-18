@@ -8,9 +8,9 @@ sidebar_label: "CEST experiments for ¹³C, ¹⁵N-labeled samples"
 :::note Files
 
 You can get the example files from the GitHub ChemEx page:
-[¹⁵N CEST](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/CEST_15N_LABEL_CN)
+[¹⁵N CEST](https://github.com/ens-nmr/ChemEx/tree/master/examples/Experiments/CEST_15N_LABEL_CN)
 and
-[¹³C CEST](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/CEST_13C_LABEL_CN).
+[¹³C CEST](https://github.com/ens-nmr/ChemEx/tree/master/examples/Experiments/CEST_13C_LABEL_CN).
 
 :::
 

@@ -38,11 +38,11 @@ states:
 
 -   An example for studying side-chain methyl groups in selectively ¹³C-labeled
     sample is available
-    [here](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/CEST_13C/).
+    [here](https://github.com/ens-nmr/ChemEx/tree/master/examples/Experiments/CEST_13C/).
 -   An example for studying
     [uniformly ¹³C, ¹⁵N-labeled sample](../../examples/cest_13c_15n.md) is
     available
-    [here](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/CEST_13C_LABEL_CN/).
+    [here](https://github.com/ens-nmr/ChemEx/tree/master/examples/Experiments/CEST_13C_LABEL_CN/).
 
 ## Sample configuration file
 

@@ -1091,7 +1091,7 @@ def print_wrong_option(option: str) -> str:
         f"\n  - '{option.upper()}' is not a valid option.\n"
         "\nPlease check the website "
         "[link]"
-        "https://gbouvignies.github.io/ChemEx/docs/user_guide/fitting/method_files"
+        "https://ens-nmr.github.io/ChemEx/docs/user_guide/fitting/method_files"
         "[/] "
         "for a complete list of valid options."
     )

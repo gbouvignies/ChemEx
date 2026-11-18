@@ -29,11 +29,11 @@ states:
 ## Examples
 
 -   An example for studying a two-state exchange system is given
-    [here](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/DCEST_15N/).
+    [here](https://github.com/ens-nmr/ChemEx/tree/master/examples/Experiments/DCEST_15N/).
 -   An example for studying a three-state exchange system is given
-    [here](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/DCEST_15N_3States/).
+    [here](https://github.com/ens-nmr/ChemEx/tree/master/examples/Experiments/DCEST_15N_3States/).
 -   An example for H/D solvent exchange measurement using ¹⁵N D-CEST can be found
-    [here](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/DCEST_15N_HD_EXCH/).
+    [here](https://github.com/ens-nmr/ChemEx/tree/master/examples/Experiments/DCEST_15N_HD_EXCH/).
 
 ## Sample configuration file
 

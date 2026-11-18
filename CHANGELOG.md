@@ -560,4 +560,4 @@ and this project uses [Calendar Versioning](https://calver.org/) (YYYY.MM.MICRO)
 
 ---
 
-For a complete list of changes, see the [GitHub Releases](https://github.com/gbouvignies/chemex/releases) page.
+For a complete list of changes, see the [GitHub Releases](https://github.com/ens-nmr/ChemEx/releases) page.

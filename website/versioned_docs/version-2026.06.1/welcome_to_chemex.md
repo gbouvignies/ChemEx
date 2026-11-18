@@ -94,7 +94,7 @@ If you prefer conda environments:
 To install the latest development version of ChemEx directly from GitHub, use the following command:
 
 ```shell
-pip install git+https://github.com/gbouvignies/ChemEx.git
+pip install git+https://github.com/ens-nmr/ChemEx.git
 ```
 
 This method provides access to the latest features and updates that may not yet be included in the pip or conda-forge releases.

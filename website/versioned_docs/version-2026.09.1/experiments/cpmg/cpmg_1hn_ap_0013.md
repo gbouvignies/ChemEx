@@ -30,7 +30,7 @@ cycle to help better overcome off-resonance effects.
 ## Example
 
 An example use of the module is given
-[here](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/CPMG_1HN_AP_0013/).
+[here](https://github.com/ens-nmr/ChemEx/tree/master/examples/Experiments/CPMG_1HN_AP_0013/).
 
 ## Sample configuration file
 

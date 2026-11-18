@@ -34,7 +34,7 @@ decoupling on 2H should be applied properly.
 
 An example use of the module, based on datasets measured for CHD2-labeled
 side-chain methyl groups, is given
-[here](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/CPMG_13C_IP/).
+[here](https://github.com/ens-nmr/ChemEx/tree/master/examples/Experiments/CPMG_13C_IP/).
 
 ## Sample configuration file
 
