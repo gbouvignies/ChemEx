@@ -29,11 +29,11 @@ states:
 ## Examples
 
 -   An example use of the module is given
-    [here](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/CPMG_15N_TR/).
+    [here](https://github.com/ens-nmr/ChemEx/tree/master/examples/Experiments/CPMG_15N_TR/).
 -   An example use of the module in the context of
     [RDC measurement of a protein minor, short-lived state](../../examples/trosy_cpmg_rdc.md)
     can be found
-    [here](https://github.com/gbouvignies/chemex/tree/master/examples/Combinations/N15_NH_RDC/).
+    [here](https://github.com/ens-nmr/ChemEx/tree/master/examples/Combinations/N15_NH_RDC/).
 
 ## Sample configuration file
 

@@ -29,7 +29,7 @@ Adapted from:
 ## Example
 
 An example use of the module is given
-[here](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/CPMG_1HN_AP/).
+[here](https://github.com/ens-nmr/ChemEx/tree/master/examples/Experiments/CPMG_1HN_AP/).
 
 ## Sample configuration file
 

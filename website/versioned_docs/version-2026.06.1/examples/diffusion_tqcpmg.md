@@ -8,7 +8,7 @@ sidebar_label: "Measuring diffusion constants of invisible protein conformers"
 :::note Files
 
 You can get
-[the example files from the GitHub ChemEx page](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/CPMG_CH3_1H_TQ_DIFF).
+[the example files from the GitHub ChemEx page](https://github.com/ens-nmr/ChemEx/tree/master/examples/Experiments/CPMG_CH3_1H_TQ_DIFF).
 
 :::
 

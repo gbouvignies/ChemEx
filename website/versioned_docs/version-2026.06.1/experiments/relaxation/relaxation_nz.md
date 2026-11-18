@@ -26,7 +26,7 @@ is the number of states:
 ## Example
 
 An example use of the module is given
-[here](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/RELAXATION_NZ/).
+[here](https://github.com/ens-nmr/ChemEx/tree/master/examples/Experiments/RELAXATION_NZ/).
 
 ## Sample configuration file
 

@@ -29,7 +29,7 @@ states:
 An application to the
 [measurement of solvent exchange rates in invisible excited states](../../examples/trosy_cest.md)
 is available
-[here](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/CEST_15N_TR/).
+[here](https://github.com/ens-nmr/ChemEx/tree/master/examples/Experiments/CEST_15N_TR/).
 
 ## Sample configuration file
 

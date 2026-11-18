@@ -282,7 +282,7 @@ Every completed change should report:
 
 ### Issue tracker
 
-Issues are tracked in GitHub Issues for `gbouvignies/ChemEx`. See `docs/agents/issue-tracker.md`.
+Issues are tracked in GitHub Issues for `ens-nmr/chemex-suite`. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 

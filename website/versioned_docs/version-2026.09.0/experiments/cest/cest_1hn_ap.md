@@ -27,7 +27,7 @@ states:
 ## Example
 
 An application for measuring PRE values in a protein excited state is available
-[here](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/CEST_1HN_AP/).
+[here](https://github.com/ens-nmr/ChemEx/tree/master/examples/Experiments/CEST_1HN_AP/).
 
 ## Sample configuration file
 

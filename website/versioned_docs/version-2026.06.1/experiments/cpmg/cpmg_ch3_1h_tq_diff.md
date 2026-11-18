@@ -32,7 +32,7 @@ two-spin matrix, where n is the number of states:
 ## Example
 
 An example use of the module is given
-[here](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/CPMG_CH3_1H_TQ_DIFF/).
+[here](https://github.com/ens-nmr/ChemEx/tree/master/examples/Experiments/CPMG_CH3_1H_TQ_DIFF/).
 
 ## Sample configuration file
 

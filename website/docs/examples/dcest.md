@@ -8,9 +8,9 @@ sidebar_label: "¹⁵N D-CEST experiment"
 :::note Files
 
 You can get the example files from the GitHub ChemEx page:
-[regular](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/DCEST_15N)
+[regular](https://github.com/ens-nmr/ChemEx/tree/master/examples/Experiments/DCEST_15N)
 and
-[H/D solvent exchange](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/DCEST_15N_HD_EXCH)
+[H/D solvent exchange](https://github.com/ens-nmr/ChemEx/tree/master/examples/Experiments/DCEST_15N_HD_EXCH)
 studies.
 
 :::

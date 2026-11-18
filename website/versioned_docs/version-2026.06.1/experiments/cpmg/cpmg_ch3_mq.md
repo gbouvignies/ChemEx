@@ -35,7 +35,7 @@ found in the reference and can be run with either small_protein_flag = "y" or
 ## Example
 
 An example use of the module is given
-[here](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/CPMG_CH3_MQ/).
+[here](https://github.com/ens-nmr/ChemEx/tree/master/examples/Experiments/CPMG_CH3_MQ/).
 
 ## Sample configuration file
 

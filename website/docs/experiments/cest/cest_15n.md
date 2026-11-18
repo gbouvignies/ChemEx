@@ -28,11 +28,11 @@ states:
 ## Examples
 
 -   An example for studying ¹⁵N-labeled sample is available
-    [here](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/CEST_15N/).
+    [here](https://github.com/ens-nmr/ChemEx/tree/master/examples/Experiments/CEST_15N/).
 -   An example for studying
     [uniformly ¹³C, ¹⁵N-labeled sample](../../examples/cest_13c_15n.md) is
     available
-    [here](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/CEST_15N_LABEL_CN/).
+    [here](https://github.com/ens-nmr/ChemEx/tree/master/examples/Experiments/CEST_15N_LABEL_CN/).
 
 ## Sample configuration file
 

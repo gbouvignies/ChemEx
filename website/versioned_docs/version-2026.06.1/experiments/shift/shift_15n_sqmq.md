@@ -32,7 +32,7 @@ combined with other CPMG experiments.
 ## Example
 
 An example use of the module associated with ¹⁵N and ¹H CPMG datasets is given
-[here](https://github.com/gbouvignies/chemex/tree/master/examples/Combinations/Shifts/).
+[here](https://github.com/ens-nmr/ChemEx/tree/master/examples/Combinations/Shifts/).
 
 ## Sample configuration file
 

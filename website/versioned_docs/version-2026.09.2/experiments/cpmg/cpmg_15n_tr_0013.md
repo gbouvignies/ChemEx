@@ -33,7 +33,7 @@ cycle as used in ¹⁵N pure in-phase experiments.
 ## Example
 
 An example use of the module is given
-[here](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/CPMG_15N_TR_0013/).
+[here](https://github.com/ens-nmr/ChemEx/tree/master/examples/Experiments/CPMG_15N_TR_0013/).
 
 ## Sample configuration file
 

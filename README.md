@@ -98,11 +98,11 @@ project and may be outdated. Install the current PyPI release with uv or pip.
 
 ## Contributing
 
-We encourage contributions from the community. Please see our [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to make ChemEx better. For any issues or suggestions, please open an issue or a discussion on our [GitHub repository](https://github.com/gbouvignies/ChemEx).
+We encourage contributions from the community. Please see our [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to make ChemEx better. For any issues or suggestions, please open an issue or a discussion on our [GitHub repository](https://github.com/ens-nmr/ChemEx).
 
 ## Support and Documentation
 
-For additional support, tutorials, and detailed documentation, visit the [ChemEx Documentation](https://gbouvignies.github.io/ChemEx/).
+For additional support, tutorials, and detailed documentation, visit the [ChemEx Documentation](https://ens-nmr.github.io/ChemEx/).
 
 ## License
 
@@ -114,4 +114,4 @@ If you use ChemEx in your research, please cite it as follows: [Citation details
 
 ---
 
-Developed with ❤️ by the [ChemEx Contributors](https://github.com/gbouvignies/ChemEx/graphs/contributors)
+Developed with ❤️ by the [ChemEx Contributors](https://github.com/ens-nmr/ChemEx/graphs/contributors)

@@ -8,7 +8,7 @@ sidebar_label: "Methyl ¹H DQ- and TQ-CPMG"
 :::note Files
 
 You can get
-[the example files from the GitHub ChemEx page](https://github.com/gbouvignies/chemex/tree/master/examples/Combinations/CPMG_CH3_1H_DQ_TQ).
+[the example files from the GitHub ChemEx page](https://github.com/ens-nmr/ChemEx/tree/master/examples/Combinations/CPMG_CH3_1H_DQ_TQ).
 
 :::
 

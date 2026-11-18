@@ -28,7 +28,7 @@ matrix, where n is the number of states:
 ## Example
 
 An example for studying ¹⁵N-labeled sample is available
-[here](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/CEST_15N_CW/).
+[here](https://github.com/ens-nmr/ChemEx/tree/master/examples/Experiments/CEST_15N_CW/).
 
 ## Sample configuration file
 

@@ -8,7 +8,7 @@ sidebar_label: "3-state exchange kinetic model"
 :::note Files
 
 You can get
-[the example files from the GitHub ChemEx page](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/DCEST_15N_3States).
+[the example files from the GitHub ChemEx page](https://github.com/ens-nmr/ChemEx/tree/master/examples/Experiments/DCEST_15N_3States).
 
 The `README.txt` file contains explanations about the different fitting schemes
 

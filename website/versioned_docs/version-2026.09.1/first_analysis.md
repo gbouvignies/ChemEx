@@ -30,13 +30,13 @@ A PyPI installation contains the application, not the repository's example
 directory. Clone the ChemEx repository to obtain the example files:
 
 ```shell
-git clone --depth 1 https://github.com/gbouvignies/ChemEx.git
+git clone --depth 1 https://github.com/ens-nmr/ChemEx.git
 cd ChemEx/examples/Experiments/CPMG_15N_IP
 ```
 
 These commands work in macOS and Linux shells and in Windows PowerShell when
 Git is installed. If you do not use Git, download and extract the
-[repository ZIP](https://github.com/gbouvignies/ChemEx/archive/refs/heads/main.zip),
+[repository ZIP](https://github.com/ens-nmr/ChemEx/archive/refs/heads/main.zip),
 then open `ChemEx-main/examples/Experiments/CPMG_15N_IP` in a terminal.
 
 ## The analysis directory

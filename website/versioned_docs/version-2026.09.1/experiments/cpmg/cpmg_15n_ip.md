@@ -31,7 +31,7 @@ perfect ¹H decoupling can be achieved.
 ## Example
 
 An example use of the module is given
-[here](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/CPMG_15N_IP/).
+[here](https://github.com/ens-nmr/ChemEx/tree/master/examples/Experiments/CPMG_15N_IP/).
 
 ## Sample configuration file
 

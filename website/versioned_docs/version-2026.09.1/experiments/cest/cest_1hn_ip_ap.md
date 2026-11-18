@@ -29,7 +29,7 @@ states:
 ## Example
 
 An example for studying ¹⁵N-labeled sample is available
-[here](https://github.com/gbouvignies/chemex/tree/master/examples/Experiments/CEST_1HN_IP_AP/)
+[here](https://github.com/ens-nmr/ChemEx/tree/master/examples/Experiments/CEST_1HN_IP_AP/)
 and is discussed [there](../../examples/cest_ip_ap.md).
 
 ## Sample configuration file

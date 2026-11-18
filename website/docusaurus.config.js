@@ -10,7 +10,7 @@ const katex = require('rehype-katex');
 const config = {
     title: 'ChemEx',
     tagline: 'Open-source Python software for analyzing NMR chemical exchange data.',
-    url: 'https://gbouvignies.github.io',
+    url: 'https://ens-nmr.github.io',
     baseUrl: '/ChemEx/',
     onBrokenLinks: 'throw',
     markdown: {
@@ -19,7 +19,7 @@ const config = {
         },
     },
     favicon: 'img/favicon.ico',
-    organizationName: 'gbouvignies',
+    organizationName: 'ens-nmr',
     projectName: 'chemex',
     deploymentBranch: 'gh-pages',
 
@@ -32,7 +32,7 @@ const config = {
                     includeCurrentVersion:
                         process.env.CHEMEX_DOCS_INCLUDE_CURRENT_VERSION !== 'false',
                     sidebarPath: './sidebars.js',
-                    editUrl: 'https://github.com/gbouvignies/chemex/tree/main/website/',
+                    editUrl: 'https://github.com/ens-nmr/ChemEx/tree/main/website/',
                     remarkPlugins: [math],
                     rehypePlugins: [katex],
                 },
@@ -80,7 +80,7 @@ const config = {
                         position: 'left',
                     },
                     {
-                        href: 'https://github.com/gbouvignies/chemex',
+                        href: 'https://github.com/ens-nmr/ChemEx',
                         position: 'right',
                         className: 'header-github-link',
                         'aria-label': 'GitHub repository',
@@ -122,11 +122,11 @@ const config = {
                         items: [
                             {
                                 label: 'Discussion',
-                                href: 'https://github.com/gbouvignies/ChemEx/discussions',
+                                href: 'https://github.com/ens-nmr/ChemEx/discussions',
                             },
                             {
                                 label: 'Report Issues',
-                                href: 'https://github.com/gbouvignies/ChemEx/issues',
+                                href: 'https://github.com/ens-nmr/ChemEx/issues',
                             },
                         ],
                     },
@@ -135,7 +135,7 @@ const config = {
                         items: [
                             {
                                 label: 'GitHub',
-                                href: 'https://github.com/gbouvignies/chemex',
+                                href: 'https://github.com/ens-nmr/ChemEx',
                             },
                             {
                                 label: 'Twitter',

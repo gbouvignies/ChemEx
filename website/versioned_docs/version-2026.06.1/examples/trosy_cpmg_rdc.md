@@ -8,7 +8,7 @@ sidebar_label: "Measuring Excited state RDCs with CPMG"
 :::note Files
 
 You can get
-[the example files from the GitHub ChemEx page](https://github.com/gbouvignies/chemex/tree/master/examples/Combinations/N15_NH_RDC).
+[the example files from the GitHub ChemEx page](https://github.com/ens-nmr/ChemEx/tree/master/examples/Combinations/N15_NH_RDC).
 
 :::
 
